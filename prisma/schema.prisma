@@ -1,0 +1,161 @@
+// Tienda Luna — POS offline-first, multi-tienda (tenant = storeId)
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider  = "postgresql"
+  /// App / runtime: pooler :6543 + ?pgbouncer=true (IPv4 en Shared pooler).
+  url       = env("DATABASE_URL")
+  /// Migraciones / `db push`: Session pooler Supabase :5432 (mismo host que transaction :6543), no db.*.co si no hay IPv6.
+  directUrl = env("DIRECT_URL")
+}
+
+enum UserRole {
+  ADMIN
+  CASHIER
+}
+
+enum EventStatus {
+  ACCEPTED
+  REJECTED
+  CORRECTED
+}
+
+model Store {
+  id        String   @id @default(cuid())
+  name      String
+  slug      String   @unique
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  /// Preferencias de widgets del dashboard (nivel 3)
+  dashboardLayout Json?
+
+  users     User[]
+  devices   Device[]
+  products  Product[]
+  customers Customer[]
+  events    Event[]
+  sales     Sale[]
+}
+
+model User {
+  id           String   @id @default(cuid())
+  email        String   @unique
+  passwordHash String
+  role         UserRole
+  storeId      String
+  store        Store    @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  createdAt    DateTime @default(now())
+
+  @@index([storeId])
+}
+
+/// Terminales POS: autenticación por token (hash), sin usuario humano
+model Device {
+  id         String    @id @default(cuid())
+  storeId    String
+  store      Store     @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  label      String
+  tokenHash  String    @unique
+  lastSeenAt DateTime?
+  createdAt  DateTime  @default(now())
+
+  @@index([storeId])
+}
+
+model Product {
+  id          String   @id @default(cuid())
+  storeId     String
+  store       Store    @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  sku         String
+  name        String
+  priceCents  Int      @default(0)
+  costCents   Int?
+  stockQty    Int      @default(0)
+  lowStockAt  Int      @default(5)
+  active      Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  saleLines SaleLine[]
+
+  @@unique([storeId, sku])
+  @@index([storeId])
+}
+
+model Customer {
+  id         String   @id @default(cuid())
+  storeId    String
+  store      Store    @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  name       String?
+  phone      String?
+  email      String?
+  externalId String?
+  createdAt  DateTime @default(now())
+
+  sales Sale[]
+
+  @@index([storeId])
+  @@index([storeId, phone])
+}
+
+/// Libro mayor de eventos (fuente de verdad para auditoría / reconstrucción)
+model Event {
+  id                  String      @id @default(cuid())
+  /// Id enviado por el cliente (UUID); idempotencia por tienda
+  clientEventId       String
+  type                String
+  payload             Json
+  payloadHash         String
+  storeId             String
+  store               Store       @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  deviceId            String
+  clientTimestamp     BigInt
+  serverTimestamp     DateTime    @default(now())
+  status              EventStatus
+  isFraud             Boolean     @default(false)
+  fraudReason         String?
+  correctionNote      String?
+  /// Agrupa eventos de una misma venta offline (payload.saleId)
+  relatedClientSaleId String?
+
+  @@unique([storeId, clientEventId])
+  @@index([storeId, serverTimestamp])
+  @@index([storeId, deviceId])
+  @@index([storeId, type])
+  @@index([storeId, deviceId, clientTimestamp, payloadHash])
+}
+
+/// Proyección de ventas aceptadas (consultas rápidas; reconstruible desde Event)
+model Sale {
+  id           String    @id @default(cuid())
+  storeId      String
+  store        Store     @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  deviceId     String
+  clientSaleId String?
+  customerId   String?
+  customer     Customer? @relation(fields: [customerId], references: [id])
+  totalCents   Int       @default(0)
+  status       String    @default("COMPLETED")
+  completedAt  DateTime  @default(now())
+  lines        SaleLine[]
+
+  @@index([storeId, completedAt])
+  @@index([storeId, deviceId])
+}
+
+model SaleLine {
+  id             String  @id @default(cuid())
+  saleId         String
+  sale           Sale    @relation(fields: [saleId], references: [id], onDelete: Cascade)
+  productId      String
+  product        Product @relation(fields: [productId], references: [id])
+  quantity       Int
+  unitPriceCents Int
+  subtotalCents  Int
+
+  @@index([productId])
+}
