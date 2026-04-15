@@ -1,6 +1,11 @@
 {
   "version": 1,
   "skills": {
+    "animation-best-practices": {
+      "source": "aidenybai/react-scan",
+      "sourceType": "github",
+      "computedHash": "c36885f99411661a4451a8c414be39b873bca70e4e82c46506c7ee621a9d5b88"
+    },
     "supabase": {
       "source": "supabase/agent-skills",
       "sourceType": "github",

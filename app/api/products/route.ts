@@ -24,6 +24,7 @@ const createSchema = z.object({
   name: z.string().min(1),
   priceCents: z.number().int().nonnegative(),
   costCents: z.number().int().nonnegative().optional(),
+  supplierName: z.string().max(120).optional().nullable(),
   stockQty: z.number().int().nonnegative().default(0),
   lowStockAt: z.number().int().nonnegative().optional(),
 });
@@ -48,6 +49,7 @@ export async function POST(request: Request) {
         name: parsed.data.name,
         priceCents: parsed.data.priceCents,
         costCents: parsed.data.costCents,
+        supplierName: parsed.data.supplierName?.trim() || null,
         stockQty: parsed.data.stockQty,
         lowStockAt: parsed.data.lowStockAt ?? 5,
       },

@@ -37,6 +37,9 @@ export function emptyOverviewPayload(now = new Date()) {
         umbral: number | null;
       }[],
       eventosFraudulentos: 0,
+      ticketMedioHoyCents: 0,
+      ticketMedioMesCents: 0,
+      horaPicoHoy: { hora: null as number | null, ventas: 0, ingresosCents: 0 },
     },
     level2: {
       rotacionInventario30d: 0,
@@ -159,12 +162,57 @@ async function computeOverviewFromDb(storeId: string, now: Date) {
   });
   const metaById = new Map(productMeta.map((p) => [p.id, p]));
 
+  const salesByHour = await prisma.$queryRaw<
+    { hour: number; ventas: bigint; ingreso_cents: bigint }[]
+  >`
+    SELECT EXTRACT(HOUR FROM "completedAt")::int AS hour,
+           COUNT(*)::bigint AS ventas,
+           COALESCE(SUM("totalCents"),0)::bigint AS ingreso_cents
+    FROM "Sale"
+    WHERE "storeId" = ${storeId}
+      AND "completedAt" >= ${dayStart}
+    GROUP BY 1
+    ORDER BY 1
+  `;
+
+  const hourMap = new Map(
+    salesByHour.map((r) => [
+      r.hour,
+      { ventas: Number(r.ventas), ingresosCents: Number(r.ingreso_cents ?? 0) },
+    ]),
+  );
+  const ventasPorHoraHoyFull = Array.from({ length: 24 }, (_, h) => {
+    const x = hourMap.get(h);
+    return {
+      hora: h,
+      ventas: x?.ventas ?? 0,
+      ingresosCents: x?.ingresosCents ?? 0,
+    };
+  });
+  const pico = ventasPorHoraHoyFull.reduce(
+    (best, cur) => (cur.ventas > best.ventas ? cur : best),
+    ventasPorHoraHoyFull[0]!,
+  );
+
   const level1 = {
     ventasHoy: dailyAgg._count,
     ingresosHoyCents: dailyAgg._sum.totalCents ?? 0,
     ventasMes: monthlyAgg._count,
     ingresosMesCents: monthlyAgg._sum.totalCents ?? 0,
     ingresosTotalesCents: revenueTotal._sum.totalCents ?? 0,
+    ticketMedioHoyCents:
+      dailyAgg._count > 0
+        ? Math.round((dailyAgg._sum.totalCents ?? 0) / dailyAgg._count)
+        : 0,
+    ticketMedioMesCents:
+      monthlyAgg._count > 0
+        ? Math.round((monthlyAgg._sum.totalCents ?? 0) / monthlyAgg._count)
+        : 0,
+    horaPicoHoy: {
+      hora: pico.ventas > 0 ? pico.hora : null,
+      ventas: pico.ventas,
+      ingresosCents: pico.ingresosCents,
+    },
     productosTop: topProducts.map((t) => ({
       productId: t.productId,
       nombre: metaById.get(t.productId)?.name ?? t.productId,
@@ -222,19 +270,6 @@ async function computeOverviewFromDb(storeId: string, now: Date) {
   });
   const custById = new Map(customers.map((c) => [c.id, c]));
 
-  const salesByHour = await prisma.$queryRaw<
-    { hour: number; ventas: bigint; ingreso_cents: bigint }[]
-  >`
-    SELECT EXTRACT(HOUR FROM "completedAt")::int AS hour,
-           COUNT(*)::bigint AS ventas,
-           COALESCE(SUM("totalCents"),0)::bigint AS ingreso_cents
-    FROM "Sale"
-    WHERE "storeId" = ${storeId}
-      AND "completedAt" >= ${dayStart}
-    GROUP BY 1
-    ORDER BY 1
-  `;
-
   const devicePerf = await prisma.sale.groupBy({
     by: ["deviceId"],
     where: { storeId, completedAt: { gte: monthStart } },
@@ -254,11 +289,7 @@ async function computeOverviewFromDb(storeId: string, now: Date) {
       compras: c._count,
       totalCents: c._sum.totalCents ?? 0,
     })),
-    ventasPorHoraHoy: salesByHour.map((r) => ({
-      hora: r.hour,
-      ventas: Number(r.ventas),
-      ingresosCents: Number(r.ingreso_cents ?? 0),
-    })),
+    ventasPorHoraHoy: ventasPorHoraHoyFull,
     rendimientoDispositivoMes: devicePerf.map((d) => ({
       deviceId: d.deviceId,
       ventas: d._count,

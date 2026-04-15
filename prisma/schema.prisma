@@ -74,6 +74,8 @@ model Product {
   name        String
   priceCents  Int      @default(0)
   costCents   Int?
+  /// Coste proveedor (céntimos); nombre en supplierName
+  supplierName String?
   stockQty    Int      @default(0)
   lowStockAt  Int      @default(5)
   active      Boolean  @default(true)
