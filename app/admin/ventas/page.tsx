@@ -132,31 +132,31 @@ export default function SalesPage() {
   ];
 
   return (
-    <AdminShell>
+    <AdminShell title="Ventas">
       <div className="space-y-6">
-        {/* Header */}
-        <div className="flex flex-wrap items-center justify-between gap-4">
+        {/* Header - Crextio style */}
+        <div className="flex flex-wrap items-start justify-between gap-6">
           <div>
-            <h1 className="text-2xl font-bold tracking-tight text-tl-ink">
+            <h1 className="tl-welcome-header">
               Ventas en vivo
             </h1>
-            <p className="mt-1 text-sm text-tl-muted">
+            <p className="mt-2 text-sm text-tl-muted">
               Actualización automática cada 5 segundos
             </p>
           </div>
           <div
             className={cn(
-              "flex items-center gap-2 rounded-full px-3 py-1.5 transition-all",
+              "flex items-center gap-2 rounded-full border border-tl-success/20 px-4 py-2 transition-all",
               highlightNew
                 ? "bg-tl-success-subtle ring-2 ring-tl-success/30"
                 : "bg-tl-success-subtle"
             )}
           >
-            <span className="relative flex h-2 w-2">
+            <span className="relative flex h-2.5 w-2.5">
               <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-tl-success opacity-60" />
-              <span className="relative inline-flex h-2 w-2 rounded-full bg-tl-success" />
+              <span className="relative inline-flex h-2.5 w-2.5 rounded-full bg-tl-success" />
             </span>
-            <span className="text-xs font-medium text-tl-success">Stream activo</span>
+            <span className="text-sm font-medium text-tl-success">Stream activo</span>
           </div>
         </div>
 

@@ -160,11 +160,11 @@ export default function AlertsPage() {
   }
 
   return (
-    <AdminShell>
+    <AdminShell title="Alertas">
       <div className="space-y-8">
         {/* Header */}
         <div>
-          <h1 className="text-2xl font-bold tracking-tight text-tl-ink">Alertas y fraude</h1>
+          <h1 className="tl-welcome-header">Alertas y fraude</h1>
           <p className="mt-1 text-sm text-tl-muted">
             Monitoreo de anomalías y eventos sospechosos
           </p>

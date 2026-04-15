@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useEffect, useState } from "react";
 import { Sidebar } from "./sidebar";
 import { Topbar } from "./topbar";
 
@@ -10,8 +10,6 @@ interface AdminShellProps {
 }
 
 export function AdminShell({ children, title = "Dashboard" }: AdminShellProps) {
-  const [lastSync, setLastSync] = useState<Date | null>(null);
-  const [isSyncing, setIsSyncing] = useState(false);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
 
   useEffect(() => {
@@ -24,24 +22,12 @@ export function AdminShell({ children, title = "Dashboard" }: AdminShellProps) {
     return () => clearInterval(interval);
   }, []);
 
-  const handleRefresh = useCallback(async () => {
-    setIsSyncing(true);
-    window.dispatchEvent(new CustomEvent("tl-refresh"));
-    await new Promise((r) => setTimeout(r, 600));
-    setLastSync(new Date());
-    setIsSyncing(false);
-  }, []);
-
+  // Auto-refresh every 5 seconds
   useEffect(() => {
     const interval = setInterval(() => {
-      setLastSync(new Date());
       window.dispatchEvent(new CustomEvent("tl-refresh"));
     }, 5000);
     return () => clearInterval(interval);
-  }, []);
-
-  useEffect(() => {
-    setLastSync(new Date());
   }, []);
 
   return (
@@ -51,12 +37,7 @@ export function AdminShell({ children, title = "Dashboard" }: AdminShellProps) {
         className="flex flex-1 flex-col transition-all duration-300"
         style={{ marginLeft: sidebarCollapsed ? 72 : 260 }}
       >
-        <Topbar
-          lastSync={lastSync}
-          onRefresh={handleRefresh}
-          isSyncing={isSyncing}
-          title={title}
-        />
+        <Topbar title={title} />
         <main
           id="admin-main"
           className="flex-1 overflow-y-auto p-6"

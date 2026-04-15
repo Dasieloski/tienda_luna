@@ -190,11 +190,11 @@ export default function InventoryPage() {
   ];
 
   return (
-    <AdminShell>
+    <AdminShell title="Inventario">
       <div className="space-y-6">
         {/* Header */}
         <div>
-          <h1 className="text-2xl font-bold tracking-tight text-tl-ink">Inventario</h1>
+          <h1 className="tl-welcome-header">Inventario</h1>
           <p className="mt-1 text-sm text-tl-muted">
             Gestión de productos y control de stock
           </p>
