@@ -71,11 +71,11 @@ export default function SettingsPage() {
   }
 
   return (
-    <AdminShell>
+    <AdminShell title="Configuración">
       <div className="space-y-8">
         {/* Header */}
         <div>
-          <h1 className="text-2xl font-bold tracking-tight text-tl-ink">Configuración</h1>
+          <h1 className="tl-welcome-header">Configuración</h1>
           <p className="mt-1 text-sm text-tl-muted">
             Estado del sistema e información de la sesión
           </p>

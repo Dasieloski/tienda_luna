@@ -16,12 +16,12 @@ import {
   YAxis,
 } from "recharts";
 
-// Colors aligned with design tokens
-const VIOLET = "#8b5cf6";
-const FUCHSIA = "#d946ef";
-const CYAN = "#22d3ee";
-const AMBER = "#fbbf24";
-const EMERALD = "#34d399";
+// Colors aligned with Crextio design system - warm tones
+const GOLD = "#f5c518";      // Primary accent
+const CHARCOAL = "#2d2d2d";  // Secondary
+const CREAM = "#eae7e1";     // Background
+const SAND = "#d4cfc5";      // Muted
+const WARM_GRAY = "#8a8a8a"; // Text muted
 
 type Hourly = { hora: number; ventas: number; ingresosCents: number };
 type TopP = { nombre: string; unidades: number; subtotalCents: number };
@@ -100,13 +100,15 @@ export function DashboardCharts({
   const pieData = useMemo(() => {
     const slice = topProducts.slice(0, 5).filter((p) => p.subtotalCents > 0);
     if (slice.length === 0) {
-      return [{ name: "Sin datos", value: 100, fill: "#3f3f46" }];
+      return [{ name: "Sin datos", value: 100, fill: SAND }];
     }
     const sum = slice.reduce((a, p) => a + p.subtotalCents, 0) || 1;
+    // Crextio-style warm color palette
+    const pieColors = [GOLD, CHARCOAL, "#d4a017", "#4a4a4a", SAND];
     return slice.map((p, i) => ({
       name: p.nombre.length > 14 ? `${p.nombre.slice(0, 12)}...` : p.nombre,
       value: Math.round((p.subtotalCents / sum) * 100),
-      fill: [VIOLET, FUCHSIA, CYAN, AMBER, EMERALD][i % 5],
+      fill: pieColors[i % 5],
     }));
   }, [topProducts]);
 
@@ -146,8 +148,8 @@ export function DashboardCharts({
           >
             <defs>
               <linearGradient id="tlFillIngresos" x1="0" y1="0" x2="0" y2="1">
-                <stop offset="0%" stopColor={VIOLET} stopOpacity={0.4} />
-                <stop offset="100%" stopColor={VIOLET} stopOpacity={0} />
+                <stop offset="0%" stopColor={GOLD} stopOpacity={0.4} />
+                <stop offset="100%" stopColor={GOLD} stopOpacity={0} />
               </linearGradient>
             </defs>
             <CartesianGrid
@@ -181,7 +183,7 @@ export function DashboardCharts({
             <Area
               type="monotone"
               dataKey="ingresos"
-              stroke={VIOLET}
+              stroke={GOLD}
               strokeWidth={2}
               fill="url(#tlFillIngresos)"
               animationDuration={1200}
@@ -235,7 +237,7 @@ export function DashboardCharts({
               isAnimationActive
             >
               {productsChart.map((_, i) => (
-                <Cell key={i} fill={i % 2 === 0 ? VIOLET : FUCHSIA} />
+                <Cell key={i} fill={i % 2 === 0 ? GOLD : CHARCOAL} />
               ))}
             </Bar>
           </BarChart>
@@ -311,7 +313,7 @@ export function DashboardCharts({
             <Bar
               dataKey="ventas"
               radius={[0, 6, 6, 0]}
-              fill={CYAN}
+              fill={GOLD}
               animationDuration={1000}
               isAnimationActive
             />

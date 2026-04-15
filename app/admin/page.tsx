@@ -3,17 +3,20 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   AlertTriangle,
+  Boxes,
   Clock,
   Cpu,
   DollarSign,
   Package,
   ShoppingCart,
   TrendingUp,
+  Users,
 } from "lucide-react";
 import { AdminShell } from "@/components/admin/admin-shell";
 import { KpiCard } from "@/components/admin/kpi-card";
 import { ActivityFeed, type ActivityItem } from "@/components/admin/activity-feed";
 import { DashboardCharts } from "@/components/admin/dashboard-charts";
+import { WeeklyProgress, TaskProgress } from "@/components/admin/crextio-widgets";
 import { cn } from "@/lib/utils";
 
 type Overview = {
@@ -182,21 +185,66 @@ export default function AdminOverviewPage() {
   return (
     <AdminShell>
       <div className="space-y-8">
-        {/* Page header */}
-        <div className="flex flex-wrap items-end justify-between gap-4">
+        {/* Welcome header - Crextio style */}
+        <div className="flex flex-wrap items-start justify-between gap-6">
           <div>
-            <h1 className="text-2xl font-bold tracking-tight text-tl-ink sm:text-3xl">
-              Centro de comando
+            <h1 className="tl-welcome-header">
+              Bienvenido, Administrador
             </h1>
-            <p className="mt-1 flex items-center gap-2 text-sm text-tl-muted">
-              <Cpu className="h-4 w-4 text-tl-accent" aria-hidden />
-              Pulso operativo{" "}
-              {data && (
-                <span className="tabular-nums">
-                  {new Date(data.generatedAt).toLocaleString("es-ES")}
+            
+            {/* Quick stats row - Crextio style */}
+            <div className="mt-6 flex flex-wrap items-center gap-6">
+              {/* Percentage badges */}
+              <div className="flex gap-2">
+                <span className="tl-percent-badge dark">
+                  {data?.level1.ventasHoy ?? 0} hoy
                 </span>
-              )}
-            </p>
+                <span className="tl-percent-badge accent">
+                  {Math.round((data?.level1.ventasHoy ?? 0) / Math.max(data?.level1.ventasMes ?? 1, 1) * 100)}%
+                </span>
+              </div>
+              
+              {/* Progress bar pills */}
+              <div className="hidden items-center gap-3 sm:flex">
+                <span className="text-xs text-tl-muted">Avance mes</span>
+                <div className="tl-progress-pills w-32">
+                  {Array.from({ length: 10 }).map((_, i) => (
+                    <div 
+                      key={i} 
+                      className={cn(
+                        "tl-progress-pill",
+                        i < Math.min(Math.round((data?.level1.ventasMes ?? 0) / 100), 10) && "filled"
+                      )} 
+                    />
+                  ))}
+                </div>
+              </div>
+            </div>
+          </div>
+          
+          {/* Large stat numbers - Crextio style */}
+          <div className="flex items-center gap-8">
+            <div className="text-right">
+              <p className="tl-stat-number">{data?.level1.ventasMes ?? 0}</p>
+              <p className="flex items-center justify-end gap-1.5 text-xs text-tl-muted">
+                <Users className="h-4 w-4" aria-hidden />
+                Ventas mes
+              </p>
+            </div>
+            <div className="text-right">
+              <p className="tl-stat-number">{data?.level1.productosTop.length ?? 0}</p>
+              <p className="flex items-center justify-end gap-1.5 text-xs text-tl-muted">
+                <Boxes className="h-4 w-4" aria-hidden />
+                Productos
+              </p>
+            </div>
+            <div className="text-right">
+              <p className="tl-stat-number">{data?.level2.rendimientoDispositivoMes.length ?? 0}</p>
+              <p className="flex items-center justify-end gap-1.5 text-xs text-tl-muted">
+                <Cpu className="h-4 w-4" aria-hidden />
+                Dispositivos
+              </p>
+            </div>
           </div>
         </div>
 
@@ -270,6 +318,42 @@ export default function AdminOverviewPage() {
               value={String(data?.level1.eventosFraudulentos ?? 0)}
               variant={data?.level1.eventosFraudulentos ? "danger" : "default"}
               icon={data?.level1.eventosFraudulentos ? <AlertTriangle className="h-4 w-4" /> : undefined}
+            />
+          </div>
+        </section>
+
+        {/* Crextio-style Progress Widgets */}
+        <section>
+          <div className="grid gap-4 lg:grid-cols-3">
+            {/* Weekly Progress */}
+            <WeeklyProgress
+              data={[
+                { day: "L", value: 2.5 },
+                { day: "M", value: 4.2 },
+                { day: "X", value: 5.5, isToday: true },
+                { day: "J", value: 3.8 },
+                { day: "V", value: 6.1 },
+                { day: "S", value: 1.2 },
+                { day: "D", value: 0 },
+              ]}
+              label="Progreso"
+              total={`${((data?.level1.ventasHoy ?? 0) / 10).toFixed(1)}h`}
+              subtitle="Actividad esta semana"
+            />
+            
+            {/* Task Progress */}
+            <TaskProgress
+              title="Tareas pendientes"
+              completedCount={2}
+              totalCount={8}
+              tasks={[
+                { id: "1", title: "Revisar stock bajo", time: "Hoy, 08:30", completed: true },
+                { id: "2", title: "Sync con servidor", time: "Hoy, 10:30", completed: true },
+                { id: "3", title: "Actualizar precios", time: "Hoy, 13:00", completed: false },
+                { id: "4", title: "Revisar alertas", time: "Hoy, 14:45", completed: false },
+                { id: "5", title: "Backup datos", time: "Hoy, 16:30", completed: false },
+              ]}
+              className="lg:col-span-2"
             />
           </div>
         </section>

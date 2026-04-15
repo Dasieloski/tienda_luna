@@ -7,7 +7,7 @@ export const metadata: Metadata = {
 
 export default function AdminLayout({ children }: { children: React.ReactNode }) {
   return (
-    <div className="dark min-h-screen bg-tl-canvas text-tl-ink">
+    <div className="min-h-screen bg-tl-canvas text-tl-ink">
       {/* Skip link */}
       <a
         href="#admin-main"

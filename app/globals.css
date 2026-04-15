@@ -458,3 +458,329 @@
   height: 1px;
   background: var(--tl-line);
 }
+
+/* Crextio-style welcome header */
+.tl-welcome-header {
+  @apply text-3xl font-semibold tracking-tight sm:text-4xl;
+  color: var(--tl-ink);
+}
+
+/* Stats row - large numbers with labels */
+.tl-stat-row {
+  @apply flex items-center gap-8;
+}
+
+.tl-stat-item {
+  @apply flex items-center gap-2;
+}
+
+.tl-stat-number {
+  @apply text-4xl font-bold tabular-nums tracking-tight;
+  color: var(--tl-ink);
+}
+
+.tl-stat-icon {
+  @apply h-5 w-5;
+  color: var(--tl-muted);
+}
+
+/* Nav pills - Crextio style */
+.tl-nav-pill {
+  @apply rounded-full px-4 py-2 text-sm font-medium transition-all;
+  color: var(--tl-muted);
+}
+
+.tl-nav-pill:hover {
+  background: var(--tl-canvas-subtle);
+  color: var(--tl-ink);
+}
+
+.tl-nav-pill.active {
+  background: var(--tl-secondary);
+  color: #ffffff;
+}
+
+/* Progress bar with pills */
+.tl-progress-pills {
+  @apply flex gap-1;
+}
+
+.tl-progress-pill {
+  @apply h-2 flex-1 rounded-full;
+  background: var(--tl-line);
+}
+
+.tl-progress-pill.filled {
+  background: var(--tl-accent);
+}
+
+.tl-progress-pill.partial {
+  background: linear-gradient(90deg, var(--tl-accent) var(--fill-percent, 50%), var(--tl-line) var(--fill-percent, 50%));
+}
+
+/* User profile card - Crextio style */
+.tl-profile-card {
+  @apply relative overflow-hidden;
+  background: var(--tl-canvas-inset);
+  border-radius: var(--tl-radius-lg);
+  box-shadow: var(--tl-shadow);
+}
+
+.tl-profile-image {
+  @apply aspect-square w-full object-cover;
+  border-radius: var(--tl-radius-lg) var(--tl-radius-lg) 0 0;
+}
+
+.tl-profile-content {
+  @apply p-4;
+}
+
+.tl-profile-name {
+  @apply text-lg font-semibold;
+  color: var(--tl-ink);
+}
+
+.tl-profile-role {
+  @apply text-sm;
+  color: var(--tl-muted);
+}
+
+.tl-profile-badge {
+  @apply absolute bottom-20 right-4 rounded-full px-3 py-1.5 text-sm font-bold;
+  background: var(--tl-secondary);
+  color: #ffffff;
+}
+
+/* Circular progress - Crextio time tracker style */
+.tl-time-tracker {
+  @apply relative flex flex-col items-center justify-center;
+}
+
+.tl-time-value {
+  @apply text-3xl font-bold tabular-nums;
+  color: var(--tl-ink);
+}
+
+.tl-time-label {
+  @apply text-xs uppercase tracking-wider;
+  color: var(--tl-muted);
+}
+
+/* Weekly progress chart */
+.tl-weekly-chart {
+  @apply flex items-end justify-between gap-2;
+}
+
+.tl-weekly-bar {
+  @apply w-8 rounded-t-lg transition-all;
+  background: var(--tl-canvas-subtle);
+  min-height: 20px;
+}
+
+.tl-weekly-bar.active {
+  background: var(--tl-accent);
+}
+
+.tl-weekly-bar:hover {
+  opacity: 0.8;
+}
+
+.tl-weekly-label {
+  @apply mt-2 text-center text-[10px] font-medium uppercase;
+  color: var(--tl-muted);
+}
+
+/* Onboarding task list */
+.tl-task-list {
+  @apply space-y-2;
+}
+
+.tl-task-item {
+  @apply flex items-center gap-3 rounded-xl px-4 py-3 transition-colors;
+  background: var(--tl-canvas-subtle);
+}
+
+.tl-task-item:hover {
+  background: var(--tl-line-subtle);
+}
+
+.tl-task-icon {
+  @apply flex h-8 w-8 shrink-0 items-center justify-center rounded-full;
+}
+
+.tl-task-icon.pending {
+  background: var(--tl-accent);
+  color: var(--tl-accent-fg);
+}
+
+.tl-task-icon.completed {
+  background: var(--tl-success-subtle);
+  color: var(--tl-success);
+}
+
+.tl-task-title {
+  @apply flex-1 text-sm font-medium;
+  color: var(--tl-ink);
+}
+
+.tl-task-time {
+  @apply text-xs;
+  color: var(--tl-muted);
+}
+
+/* Calendar mini - Crextio style */
+.tl-calendar-mini {
+  @apply rounded-xl p-4;
+  background: var(--tl-canvas-inset);
+}
+
+.tl-calendar-header {
+  @apply mb-4 flex items-center justify-between;
+}
+
+.tl-calendar-month {
+  @apply rounded-full px-3 py-1 text-sm font-medium;
+  background: var(--tl-canvas-subtle);
+  color: var(--tl-ink);
+}
+
+.tl-calendar-grid {
+  @apply grid grid-cols-7 gap-1 text-center text-xs;
+}
+
+.tl-calendar-day {
+  @apply rounded-lg py-2 font-medium transition-colors;
+  color: var(--tl-muted);
+}
+
+.tl-calendar-day.current {
+  background: var(--tl-accent);
+  color: var(--tl-accent-fg);
+}
+
+.tl-calendar-day.has-event::after {
+  content: "";
+  @apply mx-auto mt-0.5 block h-1 w-1 rounded-full;
+  background: var(--tl-accent);
+}
+
+/* Event card - Crextio style */
+.tl-event-card {
+  @apply flex items-center gap-3 rounded-xl px-4 py-3;
+  background: var(--tl-accent);
+  color: var(--tl-accent-fg);
+}
+
+.tl-event-card.secondary {
+  background: var(--tl-canvas-subtle);
+  color: var(--tl-ink);
+}
+
+.tl-event-title {
+  @apply text-sm font-semibold;
+}
+
+.tl-event-desc {
+  @apply text-xs opacity-80;
+}
+
+.tl-event-avatars {
+  @apply -space-x-2 flex;
+}
+
+.tl-event-avatar {
+  @apply h-7 w-7 rounded-full border-2 object-cover;
+  border-color: var(--tl-canvas-inset);
+}
+
+/* Accordion panel - Crextio devices style */
+.tl-accordion {
+  @apply overflow-hidden rounded-xl;
+  background: var(--tl-canvas-inset);
+  border: 1px solid var(--tl-line-subtle);
+}
+
+.tl-accordion-item {
+  border-bottom: 1px solid var(--tl-line-subtle);
+}
+
+.tl-accordion-item:last-child {
+  border-bottom: none;
+}
+
+.tl-accordion-trigger {
+  @apply flex w-full items-center justify-between px-4 py-3.5 text-sm font-medium transition-colors;
+  color: var(--tl-ink-secondary);
+}
+
+.tl-accordion-trigger:hover {
+  background: var(--tl-canvas-subtle);
+  color: var(--tl-ink);
+}
+
+.tl-accordion-content {
+  @apply px-4 pb-4;
+}
+
+/* Device item */
+.tl-device-item {
+  @apply flex items-center gap-3 rounded-xl bg-tl-canvas-subtle px-4 py-3;
+}
+
+.tl-device-icon {
+  @apply h-10 w-10 rounded-lg object-contain p-1;
+  background: var(--tl-canvas-inset);
+}
+
+.tl-device-name {
+  @apply text-sm font-medium;
+  color: var(--tl-ink);
+}
+
+.tl-device-version {
+  @apply text-xs;
+  color: var(--tl-muted);
+}
+
+/* Gradient border effect */
+.tl-gradient-border {
+  position: relative;
+}
+
+.tl-gradient-border::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  padding: 1px;
+  background: linear-gradient(135deg, var(--tl-accent) 0%, var(--tl-line) 50%, var(--tl-accent) 100%);
+  -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+  mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+  -webkit-mask-composite: xor;
+  mask-composite: exclude;
+  pointer-events: none;
+}
+
+/* Percentage badges row */
+.tl-percent-row {
+  @apply flex gap-2;
+}
+
+.tl-percent-badge {
+  @apply rounded-lg px-3 py-2 text-sm font-semibold;
+}
+
+.tl-percent-badge.dark {
+  background: var(--tl-secondary);
+  color: #ffffff;
+}
+
+.tl-percent-badge.accent {
+  background: var(--tl-accent);
+  color: var(--tl-accent-fg);
+}
+
+.tl-percent-badge.light {
+  background: var(--tl-canvas-subtle);
+  color: var(--tl-ink);
+}

@@ -78,11 +78,11 @@ export default function AnalyticsPage() {
   }
 
   return (
-    <AdminShell>
+    <AdminShell title="Analítica">
       <div className="space-y-8">
         {/* Header */}
         <div>
-          <h1 className="text-2xl font-bold tracking-tight text-tl-ink">Analítica</h1>
+          <h1 className="tl-welcome-header">Analítica</h1>
           <p className="mt-1 text-sm text-tl-muted">
             Métricas avanzadas y comportamiento de clientes
           </p>
