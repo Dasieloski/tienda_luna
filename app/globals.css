@@ -265,10 +265,12 @@
 }
 
 .tl-btn-primary {
-  @apply tl-btn;
+  @apply inline-flex items-center justify-center gap-2 text-sm font-semibold transition-all;
   background: var(--tl-accent);
   color: var(--tl-accent-fg);
   box-shadow: var(--tl-shadow-sm);
+  padding: 12px 24px;
+  border-radius: var(--tl-radius);
 }
 
 .tl-btn-primary:hover {
@@ -278,10 +280,12 @@
 }
 
 .tl-btn-secondary {
-  @apply tl-btn;
+  @apply inline-flex items-center justify-center gap-2 text-sm font-semibold transition-all;
   background: var(--tl-canvas-inset);
   color: var(--tl-ink-secondary);
   border: 1px solid var(--tl-line);
+  padding: 12px 24px;
+  border-radius: var(--tl-radius);
 }
 
 .tl-btn-secondary:hover {
@@ -291,10 +295,12 @@
 }
 
 .tl-btn-dark {
-  @apply tl-btn;
+  @apply inline-flex items-center justify-center gap-2 text-sm font-semibold transition-all;
   background: var(--tl-secondary);
   color: #ffffff;
   box-shadow: var(--tl-shadow-sm);
+  padding: 12px 24px;
+  border-radius: var(--tl-radius);
 }
 
 .tl-btn-dark:hover {
