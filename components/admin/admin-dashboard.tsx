@@ -168,7 +168,7 @@ function Kpi({
   return (
     <div
       className={cn(
-        "group relative overflow-hidden rounded-2xl border border-white/10 bg-gradient-to-br from-white/[0.07] via-zinc-900/40 to-black/30 p-5 shadow-lg ring-1 ring-white/5 transition-all duration-300 motion-safe:hover:-translate-y-0.5",
+        "group tl-card-hover tl-interactive relative overflow-hidden rounded-2xl border border-white/10 bg-gradient-to-br from-white/[0.07] via-zinc-900/40 to-black/30 p-5 shadow-lg ring-1 ring-white/5 transition-[border-color,box-shadow] duration-200",
         ring,
       )}
     >

@@ -25,7 +25,7 @@ export function WeeklyProgress({
   const maxValue = Math.max(...data.map((d) => d.value), 1);
 
   return (
-    <div className={cn("tl-card p-5", className)}>
+    <div className={cn("tl-card tl-card-hover group p-5", className)}>
       <div className="flex items-start justify-between">
         <div>
           <h3 className="text-sm font-semibold text-tl-ink">{label}</h3>
@@ -34,8 +34,11 @@ export function WeeklyProgress({
             <span className="text-xs text-tl-muted">{subtitle}</span>
           </div>
         </div>
-        <button className="flex h-8 w-8 items-center justify-center rounded-lg bg-tl-canvas-subtle text-tl-muted transition-colors hover:bg-tl-accent hover:text-tl-accent-fg">
-          <ArrowUpRight className="h-4 w-4" />
+        <button
+          type="button"
+          className="tl-interactive tl-press tl-focus flex h-8 w-8 items-center justify-center rounded-lg bg-tl-canvas-subtle text-tl-muted transition-colors hover:bg-tl-accent hover:text-tl-accent-fg"
+        >
+          <ArrowUpRight className="h-4 w-4 transition-transform duration-200 group-hover:scale-110" />
         </button>
       </div>
 
@@ -44,17 +47,17 @@ export function WeeklyProgress({
         {data.map((item, i) => {
           const height = (item.value / maxValue) * 100;
           return (
-            <div key={i} className="flex flex-col items-center gap-2">
+            <div key={i} className="group/bar flex flex-col items-center gap-2">
               <div className="relative h-24 w-8">
                 {/* Tooltip on hover */}
                 {item.value > 0 && (
-                  <div className="absolute -top-6 left-1/2 -translate-x-1/2 rounded-md bg-tl-secondary px-2 py-0.5 text-[10px] font-semibold text-white opacity-0 transition-opacity group-hover:opacity-100">
+                  <div className="pointer-events-none absolute -top-6 left-1/2 z-10 -translate-x-1/2 rounded-md bg-tl-secondary px-2 py-0.5 text-[10px] font-semibold text-white opacity-0 transition-opacity duration-150 group-hover/bar:opacity-100">
                     {item.value}h
                   </div>
                 )}
                 <div
                   className={cn(
-                    "absolute bottom-0 w-full rounded-t-lg transition-all",
+                    "absolute bottom-0 w-full rounded-t-lg transition-[height,background-color] duration-200 ease-out group-hover/bar:opacity-95",
                     item.isToday ? "bg-tl-accent" : "bg-tl-canvas-subtle"
                   )}
                   style={{ height: `${Math.max(height, 8)}%` }}
@@ -105,11 +108,14 @@ export function TimeTracker({
   const strokeDashoffset = circumference - (progress / 100) * circumference;
 
   return (
-    <div className={cn("tl-card p-5", className)}>
+    <div className={cn("tl-card tl-card-hover group p-5", className)}>
       <div className="flex items-start justify-between">
         <h3 className="text-sm font-semibold text-tl-ink">Time tracker</h3>
-        <button className="flex h-8 w-8 items-center justify-center rounded-lg bg-tl-canvas-subtle text-tl-muted transition-colors hover:bg-tl-accent hover:text-tl-accent-fg">
-          <ArrowUpRight className="h-4 w-4" />
+        <button
+          type="button"
+          className="tl-interactive tl-press tl-focus flex h-8 w-8 items-center justify-center rounded-lg bg-tl-canvas-subtle text-tl-muted transition-colors hover:bg-tl-accent hover:text-tl-accent-fg"
+        >
+          <ArrowUpRight className="h-4 w-4 transition-transform duration-200 group-hover:scale-110" />
         </button>
       </div>
 
@@ -170,14 +176,16 @@ export function TimeTracker({
         {/* Controls */}
         <div className="mt-4 flex items-center gap-2">
           <button
+            type="button"
             onClick={isRunning ? onPause : onPlay}
-            className="flex h-10 w-10 items-center justify-center rounded-full bg-tl-canvas-subtle text-tl-ink transition-colors hover:bg-tl-accent hover:text-tl-accent-fg"
+            className="tl-interactive tl-press tl-focus flex h-10 w-10 items-center justify-center rounded-full bg-tl-canvas-subtle text-tl-ink transition-colors hover:bg-tl-accent hover:text-tl-accent-fg"
           >
             {isRunning ? <Pause className="h-4 w-4" /> : <Play className="h-4 w-4" />}
           </button>
           <button
+            type="button"
             onClick={onReset}
-            className="flex h-10 w-10 items-center justify-center rounded-full bg-tl-canvas-subtle text-tl-muted transition-colors hover:bg-tl-secondary hover:text-white"
+            className="tl-interactive tl-press tl-focus flex h-10 w-10 items-center justify-center rounded-full bg-tl-canvas-subtle text-tl-muted transition-colors hover:bg-tl-secondary hover:text-white"
           >
             <RotateCcw className="h-4 w-4" />
           </button>
@@ -219,7 +227,7 @@ export function TaskProgress({
   const percentage = Math.round((completed / total) * 100);
 
   return (
-    <div className={cn("tl-card-dark p-5", className)}>
+    <div className={cn("tl-card-dark tl-card-hover group p-5", className)}>
       <div className="flex items-start justify-between">
         <h3 className="text-sm font-semibold text-white">{title}</h3>
         <span className="text-2xl font-bold tabular-nums text-white">
@@ -255,11 +263,11 @@ export function TaskProgress({
         {tasks.slice(0, 5).map((task) => (
           <div
             key={task.id}
-            className="flex items-center gap-3 rounded-xl bg-white/5 px-3 py-2.5"
+            className="group/task tl-interactive flex items-center gap-3 rounded-xl bg-white/5 px-3 py-2.5 transition-colors duration-200 hover:bg-white/10"
           >
             <div
               className={cn(
-                "flex h-7 w-7 shrink-0 items-center justify-center rounded-full",
+                "flex h-7 w-7 shrink-0 items-center justify-center rounded-full transition-transform duration-200 group-hover/task:scale-110",
                 task.completed ? "bg-tl-success/20 text-tl-success" : "bg-tl-accent text-tl-accent-fg"
               )}
             >
@@ -301,12 +309,14 @@ interface StatDisplayProps {
 
 export function StatDisplay({ value, label, icon, className }: StatDisplayProps) {
   return (
-    <div className={cn("flex items-center gap-2", className)}>
+    <div className={cn("group flex items-center gap-2", className)}>
       <span className="text-4xl font-bold tabular-nums tracking-tight text-tl-ink">
         {value}
       </span>
       <div className="flex flex-col">
-        {icon && <span className="text-tl-muted">{icon}</span>}
+        {icon && (
+          <span className="text-tl-muted transition-transform duration-200 group-hover:scale-105">{icon}</span>
+        )}
         <span className="text-xs text-tl-muted">{label}</span>
       </div>
     </div>

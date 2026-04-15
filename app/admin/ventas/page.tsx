@@ -1,7 +1,6 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Radio } from "lucide-react";
 import { AdminShell } from "@/components/admin/admin-shell";
 import { DataTable, type Column } from "@/components/admin/data-table";
 import { cn } from "@/lib/utils";
@@ -190,26 +189,18 @@ export default function SalesPage() {
           </div>
         </div>
 
-        {/* Sales table */}
-        {loading ? (
-          <div className="flex min-h-[300px] items-center justify-center">
-            <div className="flex flex-col items-center gap-3">
-              <Radio className="h-8 w-8 text-tl-accent tl-pulse" aria-hidden />
-              <p className="text-sm text-tl-muted">Cargando ventas...</p>
-            </div>
-          </div>
-        ) : (
-          <DataTable
-            columns={columns}
-            data={sales}
-            keyExtractor={(row) => row.id}
-            searchable
-            searchPlaceholder="Buscar por dispositivo o producto..."
-            searchKeys={["deviceId"]}
-            emptyMessage="No hay ventas recientes"
-            maxHeight="calc(100vh - 400px)"
-          />
-        )}
+        <DataTable
+          columns={columns}
+          data={sales}
+          keyExtractor={(row) => row.id}
+          searchable
+          searchPlaceholder="Buscar por dispositivo o producto..."
+          searchKeys={["deviceId"]}
+          emptyMessage="No hay ventas recientes"
+          maxHeight="calc(100vh - 400px)"
+          loading={loading}
+          skeletonRows={10}
+        />
       </div>
     </AdminShell>
   );

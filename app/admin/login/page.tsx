@@ -60,7 +60,7 @@ export default function AdminLoginPage() {
       <div className="relative w-full max-w-md">
         {/* Logo */}
         <div className="mb-8 flex flex-col items-center">
-          <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-gradient-to-br from-accent to-violet-600 text-white shadow-lg shadow-accent/25 ring-2 ring-border">
+          <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-tl-accent text-tl-accent-fg shadow-lg shadow-accent/25 ring-2 ring-border tl-interactive tl-hover-lift">
             <ShoppingBag className="h-7 w-7" />
           </div>
           <h1 className="mt-4 text-xl font-semibold tracking-tight text-foreground">Tienda Luna</h1>
@@ -68,7 +68,7 @@ export default function AdminLoginPage() {
         </div>
 
         {/* Card */}
-        <div className="overflow-hidden rounded-2xl border border-border bg-card/80 shadow-2xl shadow-black/20 ring-1 ring-border/50 backdrop-blur-xl">
+        <div className="overflow-hidden rounded-2xl border border-border bg-card/80 shadow-2xl shadow-black/20 ring-1 ring-border/50 backdrop-blur-xl tl-interactive tl-hover-lift">
           {/* Card header */}
           <div className="border-b border-border bg-muted/30 px-6 py-4">
             <div className="flex items-center gap-3">
@@ -99,7 +99,7 @@ export default function AdminLoginPage() {
                     type="email"
                     value={email}
                     onChange={(ev) => setEmail(ev.target.value)}
-                    className="w-full rounded-lg border border-border bg-background py-2.5 pl-10 pr-4 text-sm text-foreground placeholder:text-muted-foreground focus:border-accent focus:outline-none focus:ring-2 focus:ring-accent/20 transition-colors"
+                    className="w-full rounded-lg border border-border bg-background py-2.5 pl-10 pr-4 text-sm text-foreground placeholder:text-muted-foreground focus:border-accent focus:outline-none focus:ring-2 focus:ring-accent/20 transition-colors tl-interactive"
                     placeholder="admin@tienda.com"
                     autoComplete="username"
                     required
@@ -123,7 +123,7 @@ export default function AdminLoginPage() {
                     type={showPassword ? "text" : "password"}
                     value={password}
                     onChange={(ev) => setPassword(ev.target.value)}
-                    className="w-full rounded-lg border border-border bg-background py-2.5 pl-10 pr-10 text-sm text-foreground focus:border-accent focus:outline-none focus:ring-2 focus:ring-accent/20 transition-colors"
+                    className="w-full rounded-lg border border-border bg-background py-2.5 pl-10 pr-10 text-sm text-foreground focus:border-accent focus:outline-none focus:ring-2 focus:ring-accent/20 transition-colors tl-interactive"
                     autoComplete="current-password"
                     required
                     aria-invalid={error ? true : undefined}
@@ -154,7 +154,7 @@ export default function AdminLoginPage() {
             <button
               type="submit"
               disabled={loading}
-              className="mt-6 flex w-full items-center justify-center gap-2 rounded-lg bg-accent px-4 py-3 text-sm font-semibold text-accent-foreground shadow-lg shadow-accent/20 transition-all hover:bg-accent/90 hover:shadow-xl disabled:cursor-not-allowed disabled:opacity-60"
+              className="mt-6 flex w-full items-center justify-center gap-2 rounded-lg bg-accent px-4 py-3 text-sm font-semibold text-accent-foreground shadow-lg shadow-accent/20 transition-all hover:bg-accent/90 hover:shadow-xl disabled:cursor-not-allowed disabled:opacity-60 tl-interactive tl-hover-lift tl-press tl-focus"
             >
               {loading ? (
                 <>
@@ -166,16 +166,6 @@ export default function AdminLoginPage() {
               )}
             </button>
           </form>
-
-          {/* Footer info */}
-          <div className="border-t border-border bg-muted/20 px-6 py-4">
-            <p className="text-center text-xs text-muted-foreground">
-              Credenciales de prueba preconfiguradas. Puedes cambiarlas en{" "}
-              <code className="rounded bg-background px-1.5 py-0.5 text-[11px] font-mono text-foreground">
-                lib/static-admin-auth.ts
-              </code>
-            </p>
-          </div>
         </div>
 
         {/* Help text */}

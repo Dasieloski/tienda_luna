@@ -68,8 +68,7 @@ export function KpiCard({
   return (
     <div
       className={cn(
-        "group relative overflow-hidden rounded-2xl border border-tl-line-subtle p-5 transition-all duration-300",
-        "hover:-translate-y-0.5 hover:shadow-lg",
+        "group relative overflow-hidden rounded-2xl border border-tl-line-subtle p-5 tl-card-hover",
         styles.bg,
         isAccentCard && "border-transparent text-tl-accent-fg",
         className
@@ -95,15 +94,15 @@ export function KpiCard({
           </p>
           {actionable ? (
             <div className={cn(
-              "flex h-7 w-7 items-center justify-center rounded-lg transition-colors",
+              "flex h-7 w-7 items-center justify-center rounded-lg transition-colors tl-interactive",
               isAccentCard 
                 ? "bg-tl-accent-fg/10 text-tl-accent-fg" 
                 : "bg-tl-canvas-subtle text-tl-muted group-hover:bg-tl-accent group-hover:text-tl-accent-fg"
             )}>
-              <ArrowUpRight className="h-4 w-4" aria-hidden />
+              <ArrowUpRight className="h-4 w-4 transition-transform duration-200 group-hover:scale-110" aria-hidden />
             </div>
           ) : icon && (
-            <div className={cn("shrink-0", styles.accent)}>
+            <div className={cn("shrink-0 transition-transform duration-200 group-hover:scale-105", styles.accent)}>
               {icon}
             </div>
           )}
@@ -160,9 +159,9 @@ interface StatCardProps {
 
 export function StatCard({ label, value, icon, className }: StatCardProps) {
   return (
-    <div className={cn("flex items-center gap-3", className)}>
+    <div className={cn("group flex items-center gap-3", className)}>
       {icon && (
-        <span className="text-tl-muted">{icon}</span>
+        <span className="text-tl-muted transition-transform duration-200 group-hover:scale-105">{icon}</span>
       )}
       <div>
         <span className="text-4xl font-bold tabular-nums tracking-tight text-tl-ink">

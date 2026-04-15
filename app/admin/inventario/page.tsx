@@ -239,25 +239,18 @@ export default function InventoryPage() {
         {/* Main content: Table + Form */}
         <div className="grid gap-6 lg:grid-cols-[1fr_320px]">
           {/* Products table */}
-          {loading ? (
-            <div className="tl-glass flex min-h-[400px] items-center justify-center rounded-xl">
-              <div className="flex flex-col items-center gap-3">
-                <Boxes className="h-8 w-8 text-tl-accent tl-pulse" aria-hidden />
-                <p className="text-sm text-tl-muted">Cargando productos...</p>
-              </div>
-            </div>
-          ) : (
-            <DataTable
-              columns={columns}
-              data={products}
-              keyExtractor={(row) => row.id}
-              searchable
-              searchPlaceholder="Buscar por SKU o nombre..."
-              searchKeys={["sku", "name"]}
-              emptyMessage="No hay productos en el catálogo"
-              maxHeight="calc(100vh - 340px)"
-            />
-          )}
+          <DataTable
+            columns={columns}
+            data={products}
+            keyExtractor={(row) => row.id}
+            searchable
+            searchPlaceholder="Buscar por SKU o nombre..."
+            searchKeys={["sku", "name"]}
+            emptyMessage="No hay productos en el catálogo"
+            maxHeight="calc(100vh - 340px)"
+            loading={loading}
+            skeletonRows={12}
+          />
 
           {/* New product form */}
           <div className="h-fit tl-glass tl-gradient-border rounded-xl p-5">

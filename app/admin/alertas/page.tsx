@@ -282,6 +282,8 @@ export default function AlertsPage() {
             searchKeys={["type", "deviceId"]}
             emptyMessage="No hay eventos registrados"
             maxHeight="400px"
+            loading={loading}
+            skeletonRows={10}
           />
         </section>
       </div>

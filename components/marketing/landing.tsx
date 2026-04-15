@@ -18,6 +18,27 @@ import {
   Workflow,
 } from "lucide-react"
 import Link from "next/link"
+import { cn } from "@/lib/utils"
+
+const NAV_LINKS = [
+  { href: "#categorias", label: "Categorias", Icon: Package },
+  { href: "#flujo", label: "Como funciona", Icon: Workflow },
+  { href: "#pilares", label: "Beneficios", Icon: Layers3 },
+  { href: "#faq", label: "FAQ", Icon: HelpCircle },
+] as const
+
+const TL_STAGGER = [
+  "tl-delay-1",
+  "tl-delay-2",
+  "tl-delay-3",
+  "tl-delay-4",
+  "tl-delay-5",
+  "tl-delay-6",
+] as const
+
+function staggerReveal(index: number) {
+  return cn("tl-reveal", TL_STAGGER[index % TL_STAGGER.length])
+}
 
 const pillars = [
   {
@@ -87,7 +108,7 @@ export function Landing() {
       {/* Ambient glow effects */}
       <div className="pointer-events-none fixed inset-0 overflow-hidden" aria-hidden>
         <div className="absolute -top-[40%] left-1/2 h-[80%] w-[80%] -translate-x-1/2 rounded-full bg-accent/5 blur-[120px]" />
-        <div className="absolute -bottom-[20%] -right-[10%] h-[50%] w-[40%] rounded-full bg-violet-500/5 blur-[100px]" />
+        <div className="absolute -bottom-[20%] -right-[10%] h-[50%] w-[40%] rounded-full bg-tl-secondary/8 blur-[100px]" />
       </div>
 
       {/* Noise texture */}
@@ -99,42 +120,38 @@ export function Landing() {
 
       <a
         href="#contenido-principal"
-        className="sr-only focus:not-sr-only focus:absolute focus:left-4 focus:top-4 focus:z-50 focus:rounded-lg focus:bg-accent focus:px-4 focus:py-2 focus:text-accent-foreground"
+        className="sr-only focus:not-sr-only focus:absolute focus:left-4 focus:top-4 focus:z-50 focus:rounded-[var(--tl-radius-sm)] focus:bg-tl-accent focus:px-4 focus:py-2 focus:text-tl-accent-fg focus:outline-none"
       >
         Saltar al contenido
       </a>
 
       {/* Header */}
-      <header className="sticky top-0 z-50 border-b border-border/50 bg-background/80 backdrop-blur-xl">
-        <div className="absolute inset-x-0 bottom-0 h-px bg-gradient-to-r from-transparent via-accent/30 to-transparent" />
+      <header className="sticky top-0 z-50 border-b border-tl-line-subtle bg-tl-canvas-inset/92 shadow-[var(--tl-shadow-sm)] backdrop-blur-md">
         <div className="mx-auto flex max-w-6xl items-center justify-between gap-4 px-4 py-3 sm:px-6">
           <Link
             href="/"
-            className="group flex items-center gap-3 rounded-2xl py-1 pr-2 transition-colors hover:bg-muted/50"
+            className="group flex items-center gap-3 rounded-2xl py-1.5 pr-3 transition-colors hover:bg-tl-canvas-subtle"
           >
-            <span className="relative flex h-10 w-10 items-center justify-center overflow-hidden rounded-2xl bg-gradient-to-br from-accent to-violet-600 text-accent-foreground shadow-md ring-2 ring-border transition-transform duration-300 group-hover:scale-105">
+            <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl bg-tl-accent text-tl-accent-fg shadow-[var(--tl-shadow-sm)] transition-transform duration-200 group-hover:scale-[1.02]">
               <ShoppingBag className="h-5 w-5" strokeWidth={2} aria-hidden />
-              <span className="absolute inset-0 bg-gradient-to-t from-black/15 to-transparent" aria-hidden />
             </span>
-            <span className="text-sm font-bold tracking-tight text-foreground">Tienda Luna</span>
+            <span className="text-base font-bold tracking-tight text-tl-ink">Tienda Luna</span>
           </Link>
           
           <nav
             aria-label="Principal"
-            className="hidden items-center gap-1 rounded-full border border-border bg-card/50 p-1 shadow-inner md:flex"
+            className="hidden items-center gap-2 md:flex"
           >
-            {[
-              { href: "#categorias", label: "Categorias", Icon: Package },
-              { href: "#flujo", label: "Como funciona", Icon: Workflow },
-              { href: "#pilares", label: "Beneficios", Icon: Layers3 },
-              { href: "#faq", label: "FAQ", Icon: HelpCircle },
-            ].map(({ href, label, Icon }) => (
+            {NAV_LINKS.map(({ href, label, Icon }) => (
               <a
                 key={href}
                 href={href}
-                className="inline-flex items-center gap-1.5 rounded-full px-3 py-2 text-xs font-semibold text-muted-foreground transition-all hover:bg-muted hover:text-foreground"
+                className={cn(
+                  "tl-nav-pill inline-flex items-center gap-2 !px-3 !py-2 !text-xs font-semibold",
+                  "text-tl-muted hover:text-tl-ink"
+                )}
               >
-                <Icon className="h-3.5 w-3.5 text-accent" aria-hidden />
+                <Icon className="h-3.5 w-3.5 shrink-0 text-tl-accent" aria-hidden />
                 {label}
               </a>
             ))}
@@ -143,32 +160,33 @@ export function Landing() {
           <div className="flex items-center gap-2">
             <Link
               href="/admin/login"
-              className="inline-flex items-center gap-2 rounded-full bg-gradient-to-r from-accent to-violet-600 px-4 py-2.5 text-xs font-bold text-white shadow-lg shadow-accent/25 ring-1 ring-white/20 transition-all hover:shadow-xl hover:-translate-y-0.5 sm:text-sm"
+              className={cn(
+                "tl-btn tl-btn-dark !gap-2 !px-4 !py-2 !text-xs sm:!text-sm",
+                "no-underline"
+              )}
             >
               Panel admin
-              <LayoutDashboard className="h-4 w-4 opacity-95" aria-hidden />
+              <LayoutDashboard className="h-4 w-4 shrink-0 opacity-95" aria-hidden />
             </Link>
           </div>
         </div>
 
         {/* Mobile nav */}
-        <div className="border-t border-border/40 bg-card/50 md:hidden">
+        <div className="border-t border-tl-line-subtle bg-tl-canvas-subtle/80 md:hidden">
           <nav
             aria-label="Secciones"
-            className="mx-auto flex max-w-6xl flex-wrap justify-center gap-1 px-2 py-2.5"
+            className="mx-auto flex max-w-6xl flex-wrap justify-center gap-2 px-3 py-3"
           >
-            {[
-              { href: "#categorias", label: "Categorias", Icon: Package },
-              { href: "#flujo", label: "Flujo", Icon: Workflow },
-              { href: "#pilares", label: "Beneficios", Icon: Layers3 },
-              { href: "#faq", label: "FAQ", Icon: HelpCircle },
-            ].map(({ href, label, Icon }) => (
+            {NAV_LINKS.map(({ href, label, Icon }) => (
               <a
                 key={href}
                 href={href}
-                className="inline-flex items-center gap-1 rounded-full border border-border bg-card px-2.5 py-1.5 text-[11px] font-semibold text-muted-foreground shadow-sm hover:border-accent/30 hover:text-foreground"
+                className={cn(
+                  "tl-nav-pill inline-flex items-center gap-1.5 !px-3 !py-1.5 !text-[11px] font-semibold",
+                  "text-tl-muted hover:text-tl-ink"
+                )}
               >
-                <Icon className="h-3 w-3 text-accent" aria-hidden />
+                <Icon className="h-3 w-3 shrink-0 text-tl-accent" aria-hidden />
                 {label}
               </a>
             ))}
@@ -184,30 +202,34 @@ export function Landing() {
         >
           <div className="grid items-center gap-14 lg:grid-cols-[1fr_minmax(0,420px)] lg:gap-12">
             <div>
-              <p className="inline-flex items-center gap-2 rounded-full border border-border bg-card/80 px-3 py-1.5 text-xs font-medium text-muted-foreground shadow-sm backdrop-blur animate-in fade-in slide-in-from-bottom-2 duration-500">
+              <p
+                className={cn(
+                  "tl-reveal tl-delay-1 inline-flex items-center gap-2 rounded-full border border-border bg-card/80 px-3 py-1.5 text-xs font-medium text-muted-foreground shadow-sm backdrop-blur"
+                )}
+              >
                 <Store className="h-3.5 w-3.5 text-accent" aria-hidden />
                 Tu tienda de productos varios
               </p>
               <h1
                 id="hero-title"
-                className="mt-6 text-4xl font-semibold tracking-tight text-balance text-foreground sm:text-5xl sm:leading-[1.06] lg:text-[3.25rem] animate-in fade-in slide-in-from-bottom-3 duration-500 delay-100"
+                className="tl-reveal tl-delay-2 mt-6 text-4xl font-semibold tracking-tight text-balance text-foreground sm:text-5xl sm:leading-[1.06] lg:text-[3.25rem]"
               >
                 Gestiona tu tienda con la precision que merece
               </h1>
-              <p className="mt-5 max-w-xl text-lg leading-relaxed text-pretty text-muted-foreground sm:text-xl animate-in fade-in slide-in-from-bottom-3 duration-500 delay-200">
+              <p className="tl-reveal tl-delay-3 mt-5 max-w-xl text-lg leading-relaxed text-pretty text-muted-foreground sm:text-xl">
                 Sistema de punto de venta disenado para tiendas de productos varios. Controla inventario, registra ventas y analiza tu negocio desde cualquier lugar.
               </p>
-              <div className="mt-10 flex flex-wrap items-center gap-3 animate-in fade-in slide-in-from-bottom-3 duration-500 delay-300">
+              <div className="tl-reveal tl-delay-4 mt-10 flex flex-wrap items-center gap-3">
                 <Link
                   href="/admin/login"
-                  className="inline-flex items-center gap-2 rounded-full bg-foreground px-6 py-3 text-sm font-semibold text-background shadow-lg ring-1 ring-foreground/15 transition-all hover:shadow-xl hover:-translate-y-0.5"
+                  className={cn("tl-btn tl-btn-dark !gap-2 no-underline")}
                 >
                   Iniciar sesion
                   <ArrowRight className="h-4 w-4" aria-hidden />
                 </Link>
                 <a
                   href="#categorias"
-                  className="inline-flex items-center gap-2 rounded-full border border-border bg-card/70 px-6 py-3 text-sm font-medium text-foreground backdrop-blur transition-all hover:bg-muted hover:-translate-y-0.5"
+                  className={cn("tl-btn tl-btn-secondary !gap-2 no-underline")}
                 >
                   Ver categorias
                 </a>
@@ -215,7 +237,7 @@ export function Landing() {
             </div>
 
             {/* Hero visual */}
-            <div className="animate-in fade-in slide-in-from-bottom-4 duration-700 delay-400">
+            <div className="tl-reveal tl-delay-5">
               <div
                 className="relative overflow-hidden rounded-3xl border border-border bg-card/70 p-1 shadow-2xl shadow-accent/10 ring-1 ring-border backdrop-blur-xl"
                 role="img"
@@ -245,18 +267,18 @@ export function Landing() {
           </div>
 
           {/* Stats */}
-          <dl className="mt-16 grid gap-6 border-t border-border/50 pt-12 sm:grid-cols-3 animate-in fade-in slide-in-from-bottom-4 duration-500 delay-500">
-            <div className="text-center sm:text-left">
+          <dl className="mt-16 grid gap-6 border-t border-border/50 pt-12 sm:grid-cols-3">
+            <div className={cn("text-center sm:text-left", staggerReveal(0))}>
               <dt className="text-xs font-medium uppercase tracking-wider text-muted-foreground">Disponibilidad</dt>
               <dd className="mt-1 text-2xl font-semibold tabular-nums tracking-tight text-foreground">99.9%</dd>
               <dd className="mt-1 text-sm text-muted-foreground">Funciona offline</dd>
             </div>
-            <div className="text-center sm:text-left">
+            <div className={cn("text-center sm:text-left", staggerReveal(1))}>
               <dt className="text-xs font-medium uppercase tracking-wider text-muted-foreground">Transacciones</dt>
               <dd className="mt-1 text-2xl font-semibold tabular-nums tracking-tight text-foreground">Ilimitadas</dd>
               <dd className="mt-1 text-sm text-muted-foreground">Sin restricciones</dd>
             </div>
-            <div className="text-center sm:text-left">
+            <div className={cn("text-center sm:text-left", staggerReveal(2))}>
               <dt className="text-xs font-medium uppercase tracking-wider text-muted-foreground">Soporte</dt>
               <dd className="mt-1 text-2xl font-semibold tabular-nums tracking-tight text-foreground">24/7</dd>
               <dd className="mt-1 text-sm text-muted-foreground">Siempre disponible</dd>
@@ -271,7 +293,7 @@ export function Landing() {
           aria-labelledby="categorias-title"
         >
           <div className="mx-auto max-w-6xl px-4 sm:px-6">
-            <div className="max-w-2xl">
+            <div className={cn("max-w-2xl", "tl-reveal tl-delay-1")}>
               <h2 id="categorias-title" className="text-xs font-semibold uppercase tracking-[0.2em] text-accent">
                 Categorias de productos
               </h2>
@@ -284,12 +306,15 @@ export function Landing() {
             </div>
             
             <div className="mt-14 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-              {categories.map(({ name, icon: Icon }) => (
+              {categories.map(({ name, icon: Icon }, i) => (
                 <div
                   key={name}
-                  className="group flex flex-col items-center gap-4 rounded-2xl border border-border bg-card p-6 shadow-sm ring-1 ring-border/40 transition-all hover:border-accent/30 hover:shadow-lg hover:-translate-y-1"
+                  className={cn(
+                    "group tl-card-hover flex flex-col items-center gap-4 rounded-2xl border border-border bg-card p-6 shadow-sm ring-1 ring-border/40 transition-shadow duration-200 hover:border-accent/30 hover:shadow-lg",
+                    staggerReveal(i)
+                  )}
                 >
-                  <div className="flex h-14 w-14 items-center justify-center rounded-xl bg-accent/10 text-accent ring-1 ring-accent/20 transition-transform group-hover:scale-110">
+                  <div className="flex h-14 w-14 items-center justify-center rounded-xl bg-accent/10 text-accent ring-1 ring-accent/20 transition-transform duration-200 ease-out group-hover:scale-105">
                     <Icon className="h-7 w-7" aria-hidden />
                   </div>
                   <span className="text-sm font-semibold text-foreground">{name}</span>
@@ -303,10 +328,13 @@ export function Landing() {
                 "Bebidas: refrescos, jugos, agua, cerveza y licores",
                 "Snacks: papas, galletas, dulces y botanas",
                 "Limpieza: detergentes, jabones, cloro y desinfectantes",
-              ].map((text) => (
+              ].map((text, i) => (
                 <li
                   key={text}
-                  className="flex gap-3 rounded-2xl border border-border bg-card p-5 shadow-sm ring-1 ring-border/40"
+                  className={cn(
+                    "tl-card-hover flex gap-3 rounded-2xl border border-border bg-card p-5 shadow-sm ring-1 ring-border/40 transition-shadow duration-200 hover:shadow-md",
+                    staggerReveal(i + 2)
+                  )}
                 >
                   <CheckCircle2 className="mt-0.5 h-5 w-5 shrink-0 text-accent" aria-hidden />
                   <span className="text-sm leading-relaxed text-foreground">{text}</span>
@@ -319,16 +347,23 @@ export function Landing() {
         {/* Flow */}
         <section id="flujo" className="scroll-mt-24 py-20" aria-labelledby="flujo-title">
           <div className="mx-auto max-w-6xl px-4 sm:px-6">
-            <h2 id="flujo-title" className="text-xs font-semibold uppercase tracking-[0.2em] text-accent">
-              Como funciona
-            </h2>
-            <p className="mt-3 max-w-xl text-3xl font-semibold tracking-tight text-foreground sm:text-4xl">
-              Simple, rapido y confiable
-            </p>
+            <div className={cn("tl-reveal tl-delay-1")}>
+              <h2 id="flujo-title" className="text-xs font-semibold uppercase tracking-[0.2em] text-accent">
+                Como funciona
+              </h2>
+              <p className="mt-3 max-w-xl text-3xl font-semibold tracking-tight text-foreground sm:text-4xl">
+                Simple, rapido y confiable
+              </p>
+            </div>
             <ol className="mt-14 grid gap-6 sm:grid-cols-2 lg:grid-cols-4">
-              {steps.map((s) => (
+              {steps.map((s, i) => (
                 <li key={s.n}>
-                  <article className="group relative h-full rounded-2xl border border-border bg-card p-6 shadow-sm ring-1 ring-border/30 transition-all duration-300 hover:border-accent/30 hover:shadow-lg hover:-translate-y-1">
+                  <article
+                    className={cn(
+                      "group tl-card-hover relative h-full rounded-2xl border border-border bg-card p-6 shadow-sm ring-1 ring-border/30 transition-shadow duration-200 hover:border-accent/30 hover:shadow-lg",
+                      staggerReveal(i)
+                    )}
+                  >
                     <span className="font-mono text-xs font-medium text-accent">{s.n}</span>
                     <h3 className="mt-3 text-lg font-semibold text-foreground">{s.title}</h3>
                     <p className="mt-2 text-sm leading-relaxed text-muted-foreground">{s.desc}</p>
@@ -346,17 +381,24 @@ export function Landing() {
           aria-labelledby="pilares-title"
         >
           <div className="mx-auto max-w-6xl px-4 sm:px-6">
-            <h2 id="pilares-title" className="text-xs font-semibold uppercase tracking-[0.2em] text-accent">
-              Beneficios
-            </h2>
-            <p className="mt-3 max-w-2xl text-3xl font-semibold tracking-tight text-foreground sm:text-4xl">
-              Todo lo que necesitas para crecer
-            </p>
+            <div className={cn("tl-reveal tl-delay-1")}>
+              <h2 id="pilares-title" className="text-xs font-semibold uppercase tracking-[0.2em] text-accent">
+                Beneficios
+              </h2>
+              <p className="mt-3 max-w-2xl text-3xl font-semibold tracking-tight text-foreground sm:text-4xl">
+                Todo lo que necesitas para crecer
+              </p>
+            </div>
             <ul className="mt-14 grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
-              {pillars.map(({ icon: Icon, title, body }) => (
+              {pillars.map(({ icon: Icon, title, body }, i) => (
                 <li key={title}>
-                  <article className="group flex h-full flex-col rounded-2xl border border-border bg-card p-6 shadow-sm transition-all duration-300 hover:border-accent/35 hover:shadow-xl hover:-translate-y-1">
-                    <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-accent/10 text-accent ring-1 ring-accent/20 transition-transform duration-300 group-hover:scale-105">
+                  <article
+                    className={cn(
+                      "group tl-card-hover flex h-full flex-col rounded-2xl border border-border bg-card p-6 shadow-sm transition-shadow duration-200 hover:border-accent/35 hover:shadow-xl",
+                      staggerReveal(i)
+                    )}
+                  >
+                    <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-accent/10 text-accent ring-1 ring-accent/20 transition-transform duration-200 ease-out group-hover:scale-105">
                       <Icon className="h-5 w-5" aria-hidden />
                     </div>
                     <h3 className="mt-4 text-lg font-semibold text-foreground">{title}</h3>
@@ -372,7 +414,7 @@ export function Landing() {
         <section className="py-20" aria-labelledby="confianza-title">
           <div className="mx-auto max-w-6xl px-4 sm:px-6">
             <div className="grid gap-10 lg:grid-cols-2 lg:items-center lg:gap-16">
-              <div>
+              <div className={cn("tl-reveal tl-delay-1")}>
                 <h2 id="confianza-title" className="text-xs font-semibold uppercase tracking-[0.2em] text-accent">
                   Seguridad y control
                 </h2>
@@ -384,14 +426,24 @@ export function Landing() {
                 </p>
               </div>
               <div className="grid gap-4">
-                <div className="flex gap-4 rounded-2xl border border-border bg-card p-5 ring-1 ring-border/40">
+                <div
+                  className={cn(
+                    "tl-card-hover flex gap-4 rounded-2xl border border-border bg-card p-5 ring-1 ring-border/40 transition-shadow duration-200 hover:shadow-md",
+                    staggerReveal(1)
+                  )}
+                >
                   <Lock className="h-6 w-6 shrink-0 text-accent" aria-hidden />
                   <div>
                     <h3 className="font-semibold text-foreground">Acceso protegido</h3>
                     <p className="mt-1 text-sm text-muted-foreground">Solo usuarios autorizados pueden acceder al sistema.</p>
                   </div>
                 </div>
-                <div className="flex gap-4 rounded-2xl border border-border bg-card p-5 ring-1 ring-border/40">
+                <div
+                  className={cn(
+                    "tl-card-hover flex gap-4 rounded-2xl border border-border bg-card p-5 ring-1 ring-border/40 transition-shadow duration-200 hover:shadow-md",
+                    staggerReveal(2)
+                  )}
+                >
                   <ShieldCheck className="h-6 w-6 shrink-0 text-accent" aria-hidden />
                   <div>
                     <h3 className="font-semibold text-foreground">Datos respaldados</h3>
@@ -406,17 +458,22 @@ export function Landing() {
         {/* FAQ */}
         <section id="faq" className="scroll-mt-24 border-t border-border/60 bg-muted/30 py-20" aria-labelledby="faq-title">
           <div className="mx-auto max-w-3xl px-4 sm:px-6">
-            <h2 id="faq-title" className="text-center text-xs font-semibold uppercase tracking-[0.2em] text-accent">
-              Preguntas frecuentes
-            </h2>
-            <p className="mt-3 text-center text-3xl font-semibold tracking-tight text-foreground sm:text-4xl">
-              Resolvemos tus dudas
-            </p>
+            <div className={cn("tl-reveal tl-delay-1 text-center")}>
+              <h2 id="faq-title" className="text-xs font-semibold uppercase tracking-[0.2em] text-accent">
+                Preguntas frecuentes
+              </h2>
+              <p className="mt-3 text-3xl font-semibold tracking-tight text-foreground sm:text-4xl">
+                Resolvemos tus dudas
+              </p>
+            </div>
             <div className="mt-12 space-y-3">
-              {faqs.map((item) => (
+              {faqs.map((item, i) => (
                 <details
                   key={item.q}
-                  className="group rounded-2xl border border-border bg-card px-5 py-1 shadow-sm ring-1 ring-border/40 open:pb-4 open:shadow-md"
+                  className={cn(
+                    "group rounded-2xl border border-border bg-card px-5 py-1 shadow-sm ring-1 ring-border/40 transition-shadow duration-200 hover:shadow-md open:pb-4 open:shadow-md",
+                    staggerReveal(i + 1)
+                  )}
                 >
                   <summary className="cursor-pointer list-none py-4 text-sm font-semibold text-foreground outline-none marker:content-none [&::-webkit-details-marker]:hidden">
                     <span className="flex items-center justify-between gap-3">
@@ -436,15 +493,18 @@ export function Landing() {
         {/* CTA */}
         <section className="mx-auto max-w-6xl px-4 pb-24 pt-4 sm:px-6" aria-labelledby="cta-final-title">
           <div className="relative overflow-hidden rounded-3xl border border-border bg-gradient-to-br from-accent/15 via-card to-card px-8 py-14 text-center shadow-2xl ring-1 ring-border sm:px-16 sm:py-16">
-            <h2 id="cta-final-title" className="text-2xl font-semibold tracking-tight text-foreground sm:text-3xl">
+            <h2
+              id="cta-final-title"
+              className={cn("tl-reveal tl-delay-1 text-2xl font-semibold tracking-tight text-foreground sm:text-3xl")}
+            >
               Comienza a gestionar tu tienda hoy
             </h2>
-            <p className="mx-auto mt-3 max-w-lg text-sm text-muted-foreground sm:text-base">
+            <p className={cn("tl-reveal tl-delay-2 mx-auto mt-3 max-w-lg text-sm text-muted-foreground sm:text-base")}>
               Accede al panel administrativo para controlar ventas, inventario y analizar el rendimiento de tu negocio.
             </p>
             <Link
               href="/admin/login"
-              className="mt-8 inline-flex items-center gap-2 rounded-full bg-accent px-7 py-3.5 text-sm font-semibold text-accent-foreground shadow-lg ring-1 ring-accent/40 transition-all hover:shadow-xl hover:-translate-y-0.5"
+              className={cn("tl-btn tl-btn-primary tl-reveal tl-delay-3 mt-8 !gap-2 no-underline")}
             >
               Acceder al panel
               <ArrowRight className="h-4 w-4" aria-hidden />
@@ -470,7 +530,10 @@ export function Landing() {
             <a href="#pilares" className="transition-colors hover:text-foreground">
               Beneficios
             </a>
-            <Link href="/admin/login" className="font-medium text-accent transition-colors hover:text-foreground">
+            <Link
+              href="/admin/login"
+              className="tl-nav-pill !px-3 !py-1.5 !text-xs font-semibold text-tl-muted no-underline hover:text-tl-ink"
+            >
               Admin
             </Link>
           </nav>

@@ -137,6 +137,8 @@ model Sale {
   storeId      String
   store        Store     @relation(fields: [storeId], references: [id], onDelete: Cascade)
   deviceId     String
+  /// Quién registró la venta (cajero/admin). Texto libre (email o nombre).
+  soldBy       String?
   clientSaleId String?
   customerId   String?
   customer     Customer? @relation(fields: [customerId], references: [id])

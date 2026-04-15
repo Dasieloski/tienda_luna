@@ -3,6 +3,7 @@
 import Link from "next/link";
 import {
   Bell,
+  Clock,
   Settings,
   Users,
 } from "lucide-react";
@@ -21,7 +22,7 @@ export function Topbar({
       {/* Left: Logo and quick nav */}
       <div className="flex items-center gap-6">
         {/* Logo pill */}
-        <div className="flex h-10 items-center rounded-full border border-tl-line bg-tl-canvas-inset px-4">
+        <div className="flex h-10 items-center rounded-full border border-tl-line bg-tl-canvas-inset px-4 tl-interactive tl-hover-lift">
           <span className="text-sm font-semibold text-tl-ink">Tienda Luna</span>
         </div>
         
@@ -30,7 +31,7 @@ export function Topbar({
           <Link 
             href="/admin" 
             className={cn(
-              "tl-nav-pill",
+              "tl-nav-pill tl-interactive tl-hover-lift tl-press tl-focus",
               title === "Dashboard" && "active"
             )}
           >
@@ -39,16 +40,28 @@ export function Topbar({
           <Link
             href="/admin/ventas"
             className={cn(
-              "tl-nav-pill",
+              "tl-nav-pill tl-interactive tl-hover-lift tl-press tl-focus",
               title === "Ventas" && "active"
             )}
           >
             Ventas
           </Link>
           <Link
+            href="/admin/historial"
+            className={cn(
+              "tl-nav-pill tl-interactive tl-hover-lift tl-press tl-focus",
+              title === "Historial" && "active"
+            )}
+          >
+            <span className="inline-flex items-center gap-2">
+              <Clock className="h-4 w-4 text-tl-accent" aria-hidden />
+              Historial
+            </span>
+          </Link>
+          <Link
             href="/admin/inventario"
             className={cn(
-              "tl-nav-pill",
+              "tl-nav-pill tl-interactive tl-hover-lift tl-press tl-focus",
               title === "Inventario" && "active"
             )}
           >
@@ -57,7 +70,7 @@ export function Topbar({
           <Link
             href="/admin/analitica"
             className={cn(
-              "tl-nav-pill",
+              "tl-nav-pill tl-interactive tl-hover-lift tl-press tl-focus",
               title === "Analítica" && "active"
             )}
           >
@@ -66,7 +79,7 @@ export function Topbar({
           <Link
             href="/admin/alertas"
             className={cn(
-              "tl-nav-pill",
+              "tl-nav-pill tl-interactive tl-hover-lift tl-press tl-focus",
               title === "Alertas" && "active"
             )}
           >
@@ -75,7 +88,7 @@ export function Topbar({
           <Link
             href="/admin/config"
             className={cn(
-              "tl-nav-pill",
+              "tl-nav-pill tl-interactive tl-hover-lift tl-press tl-focus",
               title === "Configuración" && "active"
             )}
           >
@@ -89,7 +102,7 @@ export function Topbar({
         {/* Settings button with icon */}
         <Link
           href="/admin/config"
-          className="flex items-center gap-2 rounded-full border border-tl-line bg-tl-canvas-inset px-4 py-2 text-sm font-medium text-tl-ink transition-colors hover:bg-tl-canvas-subtle"
+          className="flex items-center gap-2 rounded-full border border-tl-line bg-tl-canvas-inset px-4 py-2 text-sm font-medium text-tl-ink tl-interactive tl-hover-lift tl-press tl-focus hover:bg-tl-canvas-subtle"
         >
           <Settings className="h-4 w-4" aria-hidden />
           <span className="hidden sm:inline">Ajustes</span>
@@ -98,7 +111,7 @@ export function Topbar({
         {/* Notifications */}
         <button
           type="button"
-          className="relative flex h-10 w-10 items-center justify-center rounded-full border border-tl-line bg-tl-canvas-inset transition-colors hover:bg-tl-canvas-subtle"
+          className="relative flex h-10 w-10 items-center justify-center rounded-full border border-tl-line bg-tl-canvas-inset tl-interactive tl-hover-lift tl-press tl-focus hover:bg-tl-canvas-subtle"
           title="Notificaciones"
         >
           <Bell className="h-4 w-4 text-tl-ink" aria-hidden />
@@ -111,7 +124,7 @@ export function Topbar({
         {/* User avatar */}
         <button
           type="button"
-          className="flex h-10 w-10 items-center justify-center rounded-full border border-tl-line bg-tl-canvas-inset transition-colors hover:bg-tl-canvas-subtle"
+          className="flex h-10 w-10 items-center justify-center rounded-full border border-tl-line bg-tl-canvas-inset tl-interactive tl-hover-lift tl-press tl-focus hover:bg-tl-canvas-subtle"
           title="Perfil"
         >
           <Users className="h-5 w-5 text-tl-muted" aria-hidden />
