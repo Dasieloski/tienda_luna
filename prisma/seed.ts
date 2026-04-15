@@ -1,6 +1,6 @@
 import "./env-load";
 import { hash } from "bcryptjs";
-import { PrismaClient } from "@prisma/client";
+import { Prisma, PrismaClient } from "@prisma/client";
 import { signDeviceSession } from "../lib/jwt";
 import { randomUUID } from "crypto";
 
@@ -171,18 +171,7 @@ async function main() {
   };
 
   const salesSeed: SaleSeed[] = [];
-  const eventsSeed: {
-    clientEventId: string;
-    type: string;
-    payload: unknown;
-    payloadHash: string;
-    storeId: string;
-    deviceId: string;
-    clientTimestamp: bigint;
-    serverTimestamp: Date;
-    status: "ACCEPTED";
-    relatedClientSaleId: string;
-  }[] = [];
+  const eventsSeed: Prisma.EventCreateManyInput[] = [];
 
   for (let i = 0; i < saleCount; i++) {
     const base = new Date(start.getTime() + Math.random() * (now.getTime() - start.getTime()));
