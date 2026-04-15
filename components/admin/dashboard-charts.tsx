@@ -16,10 +16,12 @@ import {
   YAxis,
 } from "recharts";
 
-const VIOLET = "#a78bfa";
-const FUCHSIA = "#e879f9";
+// Colors aligned with design tokens
+const VIOLET = "#8b5cf6";
+const FUCHSIA = "#d946ef";
 const CYAN = "#22d3ee";
 const AMBER = "#fbbf24";
+const EMERALD = "#34d399";
 
 type Hourly = { hora: number; ventas: number; ingresosCents: number };
 type TopP = { nombre: string; unidades: number; subtotalCents: number };
@@ -38,15 +40,16 @@ function ChartFrame({
 }) {
   return (
     <div
-      className={`relative overflow-hidden rounded-2xl border border-white/10 bg-gradient-to-br from-zinc-900/90 via-zinc-950/80 to-black/60 p-5 shadow-xl ring-1 ring-white/5 ${className}`}
+      className={`tl-glass relative overflow-hidden rounded-xl p-5 ${className}`}
     >
+      {/* Ambient glow */}
       <div
-        className="pointer-events-none absolute -right-20 -top-20 h-40 w-40 rounded-full bg-violet-500/15 blur-3xl"
+        className="pointer-events-none absolute -right-16 -top-16 h-32 w-32 rounded-full bg-tl-accent/10 blur-3xl"
         aria-hidden
       />
       <div className="relative">
-        <h3 className="text-sm font-semibold tracking-tight text-white">{title}</h3>
-        {subtitle ? <p className="mt-0.5 text-xs text-zinc-500">{subtitle}</p> : null}
+        <h3 className="text-sm font-semibold tracking-tight text-tl-ink">{title}</h3>
+        {subtitle && <p className="mt-0.5 text-xs text-tl-muted">{subtitle}</p>}
         <div className="mt-4 h-[260px] w-full">{children}</div>
       </div>
     </div>
@@ -54,11 +57,12 @@ function ChartFrame({
 }
 
 const tipStyle = {
-  backgroundColor: "rgba(24,24,27,0.95)",
-  border: "1px solid rgba(255,255,255,0.12)",
-  borderRadius: "12px",
+  backgroundColor: "var(--tl-canvas-inset)",
+  border: "1px solid var(--tl-line)",
+  borderRadius: "8px",
   fontSize: "12px",
   padding: "8px 12px",
+  color: "var(--tl-ink)",
 };
 
 export function DashboardCharts({
@@ -80,18 +84,17 @@ export function DashboardCharts({
         ingresos: Math.round(h.ingresosCents / 100),
         ventas: h.ventas,
       })),
-    [hourly],
+    [hourly]
   );
 
   const productsChart = useMemo(
     () =>
       topProducts.slice(0, 6).map((p) => ({
-        nombre:
-          p.nombre.length > 18 ? `${p.nombre.slice(0, 16)}…` : p.nombre,
+        nombre: p.nombre.length > 18 ? `${p.nombre.slice(0, 16)}...` : p.nombre,
         unidades: p.unidades,
         ingresos: Math.round(p.subtotalCents / 100),
       })),
-    [topProducts],
+    [topProducts]
   );
 
   const pieData = useMemo(() => {
@@ -101,20 +104,20 @@ export function DashboardCharts({
     }
     const sum = slice.reduce((a, p) => a + p.subtotalCents, 0) || 1;
     return slice.map((p, i) => ({
-      name: p.nombre.length > 14 ? `${p.nombre.slice(0, 12)}…` : p.nombre,
+      name: p.nombre.length > 14 ? `${p.nombre.slice(0, 12)}...` : p.nombre,
       value: Math.round((p.subtotalCents / sum) * 100),
-      fill: [VIOLET, FUCHSIA, CYAN, AMBER, "#94a3b8"][i % 5],
+      fill: [VIOLET, FUCHSIA, CYAN, AMBER, EMERALD][i % 5],
     }));
   }, [topProducts]);
 
   const devicesChart = useMemo(
     () =>
       devices.slice(0, 8).map((d) => ({
-        id: d.deviceId.length > 10 ? `${d.deviceId.slice(0, 8)}…` : d.deviceId,
+        id: d.deviceId.length > 10 ? `${d.deviceId.slice(0, 8)}...` : d.deviceId,
         ventas: d.ventas,
         ingresos: Math.round(d.ingresosCents / 100),
       })),
-    [devices],
+    [devices]
   );
 
   if (!mounted) {
@@ -123,7 +126,7 @@ export function DashboardCharts({
         {[1, 2, 3, 4].map((i) => (
           <div
             key={i}
-            className="h-[340px] animate-pulse rounded-2xl bg-white/[0.04] ring-1 ring-white/5"
+            className="h-[340px] animate-pulse rounded-xl bg-tl-canvas-subtle"
           />
         ))}
       </div>
@@ -132,25 +135,47 @@ export function DashboardCharts({
 
   return (
     <div className="grid gap-5 lg:grid-cols-2">
-      <ChartFrame title="Ingresos por hora (hoy)" subtitle="EUR · actualización en vivo al refrescar">
+      <ChartFrame
+        title="Ingresos por hora (hoy)"
+        subtitle="EUR - actualización en vivo"
+      >
         <ResponsiveContainer width="100%" height="100%">
-          <AreaChart data={hourlyChart} margin={{ top: 8, right: 8, left: 0, bottom: 0 }}>
+          <AreaChart
+            data={hourlyChart}
+            margin={{ top: 8, right: 8, left: 0, bottom: 0 }}
+          >
             <defs>
               <linearGradient id="tlFillIngresos" x1="0" y1="0" x2="0" y2="1">
-                <stop offset="0%" stopColor={VIOLET} stopOpacity={0.45} />
+                <stop offset="0%" stopColor={VIOLET} stopOpacity={0.4} />
                 <stop offset="100%" stopColor={VIOLET} stopOpacity={0} />
               </linearGradient>
             </defs>
-            <CartesianGrid strokeDasharray="3 6" stroke="rgba(255,255,255,0.06)" vertical={false} />
-            <XAxis dataKey="label" tick={{ fill: "#71717a", fontSize: 10 }} axisLine={false} tickLine={false} />
-            <YAxis tick={{ fill: "#71717a", fontSize: 10 }} axisLine={false} tickLine={false} width={36} />
+            <CartesianGrid
+              strokeDasharray="3 6"
+              stroke="var(--tl-line)"
+              vertical={false}
+            />
+            <XAxis
+              dataKey="label"
+              tick={{ fill: "var(--tl-muted)", fontSize: 10 }}
+              axisLine={false}
+              tickLine={false}
+            />
+            <YAxis
+              tick={{ fill: "var(--tl-muted)", fontSize: 10 }}
+              axisLine={false}
+              tickLine={false}
+              width={36}
+            />
             <Tooltip
               contentStyle={tipStyle}
-              labelStyle={{ color: "#fafafa" }}
               formatter={(v, name) => {
                 const n = typeof v === "number" ? v : Number(v);
                 const label = String(name);
-                return [label === "ingresos" ? `${n} €` : n, label === "ingresos" ? "Ingresos" : "Ventas"];
+                return [
+                  label === "ingresos" ? `${n} EUR` : n,
+                  label === "ingresos" ? "Ingresos" : "Ventas",
+                ];
               }}
             />
             <Area
@@ -166,17 +191,49 @@ export function DashboardCharts({
         </ResponsiveContainer>
       </ChartFrame>
 
-      <ChartFrame title="Unidades · top referencias" subtitle="Histórico acumulado por producto">
+      <ChartFrame
+        title="Unidades - top referencias"
+        subtitle="Histórico acumulado por producto"
+      >
         <ResponsiveContainer width="100%" height="100%">
-          <BarChart data={productsChart} margin={{ top: 8, right: 8, left: 0, bottom: 4 }}>
-            <CartesianGrid strokeDasharray="3 6" stroke="rgba(255,255,255,0.06)" vertical={false} />
-            <XAxis dataKey="nombre" tick={{ fill: "#71717a", fontSize: 9 }} axisLine={false} tickLine={false} interval={0} angle={-18} textAnchor="end" height={56} />
-            <YAxis tick={{ fill: "#71717a", fontSize: 10 }} axisLine={false} tickLine={false} width={28} />
+          <BarChart
+            data={productsChart}
+            margin={{ top: 8, right: 8, left: 0, bottom: 4 }}
+          >
+            <CartesianGrid
+              strokeDasharray="3 6"
+              stroke="var(--tl-line)"
+              vertical={false}
+            />
+            <XAxis
+              dataKey="nombre"
+              tick={{ fill: "var(--tl-muted)", fontSize: 9 }}
+              axisLine={false}
+              tickLine={false}
+              interval={0}
+              angle={-18}
+              textAnchor="end"
+              height={56}
+            />
+            <YAxis
+              tick={{ fill: "var(--tl-muted)", fontSize: 10 }}
+              axisLine={false}
+              tickLine={false}
+              width={28}
+            />
             <Tooltip
               contentStyle={tipStyle}
-              formatter={(v) => [`${typeof v === "number" ? v : Number(v)} u.`, "Unidades"]}
+              formatter={(v) => [
+                `${typeof v === "number" ? v : Number(v)} u.`,
+                "Unidades",
+              ]}
             />
-            <Bar dataKey="unidades" radius={[8, 8, 0, 0]} animationDuration={1000} isAnimationActive>
+            <Bar
+              dataKey="unidades"
+              radius={[6, 6, 0, 0]}
+              animationDuration={1000}
+              isAnimationActive
+            >
               {productsChart.map((_, i) => (
                 <Cell key={i} fill={i % 2 === 0 ? VIOLET : FUCHSIA} />
               ))}
@@ -185,7 +242,10 @@ export function DashboardCharts({
         </ResponsiveContainer>
       </ChartFrame>
 
-      <ChartFrame title="Mix de ingresos (top 5)" subtitle="% sobre el subtotal de referencias mostradas">
+      <ChartFrame
+        title="Mix de ingresos (top 5)"
+        subtitle="% sobre el subtotal de referencias"
+      >
         <ResponsiveContainer width="100%" height="100%">
           <PieChart>
             <Pie
@@ -201,27 +261,46 @@ export function DashboardCharts({
               isAnimationActive
             >
               {pieData.map((e, i) => (
-                <Cell key={i} fill={e.fill} stroke="rgba(0,0,0,0.2)" />
+                <Cell key={i} fill={e.fill} stroke="var(--tl-canvas)" strokeWidth={2} />
               ))}
             </Pie>
             <Tooltip
               contentStyle={tipStyle}
-              formatter={(v) => [`${typeof v === "number" ? v : Number(v)}%`, "Peso"]}
+              formatter={(v) => [
+                `${typeof v === "number" ? v : Number(v)}%`,
+                "Peso",
+              ]}
             />
           </PieChart>
         </ResponsiveContainer>
       </ChartFrame>
 
-      <ChartFrame title="Dispositivos (mes)" subtitle="Ventas registradas por terminal">
+      <ChartFrame
+        title="Dispositivos (mes)"
+        subtitle="Ventas registradas por terminal"
+      >
         <ResponsiveContainer width="100%" height="100%">
-          <BarChart layout="vertical" data={devicesChart} margin={{ top: 8, right: 16, left: 8, bottom: 0 }}>
-            <CartesianGrid strokeDasharray="3 6" stroke="rgba(255,255,255,0.06)" horizontal={false} />
-            <XAxis type="number" tick={{ fill: "#71717a", fontSize: 10 }} axisLine={false} tickLine={false} />
+          <BarChart
+            layout="vertical"
+            data={devicesChart}
+            margin={{ top: 8, right: 16, left: 8, bottom: 0 }}
+          >
+            <CartesianGrid
+              strokeDasharray="3 6"
+              stroke="var(--tl-line)"
+              horizontal={false}
+            />
+            <XAxis
+              type="number"
+              tick={{ fill: "var(--tl-muted)", fontSize: 10 }}
+              axisLine={false}
+              tickLine={false}
+            />
             <YAxis
               type="category"
               dataKey="id"
               width={88}
-              tick={{ fill: "#a1a1aa", fontSize: 10 }}
+              tick={{ fill: "var(--tl-muted)", fontSize: 10 }}
               axisLine={false}
               tickLine={false}
             />
@@ -229,7 +308,13 @@ export function DashboardCharts({
               contentStyle={tipStyle}
               formatter={(v) => [typeof v === "number" ? v : Number(v), "Ventas"]}
             />
-            <Bar dataKey="ventas" radius={[0, 8, 8, 0]} fill={CYAN} animationDuration={1000} isAnimationActive />
+            <Bar
+              dataKey="ventas"
+              radius={[0, 6, 6, 0]}
+              fill={CYAN}
+              animationDuration={1000}
+              isAnimationActive
+            />
           </BarChart>
         </ResponsiveContainer>
       </ChartFrame>
