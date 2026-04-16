@@ -218,8 +218,8 @@ export default function SalesHistoryPage() {
 
         {/* Filters */}
         <div className="tl-glass rounded-xl p-4">
-          <div className="flex flex-wrap items-end gap-3">
-            <div className="min-w-[240px] flex-1">
+          <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-end">
+            <div className="min-w-0 flex-1 sm:min-w-[240px]">
               <label className="mb-1 block text-xs font-semibold uppercase tracking-wider text-tl-muted">
                 Buscar (cajero, cliente, dispositivo)
               </label>
@@ -244,7 +244,7 @@ export default function SalesHistoryPage() {
                   setPage(1);
                   setFrom(e.target.value);
                 }}
-                className="tl-input w-[220px]"
+                className="tl-input w-full sm:w-[220px]"
               />
             </div>
             <div>
@@ -258,7 +258,7 @@ export default function SalesHistoryPage() {
                   setPage(1);
                   setTo(e.target.value);
                 }}
-                className="tl-input w-[220px]"
+                className="tl-input w-full sm:w-[220px]"
               />
             </div>
             <button
@@ -294,7 +294,7 @@ export default function SalesHistoryPage() {
           </div>
         )}
 
-        <div className="grid gap-4 lg:grid-cols-[1fr_360px]">
+        <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_360px]">
           <div>
             <DataTable
               columns={columns}

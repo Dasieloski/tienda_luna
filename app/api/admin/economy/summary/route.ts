@@ -49,8 +49,8 @@ export async function GET(request: Request) {
 
     const buckets: EconomyBucket[] = rows.map((r) => ({
       method: r.method ?? "desconocido",
-      ventas: Number(r.ventas ?? 0n),
-      totalCents: Number(r.total_cents ?? 0n),
+      ventas: Number(r.ventas ?? BigInt(0)),
+      totalCents: Number(r.total_cents ?? BigInt(0)),
     }));
 
     let efectivoCents = 0;

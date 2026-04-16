@@ -39,9 +39,7 @@ function ChartFrame({
   className?: string;
 }) {
   return (
-    <div
-      className={`tl-glass relative overflow-hidden rounded-xl p-5 ${className}`}
-    >
+    <div className={`tl-glass relative overflow-hidden rounded-xl p-4 sm:p-5 ${className}`}>
       {/* Ambient glow */}
       <div
         className="pointer-events-none absolute -right-16 -top-16 h-32 w-32 rounded-full bg-tl-accent/10 blur-3xl"
@@ -50,7 +48,7 @@ function ChartFrame({
       <div className="relative">
         <h3 className="text-sm font-semibold tracking-tight text-tl-ink">{title}</h3>
         {subtitle && <p className="mt-0.5 text-xs text-tl-muted">{subtitle}</p>}
-        <div className="mt-4 h-[260px] w-full">{children}</div>
+        <div className="mt-4 h-[220px] w-full sm:h-[240px] lg:h-[260px]">{children}</div>
       </div>
     </div>
   );
@@ -124,7 +122,7 @@ export function DashboardCharts({
 
   if (!mounted) {
     return (
-      <div className="grid gap-5 lg:grid-cols-2">
+      <div className="grid gap-4 lg:grid-cols-2 lg:gap-5">
         {[1, 2, 3, 4].map((i) => (
           <div
             key={i}
@@ -136,10 +134,10 @@ export function DashboardCharts({
   }
 
   return (
-    <div className="grid gap-5 lg:grid-cols-2">
+    <div className="grid gap-4 lg:grid-cols-2 lg:gap-5">
       <ChartFrame
         title="Ingresos por hora (hoy)"
-        subtitle="EUR - actualización en vivo"
+        subtitle="Actualización en vivo"
       >
         <ResponsiveContainer width="100%" height="100%">
           <AreaChart
@@ -159,7 +157,7 @@ export function DashboardCharts({
             />
             <XAxis
               dataKey="label"
-              tick={{ fill: "var(--tl-muted)", fontSize: 10 }}
+              tick={{ fill: "var(--tl-muted)", fontSize: 9 }}
               axisLine={false}
               tickLine={false}
             />
@@ -167,7 +165,7 @@ export function DashboardCharts({
               tick={{ fill: "var(--tl-muted)", fontSize: 10 }}
               axisLine={false}
               tickLine={false}
-              width={36}
+              width={30}
             />
             <Tooltip
               contentStyle={tipStyle}
@@ -200,7 +198,7 @@ export function DashboardCharts({
         <ResponsiveContainer width="100%" height="100%">
           <BarChart
             data={productsChart}
-            margin={{ top: 8, right: 8, left: 0, bottom: 4 }}
+            margin={{ top: 8, right: 8, left: -8, bottom: 4 }}
           >
             <CartesianGrid
               strokeDasharray="3 6"
@@ -215,7 +213,7 @@ export function DashboardCharts({
               interval={0}
               angle={-18}
               textAnchor="end"
-              height={56}
+              height={64}
             />
             <YAxis
               tick={{ fill: "var(--tl-muted)", fontSize: 10 }}
@@ -256,8 +254,8 @@ export function DashboardCharts({
               nameKey="name"
               cx="50%"
               cy="50%"
-              innerRadius={56}
-              outerRadius={88}
+              innerRadius={42}
+              outerRadius={72}
               paddingAngle={3}
               animationDuration={1100}
               isAnimationActive
@@ -301,7 +299,7 @@ export function DashboardCharts({
             <YAxis
               type="category"
               dataKey="id"
-              width={88}
+              width={72}
               tick={{ fill: "var(--tl-muted)", fontSize: 10 }}
               axisLine={false}
               tickLine={false}

@@ -109,10 +109,12 @@ export function KpiCard({
         </div>
 
         {/* Value - large and prominent */}
-        <p className={cn(
-          "mt-3 text-3xl font-bold tabular-nums tracking-tight",
-          isAccentCard ? "text-tl-accent-fg" : "text-tl-ink"
-        )}>
+        <p
+          className={cn(
+            "mt-3 text-2xl font-bold tabular-nums tracking-tight sm:text-3xl",
+            isAccentCard ? "text-tl-accent-fg" : "text-tl-ink",
+          )}
+        >
           {value}
         </p>
 

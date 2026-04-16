@@ -10,6 +10,7 @@ import {
   ChevronDown,
   ChevronLeft,
   Clock,
+  Landmark,
   LayoutDashboard,
   Monitor,
   Radio,
@@ -32,6 +33,7 @@ const NAV_ITEMS = [
     items: [
       { href: "/admin/inventario", label: "Inventario", icon: Boxes },
       { href: "/admin/analitica", label: "Analítica", icon: BarChart3 },
+      { href: "/admin/economia", label: "Economía", icon: Landmark },
     ],
   },
   {
@@ -49,48 +51,68 @@ const DEVICES = [
 
 const sidebarEase = "cubic-bezier(0.22, 1, 0.36, 1)";
 
-export function Sidebar() {
+interface SidebarProps {
+  collapsed: boolean;
+  onCollapsedChange: (next: boolean) => void;
+  mobileOpen: boolean;
+  onMobileOpenChange: (next: boolean) => void;
+}
+
+export function Sidebar({
+  collapsed,
+  onCollapsedChange,
+  mobileOpen,
+  onMobileOpenChange,
+}: SidebarProps) {
   const pathname = usePathname();
-  const [collapsed, setCollapsed] = useState(false);
   const [devicesOpen, setDevicesOpen] = useState(false);
-
-  useEffect(() => {
-    const stored = localStorage.getItem("tl-sidebar-collapsed");
-    if (stored === "true") setCollapsed(true);
-  }, []);
-
-  useEffect(() => {
-    localStorage.setItem("tl-sidebar-collapsed", String(collapsed));
-  }, [collapsed]);
 
   useEffect(() => {
     function handleKeyDown(e: KeyboardEvent) {
       if ((e.metaKey || e.ctrlKey) && e.key === "b") {
         e.preventDefault();
-        setCollapsed((c) => !c);
+        onCollapsedChange(!collapsed);
+      }
+      if (e.key === "Escape") {
+        onMobileOpenChange(false);
       }
     }
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, []);
+  }, [collapsed, onCollapsedChange, onMobileOpenChange]);
+
+  useEffect(() => {
+    onMobileOpenChange(false);
+  }, [pathname, onMobileOpenChange]);
 
   return (
-    <aside
-      data-collapsed={collapsed ? "true" : "false"}
-      className={cn(
-        "fixed left-0 top-0 z-40 flex h-full flex-col overflow-hidden bg-tl-canvas-inset",
-        "will-change-[width]",
-        "transition-[width,box-shadow] duration-300",
-        collapsed ? "w-[72px]" : "w-[260px]"
-      )}
-      style={{
-        borderRadius: "0 24px 24px 0",
-        boxShadow: "var(--tl-shadow)",
-        transitionTimingFunction: sidebarEase,
-      }}
-    >
+    <>
+      <button
+        type="button"
+        aria-label="Cerrar menú"
+        className={cn(
+          "fixed inset-0 z-40 bg-black/35 transition-opacity lg:hidden",
+          mobileOpen ? "pointer-events-auto opacity-100" : "pointer-events-none opacity-0",
+        )}
+        onClick={() => onMobileOpenChange(false)}
+      />
+      <aside
+        data-collapsed={collapsed ? "true" : "false"}
+        className={cn(
+          "fixed left-0 top-0 z-50 flex h-dvh max-h-dvh flex-col overflow-hidden bg-tl-canvas-inset",
+          "w-[280px] max-w-[86vw] transition-[transform,width,box-shadow] duration-300",
+          "lg:z-40 lg:max-w-none",
+          mobileOpen ? "translate-x-0" : "-translate-x-full lg:translate-x-0",
+          collapsed ? "lg:w-[72px]" : "lg:w-[260px]",
+        )}
+        style={{
+          borderRadius: "0 24px 24px 0",
+          boxShadow: "var(--tl-shadow)",
+          transitionTimingFunction: sidebarEase,
+        }}
+      >
       {/* Logo */}
-      <div className="flex h-20 shrink-0 items-center gap-3 px-5">
+      <div className="flex h-16 shrink-0 items-center gap-3 px-4 sm:px-5 lg:h-20">
         <Link
           href="/admin"
           className="group/logo tl-interactive flex min-w-0 max-w-full items-center gap-3 rounded-2xl p-2 transition-colors hover:bg-tl-canvas-subtle"
@@ -217,7 +239,7 @@ export function Sidebar() {
       <div className="shrink-0 border-t border-tl-line p-3">
         <button
           type="button"
-          onClick={() => setCollapsed((c) => !c)}
+          onClick={() => onCollapsedChange(!collapsed)}
           className={cn(
             "tl-nav-item tl-interactive w-full ring-1 ring-transparent transition-[box-shadow,transform] duration-200 hover:shadow-sm hover:ring-tl-accent/12",
             collapsed && "justify-center !px-2"
@@ -243,6 +265,7 @@ export function Sidebar() {
           </span>
         </button>
       </div>
-    </aside>
+      </aside>
+    </>
   );
 }

@@ -127,7 +127,7 @@ export function Landing() {
 
       {/* Header */}
       <header className="sticky top-0 z-50 border-b border-tl-line-subtle bg-tl-canvas-inset/92 shadow-[var(--tl-shadow-sm)] backdrop-blur-md">
-        <div className="mx-auto flex max-w-6xl items-center justify-between gap-4 px-4 py-3 sm:px-6">
+        <div className="mx-auto flex max-w-6xl items-center justify-between gap-3 px-4 py-3 sm:px-6">
           <Link
             href="/"
             className="group flex items-center gap-3 rounded-2xl py-1.5 pr-3 transition-colors hover:bg-tl-canvas-subtle"
@@ -157,7 +157,7 @@ export function Landing() {
             ))}
           </nav>
 
-          <div className="flex items-center gap-2">
+          <div className="flex shrink-0 items-center gap-2">
             <Link
               href="/admin/login"
               className={cn(
@@ -175,7 +175,7 @@ export function Landing() {
         <div className="border-t border-tl-line-subtle bg-tl-canvas-subtle/80 md:hidden">
           <nav
             aria-label="Secciones"
-            className="mx-auto flex max-w-6xl flex-wrap justify-center gap-2 px-3 py-3"
+            className="mx-auto grid max-w-6xl grid-cols-2 gap-2 px-3 py-3 sm:flex sm:flex-wrap sm:justify-center"
           >
             {NAV_LINKS.map(({ href, label, Icon }) => (
               <a
@@ -197,10 +197,10 @@ export function Landing() {
       <main id="contenido-principal" className="relative">
         {/* Hero */}
         <section
-          className="relative mx-auto max-w-6xl px-4 pb-16 pt-14 sm:px-6 sm:pb-24 sm:pt-20"
+          className="relative mx-auto max-w-6xl px-4 pb-14 pt-10 sm:px-6 sm:pb-20 sm:pt-16 lg:pb-24 lg:pt-20"
           aria-labelledby="hero-title"
         >
-          <div className="grid items-center gap-14 lg:grid-cols-[1fr_minmax(0,420px)] lg:gap-12">
+          <div className="grid items-center gap-10 lg:grid-cols-[1fr_minmax(0,420px)] lg:gap-12">
             <div>
               <p
                 className={cn(
@@ -212,11 +212,11 @@ export function Landing() {
               </p>
               <h1
                 id="hero-title"
-                className="tl-reveal tl-delay-2 mt-6 text-4xl font-semibold tracking-tight text-balance text-foreground sm:text-5xl sm:leading-[1.06] lg:text-[3.25rem]"
+                className="tl-reveal tl-delay-2 mt-6 text-3xl font-semibold tracking-tight text-balance text-foreground sm:text-5xl sm:leading-[1.06] lg:text-[3.25rem]"
               >
                 Gestiona tu tienda con la precision que merece
               </h1>
-              <p className="tl-reveal tl-delay-3 mt-5 max-w-xl text-lg leading-relaxed text-pretty text-muted-foreground sm:text-xl">
+              <p className="tl-reveal tl-delay-3 mt-5 max-w-xl text-base leading-relaxed text-pretty text-muted-foreground sm:text-xl">
                 Sistema de punto de venta disenado para tiendas de productos varios. Controla inventario, registra ventas y analiza tu negocio desde cualquier lugar.
               </p>
               <div className="tl-reveal tl-delay-4 mt-10 flex flex-wrap items-center gap-3">
@@ -492,7 +492,7 @@ export function Landing() {
 
         {/* CTA */}
         <section className="mx-auto max-w-6xl px-4 pb-24 pt-4 sm:px-6" aria-labelledby="cta-final-title">
-          <div className="relative overflow-hidden rounded-3xl border border-border bg-gradient-to-br from-accent/15 via-card to-card px-8 py-14 text-center shadow-2xl ring-1 ring-border sm:px-16 sm:py-16">
+          <div className="relative overflow-hidden rounded-3xl border border-border bg-gradient-to-br from-accent/15 via-card to-card px-5 py-10 text-center shadow-2xl ring-1 ring-border sm:px-10 sm:py-14 lg:px-16 lg:py-16">
             <h2
               id="cta-final-title"
               className={cn("tl-reveal tl-delay-1 text-2xl font-semibold tracking-tight text-foreground sm:text-3xl")}

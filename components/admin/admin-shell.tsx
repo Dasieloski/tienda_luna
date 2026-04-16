@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { Sidebar } from "./sidebar";
 import { Topbar } from "./topbar";
+import { cn } from "@/lib/utils";
 
 interface AdminShellProps {
   children: React.ReactNode;
@@ -11,16 +12,16 @@ interface AdminShellProps {
 
 export function AdminShell({ children, title = "Dashboard" }: AdminShellProps) {
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+  const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
 
   useEffect(() => {
-    function checkCollapsed() {
-      const stored = localStorage.getItem("tl-sidebar-collapsed");
-      setSidebarCollapsed(stored === "true");
-    }
-    checkCollapsed();
-    const interval = setInterval(checkCollapsed, 100);
-    return () => clearInterval(interval);
+    const stored = localStorage.getItem("tl-sidebar-collapsed");
+    setSidebarCollapsed(stored === "true");
   }, []);
+
+  useEffect(() => {
+    localStorage.setItem("tl-sidebar-collapsed", String(sidebarCollapsed));
+  }, [sidebarCollapsed]);
 
   // Auto-refresh every 5 seconds
   useEffect(() => {
@@ -32,15 +33,25 @@ export function AdminShell({ children, title = "Dashboard" }: AdminShellProps) {
 
   return (
     <div className="flex min-h-screen bg-tl-canvas">
-      <Sidebar />
+      <Sidebar
+        collapsed={sidebarCollapsed}
+        onCollapsedChange={setSidebarCollapsed}
+        mobileOpen={mobileSidebarOpen}
+        onMobileOpenChange={setMobileSidebarOpen}
+      />
       <div
-        className="flex flex-1 flex-col transition-all duration-300"
-        style={{ marginLeft: sidebarCollapsed ? 72 : 260 }}
+        className={cn(
+          "flex min-w-0 flex-1 flex-col transition-all duration-300",
+          sidebarCollapsed ? "lg:ml-[72px]" : "lg:ml-[260px]",
+        )}
       >
-        <Topbar title={title} />
+        <Topbar
+          title={title}
+          onMenuClick={() => setMobileSidebarOpen((prev) => !prev)}
+        />
         <main
           id="admin-main"
-          className="flex-1 overflow-y-auto p-6"
+          className="flex-1 overflow-y-auto px-4 py-4 sm:px-5 sm:py-5 lg:px-6 lg:py-6"
           tabIndex={-1}
         >
           {children}

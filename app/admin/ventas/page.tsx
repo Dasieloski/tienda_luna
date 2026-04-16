@@ -171,7 +171,7 @@ export default function SalesPage() {
               Total facturado
             </p>
             <p className="mt-1 text-2xl font-bold tabular-nums text-tl-ink">
-              {money(sales.reduce((acc, s) => acc + s.totalCents, 0))}
+              {formatCupAndUsdLabel(sales.reduce((acc, s) => acc + s.totalCents, 0))}
             </p>
           </div>
           <div className="tl-glass rounded-xl p-4">
@@ -180,8 +180,10 @@ export default function SalesPage() {
             </p>
             <p className="mt-1 text-2xl font-bold tabular-nums text-tl-ink">
               {sales.length > 0
-                ? money(Math.round(sales.reduce((acc, s) => acc + s.totalCents, 0) / sales.length))
-                : money(0)}
+                ? formatCupAndUsdLabel(
+                    Math.round(sales.reduce((acc, s) => acc + s.totalCents, 0) / sales.length),
+                  )
+                : formatCupAndUsdLabel(0)}
             </p>
           </div>
         </div>

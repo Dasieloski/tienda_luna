@@ -206,8 +206,8 @@ export default function EconomyPage() {
             `cash_cup`, `transfer_cup`, `cash_usd`).
           </p>
 
-          <div className="mt-3 tl-glass overflow-hidden rounded-xl">
-            <table className="w-full text-left text-sm">
+          <div className="mt-3 overflow-x-auto tl-glass rounded-xl">
+            <table className="w-full min-w-[520px] text-left text-sm">
               <thead className="border-b border-tl-line bg-tl-canvas-inset text-xs uppercase tracking-wide text-tl-muted">
                 <tr>
                   <th className="px-4 py-3">Método</th>

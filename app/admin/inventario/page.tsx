@@ -238,7 +238,7 @@ export default function InventoryPage() {
         </div>
 
         {/* Main content: Table + Form */}
-        <div className="grid gap-6 lg:grid-cols-[1fr_320px]">
+        <div className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_320px]">
           {/* Products table */}
           <DataTable
             columns={columns}
@@ -284,7 +284,7 @@ export default function InventoryPage() {
                   required
                 />
               </div>
-              <div className="grid grid-cols-2 gap-2">
+              <div className="grid gap-2 sm:grid-cols-2">
                 <div>
                   <label className="text-xs text-tl-muted" htmlFor="np-price">
                     PVP (CUP)
@@ -324,7 +324,7 @@ export default function InventoryPage() {
                   className="tl-input mt-1"
                 />
               </div>
-              <div className="grid grid-cols-2 gap-2">
+              <div className="grid gap-2 sm:grid-cols-2">
                 <div>
                   <label className="text-xs text-tl-muted" htmlFor="np-st">
                     Stock inicial

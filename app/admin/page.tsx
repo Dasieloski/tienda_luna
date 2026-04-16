@@ -183,7 +183,7 @@ export default function AdminOverviewPage() {
     <AdminShell>
       <div className="space-y-8">
         {/* Welcome header - Crextio style */}
-        <div className="flex flex-wrap items-start justify-between gap-6">
+        <div className="flex flex-col gap-6 lg:flex-row lg:items-start lg:justify-between">
           <div>
             <h1 className="tl-welcome-header">
               Bienvenido, Administrador
@@ -220,22 +220,22 @@ export default function AdminOverviewPage() {
           </div>
           
           {/* Large stat numbers - Crextio style */}
-          <div className="flex items-center gap-8">
-            <div className="text-right">
+          <div className="flex flex-wrap items-center gap-6 lg:justify-end">
+            <div className="text-left sm:text-right">
               <p className="tl-stat-number">{data?.level1.ventasMes ?? 0}</p>
               <p className="flex items-center justify-end gap-1.5 text-xs text-tl-muted">
                 <Users className="h-4 w-4" aria-hidden />
                 Ventas mes
               </p>
             </div>
-            <div className="text-right">
+            <div className="text-left sm:text-right">
               <p className="tl-stat-number">{data?.level1.productosTop.length ?? 0}</p>
               <p className="flex items-center justify-end gap-1.5 text-xs text-tl-muted">
                 <Boxes className="h-4 w-4" aria-hidden />
                 Productos
               </p>
             </div>
-            <div className="text-right">
+            <div className="text-left sm:text-right">
               <p className="tl-stat-number">{data?.level2.rendimientoDispositivoMes.length ?? 0}</p>
               <p className="flex items-center justify-end gap-1.5 text-xs text-tl-muted">
                 <Cpu className="h-4 w-4" aria-hidden />

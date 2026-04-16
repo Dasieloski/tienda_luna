@@ -4,6 +4,8 @@ import Link from "next/link";
 import {
   Bell,
   Clock,
+  Landmark,
+  Menu,
   Settings,
   Users,
 } from "lucide-react";
@@ -11,23 +13,33 @@ import { cn } from "@/lib/utils";
 
 interface TopbarProps {
   title?: string;
+  onMenuClick?: () => void;
 }
 
 export function Topbar({
   title = "Dashboard",
+  onMenuClick,
 }: TopbarProps) {
 
   return (
-    <header className="sticky top-0 z-30 flex h-20 shrink-0 items-center justify-between gap-4 bg-tl-canvas px-6">
+    <header className="sticky top-0 z-30 flex min-h-16 shrink-0 items-center justify-between gap-3 border-b border-tl-line-subtle bg-tl-canvas/95 px-4 py-3 backdrop-blur sm:px-5 lg:min-h-20 lg:px-6">
       {/* Left: Logo and quick nav */}
-      <div className="flex items-center gap-6">
+      <div className="flex min-w-0 items-center gap-3 lg:gap-6">
+        <button
+          type="button"
+          onClick={onMenuClick}
+          className="flex h-10 w-10 items-center justify-center rounded-full border border-tl-line bg-tl-canvas-inset text-tl-ink lg:hidden"
+          aria-label="Abrir menú"
+        >
+          <Menu className="h-5 w-5" aria-hidden />
+        </button>
         {/* Logo pill */}
-        <div className="flex h-10 items-center rounded-full border border-tl-line bg-tl-canvas-inset px-4 tl-interactive tl-hover-lift">
-          <span className="text-sm font-semibold text-tl-ink">Tienda Luna</span>
+        <div className="hidden h-10 items-center rounded-full border border-tl-line bg-tl-canvas-inset px-4 tl-interactive tl-hover-lift sm:flex">
+          <span className="truncate text-sm font-semibold text-tl-ink">Tienda Luna</span>
         </div>
         
         {/* Top nav pills - Crextio style */}
-        <nav className="hidden items-center rounded-full bg-tl-canvas-inset p-1 md:flex">
+        <nav className="hidden items-center rounded-full bg-tl-canvas-inset p-1 xl:flex">
           <Link 
             href="/admin" 
             className={cn(
@@ -77,6 +89,18 @@ export function Topbar({
             Analítica
           </Link>
           <Link
+            href="/admin/economia"
+            className={cn(
+              "tl-nav-pill tl-interactive tl-hover-lift tl-press tl-focus",
+              title === "Economía" && "active"
+            )}
+          >
+            <span className="inline-flex items-center gap-2">
+              <Landmark className="h-4 w-4 text-tl-accent" aria-hidden />
+              Economía
+            </span>
+          </Link>
+          <Link
             href="/admin/alertas"
             className={cn(
               "tl-nav-pill tl-interactive tl-hover-lift tl-press tl-focus",
@@ -98,11 +122,11 @@ export function Topbar({
       </div>
 
       {/* Right: Settings, status, actions */}
-      <div className="flex items-center gap-2">
+      <div className="flex shrink-0 items-center gap-2">
         {/* Settings button with icon */}
         <Link
           href="/admin/config"
-          className="flex items-center gap-2 rounded-full border border-tl-line bg-tl-canvas-inset px-4 py-2 text-sm font-medium text-tl-ink tl-interactive tl-hover-lift tl-press tl-focus hover:bg-tl-canvas-subtle"
+          className="flex items-center gap-2 rounded-full border border-tl-line bg-tl-canvas-inset px-3 py-2 text-sm font-medium text-tl-ink tl-interactive tl-hover-lift tl-press tl-focus hover:bg-tl-canvas-subtle sm:px-4"
         >
           <Settings className="h-4 w-4" aria-hidden />
           <span className="hidden sm:inline">Ajustes</span>

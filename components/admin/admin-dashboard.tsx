@@ -419,7 +419,11 @@ export function AdminDashboard() {
             <Kpi
               label="Hora pico hoy"
               value={horaPicoLabel}
-              hint={data.level1.horaPicoHoy.hora != null ? money(data.level1.horaPicoHoy.ingresosCents) : undefined}
+              hint={
+                data.level1.horaPicoHoy.hora != null
+                  ? formatCupAndUsdLabel(data.level1.horaPicoHoy.ingresosCents)
+                  : undefined
+              }
               accent="amber"
             />
           </div>
@@ -547,7 +551,9 @@ export function AdminDashboard() {
                       <td className="whitespace-nowrap px-4 py-3 text-xs text-zinc-400">
                         {new Date(s.completedAt).toLocaleString("es-ES")}
                       </td>
-                      <td className="px-4 py-3 font-semibold tabular-nums text-white">{money(s.totalCents)}</td>
+                      <td className="px-4 py-3 font-semibold tabular-nums text-white">
+                        {formatCupAndUsdLabel(s.totalCents)}
+                      </td>
                       <td className="px-4 py-3">
                         <span className="rounded-full bg-white/10 px-2 py-0.5 text-xs">{s.status}</span>
                       </td>

@@ -117,6 +117,7 @@
   }
   body {
     @apply bg-tl-canvas text-tl-ink antialiased;
+    overflow-x: hidden;
   }
   :focus-visible {
     @apply outline-2 outline-offset-2 outline-tl-accent;
@@ -312,12 +313,12 @@
 }
 
 .tl-table th {
-  @apply bg-tl-canvas-subtle px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider text-tl-muted;
+  @apply bg-tl-canvas-subtle px-3 py-3 text-left text-[11px] font-semibold uppercase tracking-wider text-tl-muted sm:px-4;
   border-bottom: 1px solid var(--tl-line);
 }
 
 .tl-table td {
-  @apply px-4 py-3.5 text-tl-ink-secondary;
+  @apply px-3 py-3 text-tl-ink-secondary sm:px-4 sm:py-3.5;
   border-bottom: 1px solid var(--tl-line-subtle);
 }
 
@@ -441,7 +442,7 @@
 
 /* Input styles */
 .tl-input {
-  @apply w-full px-4 py-3 text-sm text-tl-ink transition-all placeholder:text-tl-muted;
+  @apply w-full px-3 py-2.5 text-sm text-tl-ink transition-all placeholder:text-tl-muted sm:px-4 sm:py-3;
   background: var(--tl-canvas-inset);
   border: 1px solid var(--tl-line);
   border-radius: var(--tl-radius);
@@ -456,7 +457,7 @@
 /* Button base */
 .tl-btn {
   @apply inline-flex items-center justify-center gap-2 text-sm font-semibold;
-  padding: 12px 24px;
+  padding: 10px 18px;
   border-radius: var(--tl-radius);
   transition:
     transform 180ms var(--tl-ease-out),
@@ -484,7 +485,7 @@
   background: var(--tl-accent);
   color: var(--tl-accent-fg);
   box-shadow: var(--tl-shadow-sm);
-  padding: 12px 24px;
+  padding: 10px 18px;
   border-radius: var(--tl-radius);
 }
 
@@ -499,7 +500,7 @@
   background: var(--tl-canvas-inset);
   color: var(--tl-ink-secondary);
   border: 1px solid var(--tl-line);
-  padding: 12px 24px;
+  padding: 10px 18px;
   border-radius: var(--tl-radius);
 }
 
@@ -514,7 +515,7 @@
   background: var(--tl-secondary);
   color: #ffffff;
   box-shadow: var(--tl-shadow-sm);
-  padding: 12px 24px;
+  padding: 10px 18px;
   border-radius: var(--tl-radius);
 }
 
@@ -696,7 +697,7 @@
 
 /* Crextio-style welcome header */
 .tl-welcome-header {
-  @apply text-3xl font-semibold tracking-tight sm:text-4xl;
+  @apply text-2xl font-semibold tracking-tight sm:text-3xl lg:text-4xl;
   color: var(--tl-ink);
 }
 
@@ -710,7 +711,7 @@
 }
 
 .tl-stat-number {
-  @apply text-4xl font-bold tabular-nums tracking-tight;
+  @apply text-2xl font-bold tabular-nums tracking-tight sm:text-3xl lg:text-4xl;
   color: var(--tl-ink);
 }
 
@@ -721,7 +722,7 @@
 
 /* Nav pills - Crextio style */
 .tl-nav-pill {
-  @apply rounded-full px-4 py-2 text-sm font-medium;
+  @apply rounded-full px-3 py-2 text-xs font-medium sm:px-4 sm:text-sm;
   color: var(--tl-muted);
   transition:
     transform 180ms var(--tl-ease-out),

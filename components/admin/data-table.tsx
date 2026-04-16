@@ -105,6 +105,9 @@ export function DataTable<T extends Record<string, unknown>>({
 
   const rows = skeletonRows > 0 ? skeletonRows : 8;
 
+  const renderCellContent = (row: T, col: Column<T>, index: number) =>
+    col.render ? col.render(row, index) : String(row[col.key as keyof T] ?? "—");
+
   return (
     <div className={cn("tl-glass overflow-hidden rounded-xl", className)}>
       {searchable && (
@@ -123,8 +126,8 @@ export function DataTable<T extends Record<string, unknown>>({
         </div>
       )}
 
-      <div className="overflow-auto" style={maxHeight ? { maxHeight } : undefined}>
-        <table className="tl-table w-full">
+      <div className="hidden overflow-auto md:block" style={maxHeight ? { maxHeight } : undefined}>
+        <table className="tl-table min-w-[720px] w-full">
           <thead className={stickyHeader ? "sticky top-0 z-10" : undefined}>
             <tr>
               {columns.map((col) => (
@@ -200,7 +203,7 @@ export function DataTable<T extends Record<string, unknown>>({
                           col.align === "right" && "text-right"
                         )}
                       >
-                        {col.render ? col.render(row, index) : String(row[col.key as keyof T] ?? "—")}
+                        {renderCellContent(row, col, index)}
                       </td>
                     ))}
                   </tr>
@@ -209,6 +212,50 @@ export function DataTable<T extends Record<string, unknown>>({
             )}
           </tbody>
         </table>
+      </div>
+
+      <div className="divide-y divide-tl-line-subtle md:hidden">
+        {loading ? (
+          Array.from({ length: rows }).map((_, r) => (
+            <div key={`mobile-sk-${r}`} className="space-y-3 px-4 py-4">
+              {columns.slice(0, 4).map((col) => (
+                <div key={String(col.key)} className="space-y-1">
+                  <div className="h-3 w-20 tl-skeleton rounded-md" />
+                  <div className="h-4 w-full tl-skeleton rounded-md" />
+                </div>
+              ))}
+            </div>
+          ))
+        ) : sortedData.length === 0 ? (
+          <div className="px-4 py-10 text-center text-tl-muted">{emptyMessage}</div>
+        ) : (
+          sortedData.map((row, index) => {
+            const k = keyExtractor(row);
+            return (
+              <button
+                key={k}
+                type="button"
+                className={cn(
+                  "block w-full space-y-3 px-4 py-4 text-left transition-colors",
+                  selectedKey != null && k === selectedKey && "bg-tl-accent-subtle",
+                )}
+                onClick={onRowClick ? () => onRowClick(row) : undefined}
+                disabled={!onRowClick}
+              >
+                {columns.map((col) => (
+                  <div key={String(col.key)} className="flex items-start justify-between gap-3">
+                    <span className="max-w-[42%] text-[11px] font-semibold uppercase tracking-wide text-tl-muted">
+                      {col.label}
+                    </span>
+                    <div className="min-w-0 flex-1 text-right text-sm text-tl-ink">
+                      {renderCellContent(row, col, index)}
+                    </div>
+                  </div>
+                ))}
+              </button>
+            );
+          })
+        )}
       </div>
 
       {pagination && !loading && (
