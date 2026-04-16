@@ -5,10 +5,16 @@ import { prisma } from "@/lib/db";
 
 export async function GET(request: Request) {
   const session = await getSessionFromRequest(request);
-  if (!session || session.typ !== "user") {
+  if (!session) {
     return NextResponse.json({ error: "UNAUTHORIZED" }, { status: 401 });
   }
-  if (session.role !== "ADMIN" && session.role !== "CASHIER") {
+
+  /** Catálogo para tablet (JWT de dispositivo) o panel (usuario cajero/admin). */
+  const canReadCatalog =
+    session.typ === "device" ||
+    (session.typ === "user" && (session.role === "ADMIN" || session.role === "CASHIER"));
+
+  if (!canReadCatalog) {
     return NextResponse.json({ error: "FORBIDDEN" }, { status: 403 });
   }
 

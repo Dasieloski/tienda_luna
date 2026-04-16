@@ -8,6 +8,10 @@ export const DOMAIN_EVENT_TYPES = [
   "STOCK_DECREASED",
   "SALE_CANCELLED",
   "SALE_COMPLETED",
+  /** Catálogo desde tablet/POS (misma auth que sync batch) */
+  "PRODUCT_CREATED",
+  "PRODUCT_UPDATED",
+  "PRODUCT_DELETED",
   /** Eventos generados solo en servidor (compensación / auditoría) */
   "SALE_REJECTED",
   "SALE_PARTIALLY_FULFILLED",
@@ -49,4 +53,37 @@ export type SaleCancelledPayload = {
 export type SaleCompletedPayload = {
   saleId: string;
   paymentMethod?: string;
+};
+
+/** Alta de producto offline; el servidor valida y persiste (SKU único por tienda). */
+export type ProductCreatedPayload = {
+  sku: string;
+  name: string;
+  priceCents: number;
+  priceUsdCents?: number;
+  unitsPerBox?: number;
+  wholesaleCupCents?: number | null;
+  supplierName?: string | null;
+  stockQty?: number;
+  lowStockAt?: number;
+};
+
+/** Actualización parcial: solo enviar campos que cambian. */
+export type ProductUpdatedPayload = {
+  productId: string;
+  sku?: string;
+  name?: string;
+  priceCents?: number;
+  priceUsdCents?: number;
+  unitsPerBox?: number;
+  wholesaleCupCents?: number | null;
+  supplierName?: string | null;
+  stockQty?: number;
+  lowStockAt?: number;
+  active?: boolean;
+};
+
+/** Baja lógica: `active = false` (no borra filas referenciadas por ventas). */
+export type ProductDeletedPayload = {
+  productId: string;
 };

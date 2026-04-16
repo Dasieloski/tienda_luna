@@ -41,6 +41,22 @@ function getPayloadNumber(p: Record<string, unknown>, key: string): number | und
   return typeof v === "number" && Number.isFinite(v) ? v : undefined;
 }
 
+/** Entero ≥ 0 en payload (rechaza decimales). */
+function getPayloadIntNonneg(p: Record<string, unknown>, key: string): number | undefined {
+  const v = getPayloadNumber(p, key);
+  if (v === undefined || !Number.isInteger(v) || v < 0) return undefined;
+  return v;
+}
+
+function prismaUniqueViolation(e: unknown) {
+  return (
+    typeof e === "object" &&
+    e !== null &&
+    "code" in e &&
+    (e as { code: string }).code === "P2002"
+  );
+}
+
 export async function processBatch(
   prisma: PrismaClient,
   params: {
@@ -461,6 +477,332 @@ export async function processBatch(
           }
 
           pendingSales.delete(saleId);
+          break;
+        }
+
+        case "PRODUCT_CREATED": {
+          const sku = getPayloadString(ev.payload, "sku")?.trim();
+          const name = getPayloadString(ev.payload, "name")?.trim();
+          if (!sku || !name) {
+            results.push(
+              await record({
+                status: "REJECTED",
+                correctionNote: "INVALID_PRODUCT_CREATE",
+              }),
+            );
+            break;
+          }
+          const priceCents = getPayloadIntNonneg(ev.payload, "priceCents");
+          if (priceCents === undefined) {
+            results.push(
+              await record({
+                status: "REJECTED",
+                correctionNote: "INVALID_PRICE_CENTS",
+              }),
+            );
+            break;
+          }
+          const priceUsdCents = getPayloadIntNonneg(ev.payload, "priceUsdCents") ?? 0;
+          let unitsPerBox = getPayloadIntNonneg(ev.payload, "unitsPerBox") ?? 1;
+          if (unitsPerBox < 1) unitsPerBox = 1;
+          const stockQty = getPayloadIntNonneg(ev.payload, "stockQty") ?? 0;
+          const lowStockAt = getPayloadIntNonneg(ev.payload, "lowStockAt") ?? 5;
+          const supplierRaw = getPayloadString(ev.payload, "supplierName");
+          const supplierName =
+            supplierRaw === undefined
+              ? null
+              : supplierRaw.trim() === ""
+                ? null
+                : supplierRaw.trim().slice(0, 120);
+
+          let wholesaleCupCents: number | null = null;
+          if (Object.prototype.hasOwnProperty.call(ev.payload, "wholesaleCupCents")) {
+            const raw = (ev.payload as Record<string, unknown>).wholesaleCupCents;
+            if (raw === null) {
+              wholesaleCupCents = null;
+            } else {
+              const w = getPayloadIntNonneg(ev.payload, "wholesaleCupCents");
+              if (w === undefined) {
+                results.push(
+                  await record({
+                    status: "REJECTED",
+                    correctionNote: "INVALID_WHOLESALE_CENTS",
+                  }),
+                );
+                break;
+              }
+              wholesaleCupCents = w;
+            }
+          }
+
+          try {
+            const created = await tx.product.create({
+              data: {
+                storeId: params.storeId,
+                sku,
+                name,
+                priceCents,
+                priceUsdCents,
+                unitsPerBox,
+                wholesaleCupCents,
+                supplierName,
+                stockQty,
+                lowStockAt,
+                active: true,
+              },
+            });
+            productById.set(created.id, created);
+            stock.set(created.id, created.stockQty);
+            results.push(await record({ status: "ACCEPTED" }));
+          } catch (e: unknown) {
+            if (prismaUniqueViolation(e)) {
+              results.push(
+                await record({
+                  status: "REJECTED",
+                  correctionNote: "DUPLICATE_SKU",
+                }),
+              );
+            } else {
+              throw e;
+            }
+          }
+          break;
+        }
+
+        case "PRODUCT_UPDATED": {
+          const productId = getPayloadString(ev.payload, "productId")?.trim();
+          if (!productId) {
+            results.push(
+              await record({
+                status: "REJECTED",
+                correctionNote: "MISSING_PRODUCT_ID",
+              }),
+            );
+            break;
+          }
+          const existing = await tx.product.findFirst({
+            where: { id: productId, storeId: params.storeId },
+          });
+          if (!existing) {
+            results.push(
+              await record({
+                status: "REJECTED",
+                correctionNote: "UNKNOWN_PRODUCT",
+              }),
+            );
+            break;
+          }
+
+          const pl = ev.payload as Record<string, unknown>;
+          const data: Prisma.ProductUpdateInput = {};
+
+          if ("sku" in pl && typeof pl.sku === "string") {
+            const s = pl.sku.trim();
+            if (!s) {
+              results.push(
+                await record({
+                  status: "REJECTED",
+                  correctionNote: "INVALID_SKU",
+                }),
+              );
+              break;
+            }
+            data.sku = s;
+          }
+          if ("name" in pl && typeof pl.name === "string") {
+            const n = pl.name.trim();
+            if (!n) {
+              results.push(
+                await record({
+                  status: "REJECTED",
+                  correctionNote: "INVALID_NAME",
+                }),
+              );
+              break;
+            }
+            data.name = n;
+          }
+          if ("priceCents" in pl) {
+            const v = getPayloadIntNonneg(pl, "priceCents");
+            if (v === undefined) {
+              results.push(
+                await record({
+                  status: "REJECTED",
+                  correctionNote: "INVALID_PRICE_CENTS",
+                }),
+              );
+              break;
+            }
+            data.priceCents = v;
+          }
+          if ("priceUsdCents" in pl) {
+            const v = getPayloadIntNonneg(pl, "priceUsdCents");
+            if (v === undefined) {
+              results.push(
+                await record({
+                  status: "REJECTED",
+                  correctionNote: "INVALID_PRICE_USD_CENTS",
+                }),
+              );
+              break;
+            }
+            data.priceUsdCents = v;
+          }
+          if ("unitsPerBox" in pl) {
+            const v = getPayloadIntNonneg(pl, "unitsPerBox");
+            if (v === undefined || v < 1) {
+              results.push(
+                await record({
+                  status: "REJECTED",
+                  correctionNote: "INVALID_UNITS_PER_BOX",
+                }),
+              );
+              break;
+            }
+            data.unitsPerBox = v;
+          }
+          if ("stockQty" in pl) {
+            const v = getPayloadIntNonneg(pl, "stockQty");
+            if (v === undefined) {
+              results.push(
+                await record({
+                  status: "REJECTED",
+                  correctionNote: "INVALID_STOCK_QTY",
+                }),
+              );
+              break;
+            }
+            data.stockQty = v;
+          }
+          if ("lowStockAt" in pl) {
+            const v = getPayloadIntNonneg(pl, "lowStockAt");
+            if (v === undefined) {
+              results.push(
+                await record({
+                  status: "REJECTED",
+                  correctionNote: "INVALID_LOW_STOCK",
+                }),
+              );
+              break;
+            }
+            data.lowStockAt = v;
+          }
+          if ("active" in pl && typeof pl.active === "boolean") {
+            data.active = pl.active;
+          }
+          if ("supplierName" in pl) {
+            if (pl.supplierName === null) {
+              data.supplierName = null;
+            } else if (typeof pl.supplierName === "string") {
+              data.supplierName =
+                pl.supplierName.trim() === "" ? null : pl.supplierName.trim().slice(0, 120);
+            } else {
+              results.push(
+                await record({
+                  status: "REJECTED",
+                  correctionNote: "INVALID_SUPPLIER_NAME",
+                }),
+              );
+              break;
+            }
+          }
+          if ("wholesaleCupCents" in pl) {
+            if (pl.wholesaleCupCents === null) {
+              data.wholesaleCupCents = null;
+            } else {
+              const w = getPayloadIntNonneg(pl, "wholesaleCupCents");
+              if (w === undefined) {
+                results.push(
+                  await record({
+                    status: "REJECTED",
+                    correctionNote: "INVALID_WHOLESALE_CENTS",
+                  }),
+                );
+                break;
+              }
+              data.wholesaleCupCents = w;
+            }
+          }
+
+          if (Object.keys(data).length === 0) {
+            results.push(
+              await record({
+                status: "REJECTED",
+                correctionNote: "EMPTY_PRODUCT_UPDATE",
+              }),
+            );
+            break;
+          }
+
+          try {
+            const updated = await tx.product.update({
+              where: { id: productId },
+              data,
+            });
+            if (!updated.active) {
+              productById.delete(productId);
+              stock.delete(productId);
+            } else {
+              productById.set(updated.id, updated);
+              stock.set(updated.id, updated.stockQty);
+            }
+            results.push(await record({ status: "ACCEPTED" }));
+          } catch (e: unknown) {
+            if (prismaUniqueViolation(e)) {
+              results.push(
+                await record({
+                  status: "REJECTED",
+                  correctionNote: "DUPLICATE_SKU",
+                }),
+              );
+            } else {
+              throw e;
+            }
+          }
+          break;
+        }
+
+        case "PRODUCT_DELETED": {
+          const productId = getPayloadString(ev.payload, "productId")?.trim();
+          if (!productId) {
+            results.push(
+              await record({
+                status: "REJECTED",
+                correctionNote: "MISSING_PRODUCT_ID",
+              }),
+            );
+            break;
+          }
+          const row = await tx.product.findFirst({
+            where: { id: productId, storeId: params.storeId },
+          });
+          if (!row) {
+            results.push(
+              await record({
+                status: "REJECTED",
+                correctionNote: "UNKNOWN_PRODUCT",
+              }),
+            );
+            break;
+          }
+          if (!row.active) {
+            productById.delete(productId);
+            stock.delete(productId);
+            results.push(
+              await record({
+                status: "ACCEPTED",
+                correctionNote: "ALREADY_INACTIVE",
+              }),
+            );
+            break;
+          }
+          await tx.product.update({
+            where: { id: productId },
+            data: { active: false },
+          });
+          productById.delete(productId);
+          stock.delete(productId);
+          results.push(await record({ status: "ACCEPTED" }));
           break;
         }
 

@@ -12,7 +12,7 @@ Documento de referencia para quien desarrolla la app móvil (APK), integraciones
 | **Multi‑tienda** | Casi todo el dominio está acotado por `storeId` (tienda). |
 | **Patrón POS** | La caja envía **eventos** en lotes a `POST /api/sync/batch`; el servidor valida, audita en `Event`, actualiza stock y proyecta ventas en `Sale` / `SaleLine`. |
 | **Autenticación** | Cabecera `Authorization: Bearer <token>` y/o cookie `tl_session` (solo flujo web admin). JWT HS256 (`jose`), claims en §3. |
-| **Importante para APK** | `GET /api/products` **solo** admite sesión **usuario** (`typ: user`, rol ADMIN o CAJERO), **no** dispositivo. Para catálogo en caja hace falta otro endpoint o reutilizar token de usuario (no recomendado en producción) o ampliar la API. |
+| **Importante para APK** | `GET /api/products` admite **JWT de dispositivo** (`typ: device`, misma tienda) o usuario ADMIN/CAJERO. Alta/edición/baja de productos desde la tablet va en **`POST /api/sync/batch`** con eventos `PRODUCT_*` (sin panel admin). |
 
 ---
 
@@ -258,7 +258,7 @@ Definidos en `types/events.ts`. El servidor **solo procesa explícitamente** un 
 
 ### 6.1 Constante `DOMAIN_EVENT_TYPES`
 
-`SALE_CREATED`, `PRODUCT_ADDED_TO_CART`, `STOCK_DECREASED`, `SALE_CANCELLED`, `SALE_COMPLETED`, y de servidor/auditoría: `SALE_REJECTED`, `SALE_PARTIALLY_FULFILLED`, `STOCK_ADJUSTED_SERVER`.
+`SALE_CREATED`, `PRODUCT_ADDED_TO_CART`, `STOCK_DECREASED`, `SALE_CANCELLED`, `SALE_COMPLETED`, `PRODUCT_CREATED`, `PRODUCT_UPDATED`, `PRODUCT_DELETED`, y de servidor/auditoría: `SALE_REJECTED`, `SALE_PARTIALLY_FULFILLED`, `STOCK_ADJUSTED_SERVER`.
 
 ### 6.2 Payloads esperados (app offline)
 
@@ -269,6 +269,11 @@ Definidos en `types/events.ts`. El servidor **solo procesa explícitamente** un 
 | `STOCK_DECREASED` | `productId`, `quantity` (>0); opcional `saleId` — si viene `saleId`, **no** descuenta stock (solo auditoría) |
 | `SALE_CANCELLED` | `saleId` |
 | `SALE_COMPLETED` | `saleId`; opcional `paymentMethod` (texto libre; el servidor detecta USD vs CUP para fijar precio unitario) |
+| `PRODUCT_CREATED` | `sku`, `name`, `priceCents` (int ≥ 0); opcionales: `priceUsdCents`, `unitsPerBox` (≥ 1), `wholesaleCupCents` (int ≥ 0 o `null`), `supplierName`, `stockQty`, `lowStockAt` |
+| `PRODUCT_UPDATED` | `productId` + cualquier subconjunto de campos a cambiar (mismos nombres que el modelo; `active` boolean) |
+| `PRODUCT_DELETED` | `productId` — baja **lógica** (`active = false`); el producto deja de salir en `GET /api/products` |
+
+Los tres `PRODUCT_*` se procesan en la **misma transacción** que el resto del batch: tras sync, el dashboard admin ve el catálogo actualizado en BD.
 
 ### 6.3 Flujo lógico recomendado en la misma caja
 
@@ -316,11 +321,11 @@ Ver §5.
 
 | | |
 |--|--|
-| **Auth** | JWT usuario (`typ: user`) y `role` **ADMIN** o **CASHIER** |
+| **Auth** | JWT **dispositivo** (`typ: device`, tienda del token) **o** usuario con `role` **ADMIN** o **CASHIER** |
 | **200** | `{ products: Product[] }` — solo `active: true`, orden por `name` |
 | **401/403** | `UNAUTHORIZED` / `FORBIDDEN` |
 
-**POST /api/products** — solo **ADMIN**; crea producto. Body:
+**POST /api/products** — solo **ADMIN** (panel web). Cuerpo JSON:
 
 ```json
 {
@@ -344,6 +349,8 @@ Ver §5.
 - `costCents`: opcional (compatibilidad); no es obligatorio en el panel de inventario.
 
 Respuestas: **200** `{ product }`, **400** `INVALID_BODY`, **403** `FORBIDDEN`, **409** `DUPLICATE_SKU_OR_DB`.
+
+La **tablet** (token de dispositivo) no usa esta ruta: envía **`PRODUCT_CREATED`** / **`PRODUCT_UPDATED`** / **`PRODUCT_DELETED`** en **`POST /api/sync/batch`** (§6.2); al aceptarse, el inventario del admin lee la misma BD.
 
 ### 7.3.1 `PATCH /api/products/[id]`
 
@@ -466,7 +473,7 @@ Las rutas API **no** definen en este repo cabeceras CORS globales. Desde una APK
 2. Enviar lotes a **`POST /api/sync/batch`** con `Authorization: Bearer <jwt_dispositivo>`.  
 3. Usar **UUID** en `events[].id` y mantener **orden temporal** coherente.  
 4. Agrupar en un mismo batch (o diseño acordado) los eventos de una venta para que `SALE_COMPLETED` encuentre el borrador.  
-5. **Catálogo:** hoy `GET /api/products` **no** es accesible con token de dispositivo; acordar ampliación de API o fuente de catálogo.  
+5. **Catálogo:** `GET /api/products` con **Bearer** del JWT de dispositivo; cambios de producto desde la caja en **`POST /api/sync/batch`** (`PRODUCT_CREATED` / `PRODUCT_UPDATED` / `PRODUCT_DELETED`).  
 6. Importes en API: **céntimos CUP** (`priceCents`, totales de venta) y **centavos USD** de catálogo (`priceUsdCents`); en formularios del panel se muestran importes humanos con coma decimal.  
 7. Tras cambios de esquema Prisma en el servidor, alinear versión de cliente generado y migraciones.
 
@@ -489,4 +496,4 @@ Las rutas API **no** definen en este repo cabeceras CORS globales. Desde una APK
 
 ---
 
-*Última actualización alineada con el código del repositorio Tienda Luna (incluye `priceUsdCents`, `unitsPerBox`, `wholesaleCupCents` en `Product`, `PATCH /api/products/[id]`, precio unitario en `SALE_COMPLETED` según `paymentMethod`, y rutas admin de informes/economía).*
+*Última actualización alineada con el código del repositorio Tienda Luna (incluye eventos `PRODUCT_CREATED` / `PRODUCT_UPDATED` / `PRODUCT_DELETED` en sync, `GET /api/products` para JWT de dispositivo, y campos de catálogo ya documentados en `Product`).*
