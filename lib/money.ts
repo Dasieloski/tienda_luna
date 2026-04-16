@@ -20,6 +20,16 @@ export function formatUsdFromCupCents(cents: number | undefined | null) {
   }).format(usd);
 }
 
+/** Formatea un importe almacenado en centavos de dólar (199 → US$1.99). */
+export function formatUsdCents(usdCents: number | undefined | null) {
+  const value = (usdCents ?? 0) / 100;
+  return new Intl.NumberFormat("en-US", {
+    style: "currency",
+    currency: "USD",
+    maximumFractionDigits: 2,
+  }).format(value);
+}
+
 export function formatCupAndUsdLabel(cents: number | undefined | null) {
   return `${formatCup(cents)} · ${formatUsdFromCupCents(cents)}`;
 }

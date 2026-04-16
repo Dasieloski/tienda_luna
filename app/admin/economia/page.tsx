@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Banknote, Calendar, CreditCard, DollarSign, ReceiptText, RefreshCw } from "lucide-react";
+import { Banknote, Calendar, CreditCard, DollarSign, FileDown, ReceiptText, RefreshCw } from "lucide-react";
 import { AdminShell } from "@/components/admin/admin-shell";
 import { formatCup, formatCupAndUsdLabel, formatUsdFromCupCents } from "@/lib/money";
 import { cn } from "@/lib/utils";
@@ -142,6 +142,14 @@ export default function EconomyPage() {
                 className="tl-input h-9 w-[140px] px-3 py-1 text-xs sm:text-sm"
               />
             </label>
+            <a
+              className="tl-btn tl-btn-secondary tl-interactive tl-hover-lift tl-press tl-focus !px-3 !py-2 text-xs sm:text-sm no-underline"
+              href={`/api/admin/economy/export?date=${encodeURIComponent(date)}`}
+              title="Exportar CSV"
+            >
+              <FileDown className="h-4 w-4" aria-hidden />
+              Exportar CSV
+            </a>
             <button
               type="button"
               onClick={() => void load({ silent: true })}

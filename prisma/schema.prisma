@@ -72,7 +72,14 @@ model Product {
   store       Store    @relation(fields: [storeId], references: [id], onDelete: Cascade)
   sku         String
   name        String
+  /// PVP al público en CUP (céntimos)
   priceCents  Int      @default(0)
+  /// PVP al público en USD (centavos de dólar, ej. 199 = US$1.99)
+  priceUsdCents Int    @default(0)
+  /// Unidades que trae una caja (referencia de compra / etiqueta)
+  unitsPerBox Int      @default(1)
+  /// Precio mayorista sugerido en CUP (céntimos); referencia en panel
+  wholesaleCupCents Int?
   costCents   Int?
   /// Coste proveedor (céntimos); nombre en supplierName
   supplierName String?

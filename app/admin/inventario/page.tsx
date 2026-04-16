@@ -1,17 +1,20 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { Boxes, ChevronRight, Package } from "lucide-react";
+import { Boxes, ChevronRight, Package, Pencil, X } from "lucide-react";
 import { AdminShell } from "@/components/admin/admin-shell";
 import { DataTable, type Column } from "@/components/admin/data-table";
 import { cn } from "@/lib/utils";
-import { formatCupAndUsdLabel } from "@/lib/money";
+import { formatCup, formatCupAndUsdLabel, formatUsdCents, formatUsdFromCupCents } from "@/lib/money";
 
 type ProductRow = {
   id: string;
   sku: string;
   name: string;
   priceCents: number;
+  priceUsdCents: number;
+  unitsPerBox: number;
+  wholesaleCupCents: number | null;
   costCents: number | null;
   supplierName: string | null;
   stockQty: number;
@@ -19,20 +22,50 @@ type ProductRow = {
   active: boolean;
 };
 
+function parseMoneyToCents(s: string): number | null {
+  const t = s.replace(",", ".").trim();
+  if (t === "") return null;
+  const n = Number.parseFloat(t);
+  if (!Number.isFinite(n) || n < 0) return null;
+  return Math.round(n * 100);
+}
+
+function centsToInput(cents: number) {
+  return (cents / 100).toFixed(2).replace(".", ",");
+}
+
 export default function InventoryPage() {
   const [products, setProducts] = useState<ProductRow[]>([]);
   const [loading, setLoading] = useState(true);
 
-  // Form state
+  // Alta
   const [formSku, setFormSku] = useState("");
   const [formName, setFormName] = useState("");
-  const [formPrice, setFormPrice] = useState("");
-  const [formCost, setFormCost] = useState("");
+  const [formPriceCup, setFormPriceCup] = useState("");
+  const [formPriceUsd, setFormPriceUsd] = useState("");
+  const [formUnitsBox, setFormUnitsBox] = useState("1");
+  const [formWholesaleCup, setFormWholesaleCup] = useState("");
   const [formSupplier, setFormSupplier] = useState("");
   const [formStock, setFormStock] = useState("0");
   const [formLow, setFormLow] = useState("5");
   const [formMsg, setFormMsg] = useState<string | null>(null);
   const [formBusy, setFormBusy] = useState(false);
+
+  // Edición (modal)
+  const [editOpen, setEditOpen] = useState(false);
+  const [editBusy, setEditBusy] = useState(false);
+  const [editMsg, setEditMsg] = useState<string | null>(null);
+  const [editId, setEditId] = useState<string | null>(null);
+  const [eSku, setESku] = useState("");
+  const [eName, setEName] = useState("");
+  const [ePriceCup, setEPriceCup] = useState("");
+  const [ePriceUsd, setEPriceUsd] = useState("");
+  const [eUnitsBox, setEUnitsBox] = useState("1");
+  const [eWholesaleCup, setEWholesaleCup] = useState("");
+  const [eSupplier, setESupplier] = useState("");
+  const [eStock, setEStock] = useState("0");
+  const [eLow, setELow] = useState("5");
+  const [eActive, setEActive] = useState(true);
 
   const loadProducts = useCallback(async () => {
     try {
@@ -45,12 +78,10 @@ export default function InventoryPage() {
     }
   }, []);
 
-  // Initial load
   useEffect(() => {
     void loadProducts();
   }, [loadProducts]);
 
-  // Listen for refresh events
   useEffect(() => {
     function handleRefresh() {
       void loadProducts();
@@ -59,17 +90,62 @@ export default function InventoryPage() {
     return () => window.removeEventListener("tl-refresh", handleRefresh);
   }, [loadProducts]);
 
+  useEffect(() => {
+    if (!editOpen) return;
+    function onKey(e: KeyboardEvent) {
+      if (e.key === "Escape") setEditOpen(false);
+    }
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [editOpen]);
+
+  function openEdit(p: ProductRow) {
+    setEditId(p.id);
+    setESku(p.sku);
+    setEName(p.name);
+    setEPriceCup(centsToInput(p.priceCents));
+    setEPriceUsd(
+      p.priceUsdCents > 0
+        ? (p.priceUsdCents / 100).toFixed(2).replace(".", ",")
+        : "",
+    );
+    setEUnitsBox(String(p.unitsPerBox ?? 1));
+    setEWholesaleCup(
+      p.wholesaleCupCents != null ? centsToInput(p.wholesaleCupCents) : "",
+    );
+    setESupplier(p.supplierName ?? "");
+    setEStock(String(p.stockQty));
+    setELow(String(p.lowStockAt));
+    setEActive(p.active);
+    setEditMsg(null);
+    setEditOpen(true);
+  }
+
   async function onCreateProduct(e: React.FormEvent) {
     e.preventDefault();
     setFormBusy(true);
     setFormMsg(null);
 
-    const priceCents = Math.round(parseFloat(formPrice.replace(",", ".")) * 100);
-    const costCents =
-      formCost.trim() === "" ? undefined : Math.round(parseFloat(formCost.replace(",", ".")) * 100);
+    const priceCents = parseMoneyToCents(formPriceCup);
+    const priceUsdCentsParsed =
+      formPriceUsd.trim() === "" ? 0 : parseMoneyToCents(formPriceUsd);
+    const priceUsdCents = priceUsdCentsParsed ?? -1;
+    const wholesaleCupCents =
+      formWholesaleCup.trim() === "" ? null : parseMoneyToCents(formWholesaleCup);
+    const unitsPerBox = Math.max(1, parseInt(formUnitsBox, 10) || 1);
 
-    if (Number.isNaN(priceCents) || priceCents < 0) {
-      setFormMsg("Precio público no válido.");
+    if (priceCents == null || priceCents < 0) {
+      setFormMsg("Precio en CUP no válido.");
+      setFormBusy(false);
+      return;
+    }
+    if (priceUsdCents < 0) {
+      setFormMsg("Precio en USD no válido.");
+      setFormBusy(false);
+      return;
+    }
+    if (formWholesaleCup.trim() !== "" && wholesaleCupCents == null) {
+      setFormMsg("Precio mayorista no válido.");
       setFormBusy(false);
       return;
     }
@@ -82,7 +158,9 @@ export default function InventoryPage() {
         sku: formSku.trim(),
         name: formName.trim(),
         priceCents,
-        costCents,
+        priceUsdCents,
+        unitsPerBox,
+        wholesaleCupCents,
         supplierName: formSupplier.trim() || null,
         stockQty: parseInt(formStock, 10) || 0,
         lowStockAt: parseInt(formLow, 10) || 5,
@@ -98,15 +176,80 @@ export default function InventoryPage() {
     setFormMsg("Producto creado correctamente.");
     setFormSku("");
     setFormName("");
-    setFormPrice("");
-    setFormCost("");
+    setFormPriceCup("");
+    setFormPriceUsd("");
+    setFormUnitsBox("1");
+    setFormWholesaleCup("");
     setFormSupplier("");
     setFormStock("0");
     setFormLow("5");
     void loadProducts();
+    window.dispatchEvent(new Event("tl-refresh"));
   }
 
-  // Stats
+  async function onSaveEdit(e: React.FormEvent) {
+    e.preventDefault();
+    if (!editId) return;
+    setEditBusy(true);
+    setEditMsg(null);
+
+    const priceCents = parseMoneyToCents(ePriceCup);
+    const priceUsdCentsParsed =
+      ePriceUsd.trim() === "" ? 0 : parseMoneyToCents(ePriceUsd);
+    const priceUsdCents = priceUsdCentsParsed ?? -1;
+    const wholesaleCupCents =
+      eWholesaleCup.trim() === "" ? null : parseMoneyToCents(eWholesaleCup);
+    const unitsPerBox = Math.max(1, parseInt(eUnitsBox, 10) || 1);
+
+    if (priceCents == null || priceCents < 0) {
+      setEditMsg("Precio en CUP no válido.");
+      setEditBusy(false);
+      return;
+    }
+    if (priceUsdCents < 0) {
+      setEditMsg("Precio en USD no válido.");
+      setEditBusy(false);
+      return;
+    }
+    if (eWholesaleCup.trim() !== "" && wholesaleCupCents == null) {
+      setEditMsg("Precio mayorista no válido.");
+      setEditBusy(false);
+      return;
+    }
+
+    const res = await fetch(`/api/products/${editId}`, {
+      method: "PATCH",
+      credentials: "include",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        sku: eSku.trim(),
+        name: eName.trim(),
+        priceCents,
+        priceUsdCents,
+        unitsPerBox,
+        wholesaleCupCents,
+        supplierName: eSupplier.trim() || null,
+        stockQty: parseInt(eStock, 10) || 0,
+        lowStockAt: parseInt(eLow, 10) || 5,
+        active: eActive,
+      }),
+    });
+
+    setEditBusy(false);
+    if (!res.ok) {
+      setEditMsg(
+        res.status === 409
+          ? "SKU duplicado u otro conflicto."
+          : "No se pudo guardar el producto.",
+      );
+      return;
+    }
+
+    setEditOpen(false);
+    void loadProducts();
+    window.dispatchEvent(new Event("tl-refresh"));
+  }
+
   const totalProducts = products.length;
   const lowStockCount = products.filter((p) => p.stockQty <= p.lowStockAt).length;
   const totalValue = products.reduce((acc, p) => acc + p.priceCents * p.stockQty, 0);
@@ -130,34 +273,55 @@ export default function InventoryPage() {
       ),
     },
     {
-      key: "priceCents",
-      label: "PVP",
+      key: "priceUsdCents",
+      label: "PVP USD",
       sortable: true,
       align: "right",
       width: "100px",
       render: (row) => (
         <span className="tabular-nums text-tl-ink">
-          {formatCupAndUsdLabel(row.priceCents)}
+          {row.priceUsdCents > 0
+            ? formatUsdCents(row.priceUsdCents)
+            : formatUsdFromCupCents(row.priceCents)}
+        </span>
+      ),
+    },
+    {
+      key: "priceCents",
+      label: "PVP CUP",
+      sortable: true,
+      align: "right",
+      width: "100px",
+      render: (row) => (
+        <span className="tabular-nums text-tl-ink">{formatCup(row.priceCents)}</span>
+      ),
+    },
+    {
+      key: "unitsPerBox",
+      label: "Ud/caja",
+      align: "right",
+      width: "72px",
+      render: (row) => (
+        <span className="tabular-nums text-tl-muted">{row.unitsPerBox ?? 1}</span>
+      ),
+    },
+    {
+      key: "wholesaleCupCents",
+      label: "Mayorista",
+      align: "right",
+      width: "100px",
+      render: (row) => (
+        <span className="tabular-nums text-tl-muted">
+          {row.wholesaleCupCents != null ? formatCup(row.wholesaleCupCents) : "—"}
         </span>
       ),
     },
     {
       key: "supplierName",
       label: "Proveedor",
-      width: "150px",
+      width: "140px",
       render: (row) => (
         <span className="text-tl-muted">{row.supplierName ?? "—"}</span>
-      ),
-    },
-    {
-      key: "costCents",
-      label: "Coste",
-      align: "right",
-      width: "100px",
-      render: (row) => (
-        <span className="tabular-nums text-tl-muted">
-          {row.costCents != null ? formatCupAndUsdLabel(row.costCents) : "—"}
-        </span>
       ),
     },
     {
@@ -165,12 +329,12 @@ export default function InventoryPage() {
       label: "Stock",
       sortable: true,
       align: "right",
-      width: "80px",
+      width: "72px",
       render: (row) => (
         <span
           className={cn(
             "tabular-nums font-medium",
-            row.stockQty <= row.lowStockAt ? "text-tl-warning" : "text-tl-ink"
+            row.stockQty <= row.lowStockAt ? "text-tl-warning" : "text-tl-ink",
           )}
         >
           {row.stockQty}
@@ -178,12 +342,23 @@ export default function InventoryPage() {
       ),
     },
     {
-      key: "lowStockAt",
-      label: "Umbral",
-      align: "right",
-      width: "80px",
+      key: "id",
+      label: "",
+      width: "52px",
+      align: "center",
       render: (row) => (
-        <span className="tabular-nums text-tl-muted">{row.lowStockAt}</span>
+        <button
+          type="button"
+          className="tl-btn tl-btn-secondary tl-interactive tl-press tl-focus !px-2 !py-1"
+          title="Editar producto"
+          aria-label={`Editar ${row.name}`}
+          onClick={(ev) => {
+            ev.stopPropagation();
+            openEdit(row);
+          }}
+        >
+          <Pencil className="h-3.5 w-3.5" aria-hidden />
+        </button>
       ),
     },
   ];
@@ -191,7 +366,6 @@ export default function InventoryPage() {
   return (
     <AdminShell title="Inventario">
       <div className="space-y-6">
-        {/* Header */}
         <div>
           <h1 className="tl-welcome-header">Inventario</h1>
           <p className="mt-1 text-sm text-tl-muted">
@@ -199,7 +373,6 @@ export default function InventoryPage() {
           </p>
         </div>
 
-        {/* Stats */}
         <div className="grid gap-4 sm:grid-cols-3">
           <div className="tl-glass rounded-xl p-4">
             <div className="flex items-center gap-3">
@@ -237,9 +410,7 @@ export default function InventoryPage() {
           </div>
         </div>
 
-        {/* Main content: Table + Form */}
-        <div className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_320px]">
-          {/* Products table */}
+        <div className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_340px]">
           <DataTable
             columns={columns}
             data={products}
@@ -253,7 +424,6 @@ export default function InventoryPage() {
             skeletonRows={12}
           />
 
-          {/* New product form */}
           <div className="h-fit tl-glass tl-gradient-border rounded-xl p-5">
             <h2 className="flex items-center gap-2 text-sm font-semibold text-tl-ink">
               <Package className="h-4 w-4 text-tl-accent" aria-hidden />
@@ -274,7 +444,7 @@ export default function InventoryPage() {
               </div>
               <div>
                 <label className="text-xs text-tl-muted" htmlFor="np-name">
-                  Nombre
+                  Nombre del producto
                 </label>
                 <input
                   id="np-name"
@@ -286,29 +456,58 @@ export default function InventoryPage() {
               </div>
               <div className="grid gap-2 sm:grid-cols-2">
                 <div>
-                  <label className="text-xs text-tl-muted" htmlFor="np-price">
-                    PVP (CUP)
+                  <label className="text-xs text-tl-muted" htmlFor="np-cup">
+                    Precio PVP (CUP)
                   </label>
                   <input
-                    id="np-price"
+                    id="np-cup"
                     inputMode="decimal"
-                    value={formPrice}
-                    onChange={(e) => setFormPrice(e.target.value)}
-                    placeholder="12,50"
+                    value={formPriceCup}
+                    onChange={(e) => setFormPriceCup(e.target.value)}
+                    placeholder="250,00"
                     className="tl-input mt-1"
                     required
                   />
                 </div>
                 <div>
-                  <label className="text-xs text-tl-muted" htmlFor="np-cost">
-                    Coste prov.
+                  <label className="text-xs text-tl-muted" htmlFor="np-usd">
+                    Precio PVP (USD)
                   </label>
                   <input
-                    id="np-cost"
+                    id="np-usd"
                     inputMode="decimal"
-                    value={formCost}
-                    onChange={(e) => setFormCost(e.target.value)}
-                    placeholder="8,00"
+                    value={formPriceUsd}
+                    onChange={(e) => setFormPriceUsd(e.target.value)}
+                    placeholder="1,00 (opcional)"
+                    className="tl-input mt-1"
+                  />
+                </div>
+              </div>
+              <div className="grid gap-2 sm:grid-cols-2">
+                <div>
+                  <label className="text-xs text-tl-muted" htmlFor="np-box">
+                    Unidades por caja
+                  </label>
+                  <input
+                    id="np-box"
+                    type="number"
+                    min={1}
+                    value={formUnitsBox}
+                    onChange={(e) => setFormUnitsBox(e.target.value)}
+                    className="tl-input mt-1"
+                    required
+                  />
+                </div>
+                <div>
+                  <label className="text-xs text-tl-muted" htmlFor="np-wh">
+                    Precio mayorista (CUP)
+                  </label>
+                  <input
+                    id="np-wh"
+                    inputMode="decimal"
+                    value={formWholesaleCup}
+                    onChange={(e) => setFormWholesaleCup(e.target.value)}
+                    placeholder="opcional"
                     className="tl-input mt-1"
                   />
                 </div>
@@ -356,17 +555,13 @@ export default function InventoryPage() {
                 <p
                   className={cn(
                     "text-xs",
-                    formMsg.includes("correctamente") ? "text-tl-success" : "text-tl-warning"
+                    formMsg.includes("correctamente") ? "text-tl-success" : "text-tl-warning",
                   )}
                 >
                   {formMsg}
                 </p>
               )}
-              <button
-                type="submit"
-                disabled={formBusy}
-                className="tl-btn-primary w-full"
-              >
+              <button type="submit" disabled={formBusy} className="tl-btn-primary w-full">
                 {formBusy ? "Guardando..." : "Crear producto"}
                 <ChevronRight className="h-4 w-4" aria-hidden />
               </button>
@@ -374,6 +569,179 @@ export default function InventoryPage() {
           </div>
         </div>
       </div>
+
+      {editOpen && (
+        <div
+          className="fixed inset-0 z-[100] flex items-end justify-center bg-black/50 p-4 sm:items-center"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="edit-product-title"
+          onClick={() => setEditOpen(false)}
+        >
+          <div
+            className="tl-glass max-h-[90vh] w-full max-w-lg overflow-y-auto rounded-2xl p-5 shadow-xl"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-start justify-between gap-3">
+              <h2 id="edit-product-title" className="text-lg font-semibold text-tl-ink">
+                Editar producto
+              </h2>
+              <button
+                type="button"
+                className="tl-btn tl-btn-secondary !p-2"
+                aria-label="Cerrar"
+                onClick={() => setEditOpen(false)}
+              >
+                <X className="h-4 w-4" aria-hidden />
+              </button>
+            </div>
+            <form onSubmit={onSaveEdit} className="mt-4 space-y-3">
+              <div>
+                <label className="text-xs text-tl-muted" htmlFor="ed-sku">
+                  SKU
+                </label>
+                <input
+                  id="ed-sku"
+                  value={eSku}
+                  onChange={(e) => setESku(e.target.value)}
+                  className="tl-input mt-1"
+                  required
+                />
+              </div>
+              <div>
+                <label className="text-xs text-tl-muted" htmlFor="ed-name">
+                  Nombre
+                </label>
+                <input
+                  id="ed-name"
+                  value={eName}
+                  onChange={(e) => setEName(e.target.value)}
+                  className="tl-input mt-1"
+                  required
+                />
+              </div>
+              <div className="grid gap-2 sm:grid-cols-2">
+                <div>
+                  <label className="text-xs text-tl-muted" htmlFor="ed-cup">
+                    PVP (CUP)
+                  </label>
+                  <input
+                    id="ed-cup"
+                    inputMode="decimal"
+                    value={ePriceCup}
+                    onChange={(e) => setEPriceCup(e.target.value)}
+                    className="tl-input mt-1"
+                    required
+                  />
+                </div>
+                <div>
+                  <label className="text-xs text-tl-muted" htmlFor="ed-usd">
+                    PVP (USD)
+                  </label>
+                  <input
+                    id="ed-usd"
+                    inputMode="decimal"
+                    value={ePriceUsd}
+                    onChange={(e) => setEPriceUsd(e.target.value)}
+                    placeholder="opcional"
+                    className="tl-input mt-1"
+                  />
+                </div>
+              </div>
+              <div className="grid gap-2 sm:grid-cols-2">
+                <div>
+                  <label className="text-xs text-tl-muted" htmlFor="ed-box">
+                    Unidades por caja
+                  </label>
+                  <input
+                    id="ed-box"
+                    type="number"
+                    min={1}
+                    value={eUnitsBox}
+                    onChange={(e) => setEUnitsBox(e.target.value)}
+                    className="tl-input mt-1"
+                    required
+                  />
+                </div>
+                <div>
+                  <label className="text-xs text-tl-muted" htmlFor="ed-wh">
+                    Mayorista (CUP)
+                  </label>
+                  <input
+                    id="ed-wh"
+                    inputMode="decimal"
+                    value={eWholesaleCup}
+                    onChange={(e) => setEWholesaleCup(e.target.value)}
+                    placeholder="opcional"
+                    className="tl-input mt-1"
+                  />
+                </div>
+              </div>
+              <div>
+                <label className="text-xs text-tl-muted" htmlFor="ed-sup">
+                  Proveedor
+                </label>
+                <input
+                  id="ed-sup"
+                  value={eSupplier}
+                  onChange={(e) => setESupplier(e.target.value)}
+                  className="tl-input mt-1"
+                />
+              </div>
+              <div className="grid gap-2 sm:grid-cols-2">
+                <div>
+                  <label className="text-xs text-tl-muted" htmlFor="ed-st">
+                    Stock
+                  </label>
+                  <input
+                    id="ed-st"
+                    type="number"
+                    min={0}
+                    value={eStock}
+                    onChange={(e) => setEStock(e.target.value)}
+                    className="tl-input mt-1"
+                  />
+                </div>
+                <div>
+                  <label className="text-xs text-tl-muted" htmlFor="ed-low">
+                    Alerta stock
+                  </label>
+                  <input
+                    id="ed-low"
+                    type="number"
+                    min={0}
+                    value={eLow}
+                    onChange={(e) => setELow(e.target.value)}
+                    className="tl-input mt-1"
+                  />
+                </div>
+              </div>
+              <label className="flex cursor-pointer items-center gap-2 text-sm text-tl-ink">
+                <input
+                  type="checkbox"
+                  checked={eActive}
+                  onChange={(e) => setEActive(e.target.checked)}
+                  className="h-4 w-4 rounded border-tl-line"
+                />
+                Producto activo (visible en catálogo)
+              </label>
+              {editMsg && <p className="text-xs text-tl-warning">{editMsg}</p>}
+              <div className="flex flex-wrap gap-2 pt-1">
+                <button type="submit" disabled={editBusy} className="tl-btn-primary flex-1">
+                  {editBusy ? "Guardando..." : "Guardar cambios"}
+                </button>
+                <button
+                  type="button"
+                  className="tl-btn tl-btn-secondary flex-1"
+                  onClick={() => setEditOpen(false)}
+                >
+                  Cancelar
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
     </AdminShell>
   );
 }

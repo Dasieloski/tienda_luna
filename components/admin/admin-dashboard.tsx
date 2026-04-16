@@ -16,7 +16,7 @@ import {
 } from "lucide-react";
 import { DashboardCharts } from "@/components/admin/dashboard-charts";
 import { cn } from "@/lib/utils";
-import { formatCupAndUsdLabel } from "@/lib/money";
+import { formatCup, formatCupAndUsdLabel, formatUsdCents, formatUsdFromCupCents } from "@/lib/money";
 
 const TABS = [
   { id: "vista" as const, label: "Vista general", icon: LayoutGrid },
@@ -118,6 +118,9 @@ type ProductRow = {
   sku: string;
   name: string;
   priceCents: number;
+  priceUsdCents: number;
+  unitsPerBox: number;
+  wholesaleCupCents: number | null;
   costCents: number | null;
   supplierName: string | null;
   stockQty: number;
@@ -191,8 +194,10 @@ export function AdminDashboard() {
 
   const [formSku, setFormSku] = useState("");
   const [formName, setFormName] = useState("");
-  const [formPrice, setFormPrice] = useState("");
-  const [formCost, setFormCost] = useState("");
+  const [formPriceCup, setFormPriceCup] = useState("");
+  const [formPriceUsd, setFormPriceUsd] = useState("");
+  const [formUnitsBox, setFormUnitsBox] = useState("1");
+  const [formWholesaleCup, setFormWholesaleCup] = useState("");
   const [formSupplier, setFormSupplier] = useState("");
   const [formStock, setFormStock] = useState("0");
   const [formLow, setFormLow] = useState("5");
@@ -261,11 +266,30 @@ export function AdminDashboard() {
     e.preventDefault();
     setFormBusy(true);
     setFormMsg(null);
-    const priceCents = Math.round(parseFloat(formPrice.replace(",", ".")) * 100);
-    const costCents =
-      formCost.trim() === "" ? undefined : Math.round(parseFloat(formCost.replace(",", ".")) * 100);
+    const cup = parseFloat(formPriceCup.replace(",", "."));
+    const priceCents = Math.round(cup * 100);
+    const usdParsed =
+      formPriceUsd.trim() === ""
+        ? 0
+        : Math.round(parseFloat(formPriceUsd.replace(",", ".")) * 100);
+    let wholesaleCupCents: number | null = null;
+    if (formWholesaleCup.trim() !== "") {
+      const w = Math.round(parseFloat(formWholesaleCup.replace(",", ".")) * 100);
+      if (Number.isNaN(w) || w < 0) {
+        setFormMsg("Precio mayorista no válido.");
+        setFormBusy(false);
+        return;
+      }
+      wholesaleCupCents = w;
+    }
+    const unitsPerBox = Math.max(1, parseInt(formUnitsBox, 10) || 1);
     if (Number.isNaN(priceCents) || priceCents < 0) {
-      setFormMsg("Precio público no válido.");
+      setFormMsg("Precio en CUP no válido.");
+      setFormBusy(false);
+      return;
+    }
+    if (Number.isNaN(usdParsed) || usdParsed < 0) {
+      setFormMsg("Precio en USD no válido.");
       setFormBusy(false);
       return;
     }
@@ -277,7 +301,9 @@ export function AdminDashboard() {
         sku: formSku.trim(),
         name: formName.trim(),
         priceCents,
-        costCents,
+        priceUsdCents: usdParsed,
+        unitsPerBox,
+        wholesaleCupCents,
         supplierName: formSupplier.trim() || null,
         stockQty: parseInt(formStock, 10) || 0,
         lowStockAt: parseInt(formLow, 10) || 5,
@@ -291,8 +317,10 @@ export function AdminDashboard() {
     setFormMsg("Producto creado correctamente.");
     setFormSku("");
     setFormName("");
-    setFormPrice("");
-    setFormCost("");
+    setFormPriceCup("");
+    setFormPriceUsd("");
+    setFormUnitsBox("1");
+    setFormWholesaleCup("");
     setFormSupplier("");
     setFormStock("0");
     setFormLow("5");
@@ -579,19 +607,23 @@ export function AdminDashboard() {
         <div className="space-y-10">
           <div>
             <h1 className="text-2xl font-bold tracking-tight text-white">Catálogo</h1>
-            <p className="mt-1 text-sm text-zinc-500">Alta de productos con coste proveedor y control de stock</p>
+            <p className="mt-1 text-sm text-zinc-500">
+              Alta con PVP en CUP y USD, unidades por caja, mayorista y proveedor
+            </p>
           </div>
 
           <div className="grid gap-8 lg:grid-cols-[minmax(0,1fr)_320px]">
             <div className="overflow-x-auto rounded-2xl border border-white/10 ring-1 ring-white/5">
-              <table className="w-full min-w-[800px] text-left text-sm">
+              <table className="w-full min-w-[960px] text-left text-sm">
                 <thead className="border-b border-white/10 bg-white/[0.04] text-[11px] uppercase tracking-wider text-zinc-500">
                   <tr>
                     <th className="px-4 py-3">SKU</th>
                     <th className="px-4 py-3">Nombre</th>
-                    <th className="px-4 py-3">PVP</th>
+                    <th className="px-4 py-3">PVP CUP</th>
+                    <th className="px-4 py-3">PVP USD</th>
+                    <th className="px-4 py-3">Ud/caja</th>
                     <th className="px-4 py-3">Proveedor</th>
-                    <th className="px-4 py-3">Precio prov.</th>
+                    <th className="px-4 py-3">Mayorista</th>
                     <th className="px-4 py-3">Stock</th>
                     <th className="px-4 py-3">Umbral</th>
                   </tr>
@@ -602,11 +634,19 @@ export function AdminDashboard() {
                       <td className="px-4 py-2.5 font-mono text-xs text-violet-300">{p.sku}</td>
                       <td className="px-4 py-2.5 font-medium text-zinc-200">{p.name}</td>
                       <td className="px-4 py-2.5 tabular-nums text-zinc-300">
-                        {formatCupAndUsdLabel(p.priceCents)}
+                        {formatCup(p.priceCents)}
+                      </td>
+                      <td className="px-4 py-2.5 tabular-nums text-zinc-300">
+                        {p.priceUsdCents > 0
+                          ? formatUsdCents(p.priceUsdCents)
+                          : formatUsdFromCupCents(p.priceCents)}
+                      </td>
+                      <td className="px-4 py-2.5 tabular-nums text-zinc-400">
+                        {p.unitsPerBox ?? 1}
                       </td>
                       <td className="px-4 py-2.5 text-zinc-400">{p.supplierName ?? "—"}</td>
                       <td className="px-4 py-2.5 tabular-nums text-zinc-400">
-                        {p.costCents != null ? formatCupAndUsdLabel(p.costCents) : "—"}
+                        {p.wholesaleCupCents != null ? formatCup(p.wholesaleCupCents) : "—"}
                       </td>
                       <td className="px-4 py-2.5 tabular-nums">{p.stockQty}</td>
                       <td className="px-4 py-2.5 tabular-nums text-zinc-500">{p.lowStockAt}</td>
@@ -648,29 +688,57 @@ export function AdminDashboard() {
                 </div>
                 <div className="grid grid-cols-2 gap-2">
                   <div>
-                    <label className="text-xs text-zinc-400" htmlFor="np-price">
-                      PVP (€)
+                    <label className="text-xs text-zinc-400" htmlFor="np-price-cup">
+                      PVP (CUP)
                     </label>
                     <input
-                      id="np-price"
+                      id="np-price-cup"
                       inputMode="decimal"
-                      value={formPrice}
-                      onChange={(e) => setFormPrice(e.target.value)}
-                      placeholder="12,50"
+                      value={formPriceCup}
+                      onChange={(e) => setFormPriceCup(e.target.value)}
+                      placeholder="250,00"
                       className="mt-1 w-full rounded-xl border border-white/10 bg-black/30 px-3 py-2 text-sm text-white focus:border-violet-500 focus:outline-none focus:ring-2 focus:ring-violet-500/30"
                       required
                     />
                   </div>
                   <div>
-                    <label className="text-xs text-zinc-400" htmlFor="np-cost">
-                      Coste prov. (€)
+                    <label className="text-xs text-zinc-400" htmlFor="np-price-usd">
+                      PVP (USD)
                     </label>
                     <input
-                      id="np-cost"
+                      id="np-price-usd"
                       inputMode="decimal"
-                      value={formCost}
-                      onChange={(e) => setFormCost(e.target.value)}
-                      placeholder="8,00"
+                      value={formPriceUsd}
+                      onChange={(e) => setFormPriceUsd(e.target.value)}
+                      placeholder="opcional"
+                      className="mt-1 w-full rounded-xl border border-white/10 bg-black/30 px-3 py-2 text-sm text-white focus:border-violet-500 focus:outline-none focus:ring-2 focus:ring-violet-500/30"
+                    />
+                  </div>
+                </div>
+                <div className="grid grid-cols-2 gap-2">
+                  <div>
+                    <label className="text-xs text-zinc-400" htmlFor="np-box">
+                      Ud/caja
+                    </label>
+                    <input
+                      id="np-box"
+                      type="number"
+                      min={1}
+                      value={formUnitsBox}
+                      onChange={(e) => setFormUnitsBox(e.target.value)}
+                      className="mt-1 w-full rounded-xl border border-white/10 bg-black/30 px-3 py-2 text-sm text-white focus:border-violet-500 focus:outline-none focus:ring-2 focus:ring-violet-500/30"
+                    />
+                  </div>
+                  <div>
+                    <label className="text-xs text-zinc-400" htmlFor="np-wh">
+                      Mayorista (CUP)
+                    </label>
+                    <input
+                      id="np-wh"
+                      inputMode="decimal"
+                      value={formWholesaleCup}
+                      onChange={(e) => setFormWholesaleCup(e.target.value)}
+                      placeholder="opcional"
                       className="mt-1 w-full rounded-xl border border-white/10 bg-black/30 px-3 py-2 text-sm text-white focus:border-violet-500 focus:outline-none focus:ring-2 focus:ring-violet-500/30"
                     />
                   </div>

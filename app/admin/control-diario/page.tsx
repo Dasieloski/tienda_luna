@@ -1,9 +1,9 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { Calendar, ClipboardList, Download, RefreshCw } from "lucide-react";
+import { Calendar, ClipboardList, Download, FileDown, RefreshCw } from "lucide-react";
 import { AdminShell } from "@/components/admin/admin-shell";
-import { formatCup, formatCupAndUsdLabel, formatUsdFromCupCents } from "@/lib/money";
+import { formatCup, formatCupAndUsdLabel, formatUsdCents, formatUsdFromCupCents } from "@/lib/money";
 import { cn } from "@/lib/utils";
 
 type DailyRow = {
@@ -11,6 +11,7 @@ type DailyRow = {
   name: string;
   sku: string;
   priceCents: number;
+  priceUsdCents: number;
   qty: number;
   efectivoCents: number;
   transferenciaCents: number;
@@ -126,6 +127,13 @@ export default function DailyControlPage() {
               <Download className="h-4 w-4" aria-hidden />
               Imprimir / PDF
             </button>
+            <a
+              className="tl-btn tl-btn-secondary tl-interactive tl-hover-lift tl-press tl-focus !px-3 !py-2 text-xs sm:text-sm no-underline"
+              href={`/api/admin/daily-report/export?date=${encodeURIComponent(date)}`}
+            >
+              <FileDown className="h-4 w-4" aria-hidden />
+              Exportar CSV
+            </a>
           </div>
         </div>
 
@@ -199,7 +207,9 @@ export default function DailyControlPage() {
                           </div>
                         </td>
                         <td className="px-3 py-2 text-right text-xs text-tl-ink-secondary">
-                          {formatUsdFromCupCents(row.priceCents)}
+                          {row.priceUsdCents > 0
+                            ? formatUsdCents(row.priceUsdCents)
+                            : formatUsdFromCupCents(row.priceCents)}
                         </td>
                         <td className="px-3 py-2 text-right text-xs text-tl-ink-secondary">
                           {formatCup(row.priceCents)}

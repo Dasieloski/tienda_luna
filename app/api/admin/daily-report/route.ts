@@ -29,6 +29,7 @@ type Row = {
   name: string;
   sku: string;
   priceCents: number;
+  priceUsdCents: number;
   qty: number;
   efectivoCents: number;
   transferenciaCents: number;
@@ -76,6 +77,7 @@ export async function GET(request: Request) {
             name: string;
             sku: string;
             price_cents: number;
+            price_usd_cents: number;
             qty: bigint;
             efectivo_cents: bigint;
             transfer_cents: bigint;
@@ -87,6 +89,7 @@ export async function GET(request: Request) {
             p.name,
             p.sku,
             p."priceCents" AS price_cents,
+            p."priceUsdCents" AS price_usd_cents,
             COALESCE(SUM(sl.quantity), 0)::bigint AS qty,
             COALESCE(SUM(
               CASE
@@ -132,7 +135,7 @@ export async function GET(request: Request) {
           WHERE s."storeId" = ${session.storeId}
             AND s."completedAt" >= ${from}
             AND s."completedAt" < ${to}
-          GROUP BY p.id, p.name, p.sku, p."priceCents"
+          GROUP BY p.id, p.name, p.sku, p."priceCents", p."priceUsdCents"
           ORDER BY p.name
         `,
     );
@@ -142,6 +145,7 @@ export async function GET(request: Request) {
       name: r.name,
       sku: r.sku,
       priceCents: Number(r.price_cents ?? 0),
+      priceUsdCents: Number(r.price_usd_cents ?? 0),
       qty: Number(r.qty ?? BigInt(0)),
       efectivoCents: Number(r.efectivo_cents ?? BigInt(0)),
       transferenciaCents: Number(r.transfer_cents ?? BigInt(0)),

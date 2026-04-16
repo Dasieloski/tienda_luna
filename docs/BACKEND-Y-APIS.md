@@ -73,7 +73,7 @@ Implementación **solo admin estático** (`matchesStaticAdmin`); **no** valida `
 
 ## 4. Modelo de datos (Prisma / PostgreSQL)
 
-Convenciones: claves `cuid()`, timestamps en modelos que los tienen, **céntimos de euro** (`Int`) para importes.
+Convenciones: claves `cuid()`, timestamps en modelos que los tienen, importes monetarios como **enteros en céntimos**: CUP en `priceCents` / `wholesaleCupCents`, USD de catálogo en `priceUsdCents` (centavos de dólar, p. ej. `199` = US$1,99).
 
 ### 4.1 Enums
 
@@ -124,8 +124,11 @@ Relaciones: `users`, `devices`, `products`, `customers`, `events`, `sales`.
 | `storeId` | String | |
 | `sku` | String | Único por tienda: `@@unique([storeId, sku])` |
 | `name` | String | |
-| `priceCents` | Int | PVP servidor (el que usa el motor al completar venta) |
-| `costCents` | Int? | Coste / proveedor en céntimos |
+| `priceCents` | Int | PVP al público en **CUP** (céntimos); base para ventas en CUP y totales en céntimos CUP |
+| `priceUsdCents` | Int | PVP al público en **USD** (centavos de dólar); usado al cerrar venta si el payload indica pago en USD |
+| `unitsPerBox` | Int | Unidades por caja (referencia de empaque / compra) |
+| `wholesaleCupCents` | Int? | Precio mayorista sugerido en CUP (céntimos); referencia en panel |
+| `costCents` | Int? | Coste interno opcional (céntimos CUP) |
 | `supplierName` | String? | Nombre proveedor |
 | `stockQty` | Int | Stock actual |
 | `lowStockAt` | Int | Umbral alerta |
@@ -265,7 +268,7 @@ Definidos en `types/events.ts`. El servidor **solo procesa explícitamente** un 
 | `PRODUCT_ADDED_TO_CART` | `saleId`, `productId`, `quantity` (>0); opcional `unitPriceCents` (el servidor **usa precio de catálogo** al completar) |
 | `STOCK_DECREASED` | `productId`, `quantity` (>0); opcional `saleId` — si viene `saleId`, **no** descuenta stock (solo auditoría) |
 | `SALE_CANCELLED` | `saleId` |
-| `SALE_COMPLETED` | `saleId`; opcional `paymentMethod` |
+| `SALE_COMPLETED` | `saleId`; opcional `paymentMethod` (texto libre; el servidor detecta USD vs CUP para fijar precio unitario) |
 
 ### 6.3 Flujo lógico recomendado en la misma caja
 
@@ -280,7 +283,7 @@ El procesador mantiene un **borrador en memoria** (`pendingSales`) **solo dentro
 ### 6.4 Comportamiento de stock y venta
 
 - En `SALE_COMPLETED`, el servidor recalcula cantidades cumplidas con el **stock vivo** en transacción (`fulfillableQuantity`).  
-- Precio unitario: **`Product.priceCents`** (no confía en el cliente).  
+- Precio unitario (en **céntimos CUP** por línea, coherente con `Sale.totalCents`): se toma del catálogo según `paymentMethod` del payload de `SALE_COMPLETED` (`lib/pricing.ts` → `unitPriceCupCentsForSale`): si el método parece **USD** (`usd`, `dolar`, `cash_usd`, etc.), se usa `priceUsdCents` convertido a CUP con la tasa `NEXT_PUBLIC_USD_RATE_CUP`; si no hay USD en catálogo (`priceUsdCents === 0`), se usa `priceCents`. En pagos **no USD**, siempre `priceCents`. El cliente **no** fija el precio unitario servido.  
 - Si hay falta de stock: estado del evento puede ser `CORRECTED`, `Sale.status` `PARTIAL`, y se puede generar evento adicional `SALE_PARTIALLY_FULFILLED`.  
 - Si no hay nada servible: `SALE_REJECTED` + evento servidor `SALE_REJECTED`.  
 - `STOCK_DECREASED` sin `saleId` descuenta stock en BD; con `saleId` no toca stock.
@@ -324,6 +327,9 @@ Ver §5.
   "sku": "string",
   "name": "string",
   "priceCents": 0,
+  "priceUsdCents": 0,
+  "unitsPerBox": 1,
+  "wholesaleCupCents": null,
   "costCents": 0,
   "supplierName": "string | null",
   "stockQty": 0,
@@ -331,7 +337,25 @@ Ver §5.
 }
 ```
 
+- `priceCents`: PVP CUP (céntimos). Obligatorio ≥ 0.  
+- `priceUsdCents`: PVP USD (centavos de dólar). Default `0` (solo lista en CUP para la columna USD derivada por tasa).  
+- `unitsPerBox`: entero ≥ 1 (default `1`).  
+- `wholesaleCupCents`: opcional, céntimos CUP o `null`.  
+- `costCents`: opcional (compatibilidad); no es obligatorio en el panel de inventario.
+
 Respuestas: **200** `{ product }`, **400** `INVALID_BODY`, **403** `FORBIDDEN`, **409** `DUPLICATE_SKU_OR_DB`.
+
+### 7.3.1 `PATCH /api/products/[id]`
+
+| | |
+|--|--|
+| **Auth** | Solo **ADMIN** |
+| **Body** | Cualquier subconjunto de campos actualizables (al menos uno): `sku`, `name`, `priceCents`, `priceUsdCents`, `unitsPerBox`, `wholesaleCupCents`, `costCents`, `supplierName`, `stockQty`, `lowStockAt`, `active` |
+| **200** | `{ product }` |
+| **400** | `INVALID_BODY` (cuerpo vacío o inválido) |
+| **403** | `FORBIDDEN` |
+| **404** | `NOT_FOUND` (producto no pertenece a la tienda de la sesión) |
+| **409** | `DUPLICATE_SKU_OR_DB` (p. ej. SKU duplicado) |
 
 ### 7.4 `POST /api/sales/validate`
 
@@ -443,7 +467,7 @@ Las rutas API **no** definen en este repo cabeceras CORS globales. Desde una APK
 3. Usar **UUID** en `events[].id` y mantener **orden temporal** coherente.  
 4. Agrupar en un mismo batch (o diseño acordado) los eventos de una venta para que `SALE_COMPLETED` encuentre el borrador.  
 5. **Catálogo:** hoy `GET /api/products` **no** es accesible con token de dispositivo; acordar ampliación de API o fuente de catálogo.  
-6. Importes siempre en **céntimos** en API salvo formularios que piden euros en admin (solo humanos).  
+6. Importes en API: **céntimos CUP** (`priceCents`, totales de venta) y **centavos USD** de catálogo (`priceUsdCents`); en formularios del panel se muestran importes humanos con coma decimal.  
 7. Tras cambios de esquema Prisma en el servidor, alinear versión de cliente generado y migraciones.
 
 ---
@@ -456,6 +480,7 @@ Las rutas API **no** definen en este repo cabeceras CORS globales. Desde una APK
 | Sesión / Bearer | `lib/auth.ts`, `lib/jwt.ts` |
 | Sync batch | `app/api/sync/batch/route.ts`, `services/sync-service.ts` |
 | Motor eventos | `lib/event-processor.ts` |
+| Precio venta CUP/USD | `lib/pricing.ts` |
 | Tipos evento cliente | `types/events.ts` |
 | Validación líneas venta | `services/validation-service.ts` |
 | Analíticas | `services/analytics-service.ts` |
@@ -464,4 +489,4 @@ Las rutas API **no** definen en este repo cabeceras CORS globales. Desde una APK
 
 ---
 
-*Última actualización alineada con el código del repositorio Tienda Luna (incluye campos `ticketMedio*`, `horaPicoHoy`, `ventasPorHoraHoy` 0–23, `supplierName`, rutas admin de ventas recientes).*
+*Última actualización alineada con el código del repositorio Tienda Luna (incluye `priceUsdCents`, `unitsPerBox`, `wholesaleCupCents` en `Product`, `PATCH /api/products/[id]`, precio unitario en `SALE_COMPLETED` según `paymentMethod`, y rutas admin de informes/economía).*

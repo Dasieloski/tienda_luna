@@ -10,6 +10,7 @@ import {
 } from "@/lib/fraud";
 import { payloadHash } from "@/lib/hash";
 import { fulfillableQuantity } from "@/lib/stock-engine";
+import { unitPriceCupCentsForSale } from "@/lib/pricing";
 import type { ClientSyncEvent } from "@/types/events";
 
 type DraftSale = {
@@ -300,6 +301,7 @@ export async function processBatch(
           }
 
           const saleId = getPayloadString(ev.payload, "saleId");
+          const paymentMethod = getPayloadString(ev.payload, "paymentMethod");
           if (!saleId) {
             results.push(
               await record({
@@ -336,7 +338,13 @@ export async function processBatch(
               productId: line.productId,
               requested: line.quantity,
               fulfilled,
-              unitPriceCents: p.priceCents,
+              unitPriceCents: unitPriceCupCentsForSale(
+                {
+                  priceCents: p.priceCents,
+                  priceUsdCents: p.priceUsdCents,
+                },
+                paymentMethod,
+              ),
             });
           }
 
