@@ -1,3 +1,4 @@
+import { loadCatalogProducts } from "@/lib/catalog-products";
 import { prisma } from "@/lib/db";
 
 export async function validateSaleLines(
@@ -5,9 +6,8 @@ export async function validateSaleLines(
   lines: { productId: string; quantity: number }[],
 ) {
   const ids = [...new Set(lines.map((l) => l.productId))];
-  const products = await prisma.product.findMany({
-    where: { storeId, id: { in: ids }, active: true },
-  });
+  const catalog = await loadCatalogProducts(prisma, storeId);
+  const products = catalog.filter((p) => ids.includes(p.id));
   const byId = new Map(products.map((p) => [p.id, p]));
 
   const shortages: {

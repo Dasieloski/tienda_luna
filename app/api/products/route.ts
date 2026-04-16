@@ -1,6 +1,8 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { getSessionFromRequest, requireAdmin } from "@/lib/auth";
+import { loadCatalogProducts } from "@/lib/catalog-products";
+import { isMissingDbColumnError } from "@/lib/db-schema-errors";
 import { prisma } from "@/lib/db";
 
 export async function GET(request: Request) {
@@ -18,10 +20,7 @@ export async function GET(request: Request) {
     return NextResponse.json({ error: "FORBIDDEN" }, { status: 403 });
   }
 
-  const products = await prisma.product.findMany({
-    where: { storeId: session.storeId, active: true },
-    orderBy: { name: "asc" },
-  });
+  const products = await loadCatalogProducts(prisma, session.storeId);
   return NextResponse.json({ products });
 }
 
@@ -67,7 +66,16 @@ export async function POST(request: Request) {
       },
     });
     return NextResponse.json({ product: p });
-  } catch {
+  } catch (e) {
+    if (isMissingDbColumnError(e)) {
+      return NextResponse.json(
+        {
+          error: "DATABASE_SCHEMA_MISMATCH",
+          hint: "Ejecuta prisma/sql/add_product_pricing_columns.sql en Supabase o npx prisma db push.",
+        },
+        { status: 503 },
+      );
+    }
     return NextResponse.json({ error: "DUPLICATE_SKU_OR_DB" }, { status: 409 });
   }
 }

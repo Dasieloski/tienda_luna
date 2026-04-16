@@ -1,3 +1,4 @@
+import { loadCatalogProducts } from "@/lib/catalog-products";
 import { prisma } from "@/lib/db";
 import { LOCAL_ADMIN_STORE_ID } from "@/lib/static-admin-auth";
 
@@ -163,10 +164,11 @@ async function computeOverviewFromDb(storeId: string, now: Date) {
     where: { storeId, isFraud: true },
   });
 
-  const productMeta = await prisma.product.findMany({
-    where: { storeId, id: { in: topProducts.map((t) => t.productId) } },
-  });
-  const metaById = new Map(productMeta.map((p) => [p.id, p]));
+  const topIds = [...new Set(topProducts.map((t) => t.productId))];
+  const catalogForTop = (await loadCatalogProducts(prisma, storeId)).filter((p) =>
+    topIds.includes(p.id),
+  );
+  const metaById = new Map(catalogForTop.map((p) => [p.id, p]));
 
   const salesByHour = await prisma.$queryRaw<
     { hour: number; ventas: bigint; ingreso_cents: bigint }[]

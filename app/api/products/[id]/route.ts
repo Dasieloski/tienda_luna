@@ -1,6 +1,8 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { getSessionFromRequest, requireAdmin } from "@/lib/auth";
+import { loadCatalogProducts } from "@/lib/catalog-products";
+import { isMissingDbColumnError } from "@/lib/db-schema-errors";
 import { prisma } from "@/lib/db";
 
 const patchSchema = z
@@ -38,9 +40,8 @@ export async function PATCH(request: Request, ctx: RouteCtx) {
     return NextResponse.json({ error: "INVALID_BODY" }, { status: 400 });
   }
 
-  const existing = await prisma.product.findFirst({
-    where: { id, storeId: session.storeId },
-  });
+  const catalog = await loadCatalogProducts(prisma, session.storeId);
+  const existing = catalog.find((p) => p.id === id);
   if (!existing) {
     return NextResponse.json({ error: "NOT_FOUND" }, { status: 404 });
   }
@@ -70,7 +71,16 @@ export async function PATCH(request: Request, ctx: RouteCtx) {
       },
     });
     return NextResponse.json({ product });
-  } catch {
+  } catch (e) {
+    if (isMissingDbColumnError(e)) {
+      return NextResponse.json(
+        {
+          error: "DATABASE_SCHEMA_MISMATCH",
+          hint: "Ejecuta prisma/sql/add_product_pricing_columns.sql en Supabase o npx prisma db push.",
+        },
+        { status: 503 },
+      );
+    }
     return NextResponse.json({ error: "DUPLICATE_SKU_OR_DB" }, { status: 409 });
   }
 }

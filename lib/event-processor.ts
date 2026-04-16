@@ -10,6 +10,7 @@ import {
 } from "@/lib/fraud";
 import { payloadHash } from "@/lib/hash";
 import { fulfillableQuantity } from "@/lib/stock-engine";
+import { loadCatalogProducts } from "@/lib/catalog-products";
 import { unitPriceCupCentsForSale } from "@/lib/pricing";
 import type { ClientSyncEvent } from "@/types/events";
 
@@ -72,9 +73,7 @@ export async function processBatch(
   const results: ProcessedEventResult[] = [];
 
   await prisma.$transaction(async (tx: Tx) => {
-    const products = await tx.product.findMany({
-      where: { storeId: params.storeId, active: true },
-    });
+    const products = await loadCatalogProducts(tx, params.storeId);
     const stock = new Map(products.map((p) => [p.id, p.stockQty]));
     const productById = new Map(products.map((p) => [p.id, p]));
 
