@@ -5,6 +5,7 @@ import { Boxes, ChevronRight, Package } from "lucide-react";
 import { AdminShell } from "@/components/admin/admin-shell";
 import { DataTable, type Column } from "@/components/admin/data-table";
 import { cn } from "@/lib/utils";
+import { formatCupAndUsdLabel } from "@/lib/money";
 
 type ProductRow = {
   id: string;
@@ -17,10 +18,6 @@ type ProductRow = {
   lowStockAt: number;
   active: boolean;
 };
-
-function money(cents: number) {
-  return new Intl.NumberFormat("es-ES", { style: "currency", currency: "EUR" }).format(cents / 100);
-}
 
 export default function InventoryPage() {
   const [products, setProducts] = useState<ProductRow[]>([]);
@@ -139,7 +136,9 @@ export default function InventoryPage() {
       align: "right",
       width: "100px",
       render: (row) => (
-        <span className="tabular-nums text-tl-ink">{money(row.priceCents)}</span>
+        <span className="tabular-nums text-tl-ink">
+          {formatCupAndUsdLabel(row.priceCents)}
+        </span>
       ),
     },
     {
@@ -157,7 +156,7 @@ export default function InventoryPage() {
       width: "100px",
       render: (row) => (
         <span className="tabular-nums text-tl-muted">
-          {row.costCents != null ? money(row.costCents) : "—"}
+          {row.costCents != null ? formatCupAndUsdLabel(row.costCents) : "—"}
         </span>
       ),
     },
@@ -232,7 +231,9 @@ export default function InventoryPage() {
             <p className="text-xs font-semibold uppercase tracking-wider text-tl-muted">
               Valor inventario
             </p>
-            <p className="mt-1 text-xl font-bold tabular-nums text-tl-ink">{money(totalValue)}</p>
+            <p className="mt-1 text-xl font-bold tabular-nums text-tl-ink">
+              {formatCupAndUsdLabel(totalValue)}
+            </p>
           </div>
         </div>
 
@@ -286,7 +287,7 @@ export default function InventoryPage() {
               <div className="grid grid-cols-2 gap-2">
                 <div>
                   <label className="text-xs text-tl-muted" htmlFor="np-price">
-                    PVP (EUR)
+                    PVP (CUP)
                   </label>
                   <input
                     id="np-price"

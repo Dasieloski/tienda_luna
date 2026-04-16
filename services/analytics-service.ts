@@ -117,45 +117,51 @@ async function computeOverviewFromDb(storeId: string, now: Date) {
   const dayStart = startOfDay(now);
   const monthStart = startOfMonth(now);
 
-  const [dailyAgg, monthlyAgg, topProducts, stockRows, revenueTotal, fraudCount] =
-    await Promise.all([
-      prisma.sale.aggregate({
-        where: { storeId, completedAt: { gte: dayStart } },
-        _sum: { totalCents: true },
-        _count: true,
-      }),
-      prisma.sale.aggregate({
-        where: { storeId, completedAt: { gte: monthStart } },
-        _sum: { totalCents: true },
-        _count: true,
-      }),
-      prisma.saleLine.groupBy({
-        by: ["productId"],
-        where: { sale: { storeId } },
-        _sum: { quantity: true, subtotalCents: true },
-        orderBy: { _sum: { quantity: "desc" } },
-        take: 8,
-      }),
-      prisma.product.findMany({
-        where: { storeId, active: true },
-        select: {
-          id: true,
-          sku: true,
-          name: true,
-          stockQty: true,
-          lowStockAt: true,
-          priceCents: true,
-          costCents: true,
-        },
-      }),
-      prisma.sale.aggregate({
-        where: { storeId },
-        _sum: { totalCents: true },
-      }),
-      prisma.event.count({
-        where: { storeId, isFraud: true },
-      }),
-    ]);
+  // Importante: evitar muchas consultas en paralelo porque Supabase + Prisma
+  // están configurados con un connection_limit bajo (1), lo que puede provocar
+  // timeouts en el pool. Aquí hacemos las consultas de forma secuencial.
+
+  const dailyAgg = await prisma.sale.aggregate({
+    where: { storeId, completedAt: { gte: dayStart } },
+    _sum: { totalCents: true },
+    _count: true,
+  });
+
+  const monthlyAgg = await prisma.sale.aggregate({
+    where: { storeId, completedAt: { gte: monthStart } },
+    _sum: { totalCents: true },
+    _count: true,
+  });
+
+  const topProducts = await prisma.saleLine.groupBy({
+    by: ["productId"],
+    where: { sale: { storeId } },
+    _sum: { quantity: true, subtotalCents: true },
+    orderBy: { _sum: { quantity: "desc" } },
+    take: 8,
+  });
+
+  const stockRows = await prisma.product.findMany({
+    where: { storeId, active: true },
+    select: {
+      id: true,
+      sku: true,
+      name: true,
+      stockQty: true,
+      lowStockAt: true,
+      priceCents: true,
+      costCents: true,
+    },
+  });
+
+  const revenueTotal = await prisma.sale.aggregate({
+    where: { storeId },
+    _sum: { totalCents: true },
+  });
+
+  const fraudCount = await prisma.event.count({
+    where: { storeId, isFraud: true },
+  });
 
   const productMeta = await prisma.product.findMany({
     where: { storeId, id: { in: topProducts.map((t) => t.productId) } },

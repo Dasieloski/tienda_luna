@@ -18,6 +18,7 @@ import { ActivityFeed, type ActivityItem } from "@/components/admin/activity-fee
 import { DashboardCharts } from "@/components/admin/dashboard-charts";
 import { WeeklyProgress, TaskProgress } from "@/components/admin/crextio-widgets";
 import { cn } from "@/lib/utils";
+import { formatCupAndUsdLabel } from "@/lib/money";
 
 type Overview = {
   level1: {
@@ -87,10 +88,6 @@ type Overview = {
     message?: string;
   };
 };
-
-function money(cents: number) {
-  return new Intl.NumberFormat("es-ES", { style: "currency", currency: "EUR" }).format(cents / 100);
-}
 
 function SectionHeader({ title, description }: { title: string; description?: string }) {
   return (
@@ -272,14 +269,14 @@ export default function AdminOverviewPage() {
             />
             <KpiCard
               label="Ingresos hoy"
-              value={money(data?.level1.ingresosHoyCents ?? 0)}
-              hint="EUR facturado"
+              value={formatCupAndUsdLabel(data?.level1.ingresosHoyCents ?? 0)}
+              hint="CUP / USD"
               variant="success"
               icon={<DollarSign className="h-4 w-4" />}
             />
             <KpiCard
               label="Ticket medio"
-              value={money(data?.level1.ticketMedioHoyCents ?? 0)}
+              value={formatCupAndUsdLabel(data?.level1.ticketMedioHoyCents ?? 0)}
               hint="Importe medio"
               variant="info"
               icon={<TrendingUp className="h-4 w-4" />}
@@ -307,11 +304,11 @@ export default function AdminOverviewPage() {
             />
             <KpiCard
               label="Ingresos mes"
-              value={money(data?.level1.ingresosMesCents ?? 0)}
+              value={formatCupAndUsdLabel(data?.level1.ingresosMesCents ?? 0)}
             />
             <KpiCard
               label="Ingresos totales"
-              value={money(data?.level1.ingresosTotalesCents ?? 0)}
+              value={formatCupAndUsdLabel(data?.level1.ingresosTotalesCents ?? 0)}
             />
             <KpiCard
               label="Eventos fraude"
@@ -406,7 +403,7 @@ export default function AdminOverviewPage() {
                         </div>
                         <div className="text-right">
                           <p className="font-semibold tabular-nums text-tl-ink">
-                            {money(p.subtotalCents)}
+                            {formatCupAndUsdLabel(p.subtotalCents)}
                           </p>
                           <p className="text-xs text-tl-muted">{p.unidades} u.</p>
                         </div>
@@ -484,7 +481,7 @@ export default function AdminOverviewPage() {
                     {d.ventas}
                   </p>
                   <p className="text-sm text-tl-muted">
-                    {money(d.ingresosCents)}
+                    {formatCupAndUsdLabel(d.ingresosCents)}
                   </p>
                 </div>
               ))}

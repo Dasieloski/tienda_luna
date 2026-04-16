@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from "react";
 import { BarChart3, TrendingUp, Users } from "lucide-react";
 import { AdminShell } from "@/components/admin/admin-shell";
 import { KpiCard } from "@/components/admin/kpi-card";
+import { formatCupAndUsdLabel } from "@/lib/money";
 
 type Overview = {
   level2: {
@@ -23,10 +24,6 @@ type Overview = {
     demandaHeuristica30d: { productId: string; unidades: number }[];
   };
 };
-
-function money(cents: number) {
-  return new Intl.NumberFormat("es-ES", { style: "currency", currency: "EUR" }).format(cents / 100);
-}
 
 function SectionHeader({ title, description }: { title: string; description?: string }) {
   return (
@@ -100,7 +97,7 @@ export default function AnalyticsPage() {
             />
             <KpiCard
               label="Margen aprox. 30d"
-              value={money(data?.level2.margenAprox30d ?? 0)}
+              value={formatCupAndUsdLabel(data?.level2.margenAprox30d ?? 0)}
               variant="success"
             />
             <KpiCard
@@ -137,7 +134,7 @@ export default function AnalyticsPage() {
                       </div>
                       <div className="text-right">
                         <p className="font-semibold tabular-nums text-tl-ink">
-                          {money(c.totalCents)}
+                          {formatCupAndUsdLabel(c.totalCents)}
                         </p>
                         <p className="text-xs text-tl-muted">{c.compras} pedidos</p>
                       </div>
@@ -196,7 +193,7 @@ export default function AnalyticsPage() {
                       </span>
                       <div className="text-right">
                         <p className="font-semibold tabular-nums text-tl-ink">
-                          {money(l.totalCents)}
+                          {formatCupAndUsdLabel(l.totalCents)}
                         </p>
                         <p className="text-xs text-tl-muted">{l.pedidos} pedidos</p>
                       </div>

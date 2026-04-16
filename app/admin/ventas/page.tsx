@@ -4,6 +4,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { AdminShell } from "@/components/admin/admin-shell";
 import { DataTable, type Column } from "@/components/admin/data-table";
 import { cn } from "@/lib/utils";
+import { formatCupAndUsdLabel } from "@/lib/money";
 
 type RecentSale = {
   id: string;
@@ -21,10 +22,6 @@ type RecentSale = {
   }[];
 };
 
-function money(cents: number) {
-  return new Intl.NumberFormat("es-ES", { style: "currency", currency: "EUR" }).format(cents / 100);
-}
-
 export default function SalesPage() {
   const [sales, setSales] = useState<RecentSale[]>([]);
   const [loading, setLoading] = useState(true);
@@ -33,7 +30,7 @@ export default function SalesPage() {
 
   const loadSales = useCallback(async () => {
     try {
-      const res = await fetch("/api/admin/sales/recent?limit=50", { credentials: "include" });
+      const res = await fetch("/api/admin/sales/recent?limit=30", { credentials: "include" });
       if (!res.ok) return;
       const json = (await res.json()) as { sales: RecentSale[] };
       const next = json.sales ?? [];
@@ -84,7 +81,7 @@ export default function SalesPage() {
       width: "120px",
       render: (row) => (
         <span className="font-semibold tabular-nums text-tl-ink">
-          {money(row.totalCents)}
+          {formatCupAndUsdLabel(row.totalCents)}
         </span>
       ),
     },

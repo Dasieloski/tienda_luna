@@ -5,6 +5,7 @@ import { Filter, RefreshCw } from "lucide-react";
 import { AdminShell } from "@/components/admin/admin-shell";
 import { DataTable, type Column } from "@/components/admin/data-table";
 import { cn } from "@/lib/utils";
+import { formatCupAndUsdLabel } from "@/lib/money";
 
 type HistorySale = {
   id: string;
@@ -37,10 +38,6 @@ type HistoryResponse = {
   };
 };
 
-function money(cents: number) {
-  return new Intl.NumberFormat("es-ES", { style: "currency", currency: "EUR" }).format(cents / 100);
-}
-
 function toDatetimeLocalValue(iso: string) {
   // iso -> YYYY-MM-DDTHH:mm (sin segundos) en hora local
   const d = new Date(iso);
@@ -61,7 +58,7 @@ export default function SalesHistoryPage() {
   const [selected, setSelected] = useState<HistorySale | null>(null);
 
   const [page, setPage] = useState(1);
-  const [limit] = useState(50);
+  const [limit] = useState(25);
   const [totalPages, setTotalPages] = useState(1);
   const [total, setTotal] = useState(0);
 
@@ -162,7 +159,11 @@ export default function SalesHistoryPage() {
         sortable: true,
         align: "right",
         width: "120px",
-        render: (row) => <span className="font-semibold tabular-nums text-tl-ink">{money(row.totalCents)}</span>,
+        render: (row) => (
+          <span className="font-semibold tabular-nums text-tl-ink">
+            {formatCupAndUsdLabel(row.totalCents)}
+          </span>
+        ),
       },
       {
         key: "customer",
@@ -343,7 +344,9 @@ export default function SalesHistoryPage() {
                 </div>
                 <div className="rounded-xl border border-tl-line-subtle bg-tl-canvas-inset p-3">
                   <p className="text-xs font-semibold uppercase tracking-wider text-tl-muted">Total</p>
-                  <p className="mt-1 text-lg font-bold tabular-nums text-tl-ink">{money(selected.totalCents)}</p>
+                <p className="mt-1 text-lg font-bold tabular-nums text-tl-ink">
+                  {formatCupAndUsdLabel(selected.totalCents)}
+                </p>
                   <p className="mt-1 text-xs text-tl-muted">{selectedTotalItems} artículos</p>
                 </div>
                 <div className="rounded-xl border border-tl-line-subtle bg-tl-canvas-inset p-3">
@@ -356,8 +359,12 @@ export default function SalesHistoryPage() {
                           <p className="text-xs font-mono text-tl-muted">{l.sku}</p>
                         </div>
                         <div className="shrink-0 text-right">
-                          <p className="text-xs text-tl-muted">{l.quantity} × {money(l.unitPriceCents)}</p>
-                          <p className="text-sm font-semibold tabular-nums text-tl-ink">{money(l.subtotalCents)}</p>
+                          <p className="text-xs text-tl-muted">
+                            {l.quantity} × {formatCupAndUsdLabel(l.unitPriceCents)}
+                          </p>
+                          <p className="text-sm font-semibold tabular-nums text-tl-ink">
+                            {formatCupAndUsdLabel(l.subtotalCents)}
+                          </p>
                         </div>
                       </li>
                     ))}

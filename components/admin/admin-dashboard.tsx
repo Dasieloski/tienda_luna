@@ -16,6 +16,7 @@ import {
 } from "lucide-react";
 import { DashboardCharts } from "@/components/admin/dashboard-charts";
 import { cn } from "@/lib/utils";
+import { formatCupAndUsdLabel } from "@/lib/money";
 
 const TABS = [
   { id: "vista" as const, label: "Vista general", icon: LayoutGrid },
@@ -133,10 +134,6 @@ type AuditEvent = {
   fraudReason: string | null;
   serverTimestamp: string;
 };
-
-function money(cents: number) {
-  return new Intl.NumberFormat("es-ES", { style: "currency", currency: "EUR" }).format(cents / 100);
-}
 
 function SectionTitle({ children }: { children: React.ReactNode }) {
   return (
@@ -407,10 +404,15 @@ export function AdminDashboard() {
 
           <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
             <Kpi label="Ventas hoy" value={String(data.level1.ventasHoy)} accent="violet" />
-            <Kpi label="Ingresos hoy" value={money(data.level1.ingresosHoyCents)} hint="EUR facturado" accent="emerald" />
+            <Kpi
+              label="Ingresos hoy"
+              value={formatCupAndUsdLabel(data.level1.ingresosHoyCents)}
+              hint="CUP / USD"
+              accent="emerald"
+            />
             <Kpi
               label="Ticket medio hoy"
-              value={money(data.level1.ticketMedioHoyCents)}
+              value={formatCupAndUsdLabel(data.level1.ticketMedioHoyCents)}
               hint="Importe medio por venta"
               accent="cyan"
             />
@@ -424,11 +426,17 @@ export function AdminDashboard() {
 
           <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
             <Kpi label="Ventas mes" value={String(data.level1.ventasMes)} />
-            <Kpi label="Ingresos mes" value={money(data.level1.ingresosMesCents)} />
-            <Kpi label="Ticket medio mes" value={money(data.level1.ticketMedioMesCents)} />
-            <Kpi label="Ingresos totales" value={money(data.level1.ingresosTotalesCents)} />
+            <Kpi label="Ingresos mes" value={formatCupAndUsdLabel(data.level1.ingresosMesCents)} />
+            <Kpi
+              label="Ticket medio mes"
+              value={formatCupAndUsdLabel(data.level1.ticketMedioMesCents)}
+            />
+            <Kpi
+              label="Ingresos totales"
+              value={formatCupAndUsdLabel(data.level1.ingresosTotalesCents)}
+            />
             <Kpi label="Eventos fraude" value={String(data.level1.eventosFraudulentos)} accent="amber" />
-            <Kpi label="Margen aprox. 30d" value={money(data.level2.margenAprox30d)} />
+            <Kpi label="Margen aprox. 30d" value={formatCupAndUsdLabel(data.level2.margenAprox30d)} />
             <Kpi label="Rotación inventario" value={data.level2.rotacionInventario30d.toFixed(2)} hint="Heurística 30d" />
           </div>
 
@@ -457,7 +465,7 @@ export function AdminDashboard() {
                         <span className="font-medium text-zinc-200">{p.nombre}</span>
                       </span>
                       <span className="text-right text-zinc-400">
-                        {p.unidades} u. · {money(p.subtotalCents)}
+                        {p.unidades} u. · {formatCupAndUsdLabel(p.subtotalCents)}
                       </span>
                     </li>
                   ))
@@ -587,10 +595,12 @@ export function AdminDashboard() {
                     <tr key={p.id} className="hover:bg-white/[0.03]">
                       <td className="px-4 py-2.5 font-mono text-xs text-violet-300">{p.sku}</td>
                       <td className="px-4 py-2.5 font-medium text-zinc-200">{p.name}</td>
-                      <td className="px-4 py-2.5 tabular-nums text-zinc-300">{money(p.priceCents)}</td>
+                      <td className="px-4 py-2.5 tabular-nums text-zinc-300">
+                        {formatCupAndUsdLabel(p.priceCents)}
+                      </td>
                       <td className="px-4 py-2.5 text-zinc-400">{p.supplierName ?? "—"}</td>
                       <td className="px-4 py-2.5 tabular-nums text-zinc-400">
-                        {p.costCents != null ? money(p.costCents) : "—"}
+                        {p.costCents != null ? formatCupAndUsdLabel(p.costCents) : "—"}
                       </td>
                       <td className="px-4 py-2.5 tabular-nums">{p.stockQty}</td>
                       <td className="px-4 py-2.5 tabular-nums text-zinc-500">{p.lowStockAt}</td>
@@ -727,7 +737,7 @@ export function AdminDashboard() {
                   <li key={c.customerId ?? "x"} className="flex justify-between gap-2">
                     <span className="text-zinc-200">{c.nombre ?? c.customerId}</span>
                     <span>
-                      {c.compras} ped. · {money(c.totalCents)}
+                      {c.compras} ped. · {formatCupAndUsdLabel(c.totalCents)}
                     </span>
                   </li>
                 ))}
@@ -755,7 +765,7 @@ export function AdminDashboard() {
                   <li key={l.customerId} className="flex justify-between gap-2 font-mono text-xs">
                     <span className="truncate text-zinc-300">{l.customerId}</span>
                     <span>
-                      {l.pedidos} ped. · {money(l.totalCents)}
+                      {l.pedidos} ped. · {formatCupAndUsdLabel(l.totalCents)}
                     </span>
                   </li>
                 ))}
