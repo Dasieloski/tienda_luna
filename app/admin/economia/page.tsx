@@ -1,7 +1,7 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
-import { Banknote, CreditCard, DollarSign, ReceiptText, RefreshCw } from "lucide-react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Banknote, Calendar, CreditCard, DollarSign, ReceiptText, RefreshCw } from "lucide-react";
 import { AdminShell } from "@/components/admin/admin-shell";
 import { formatCup, formatCupAndUsdLabel, formatUsdFromCupCents } from "@/lib/money";
 import { cn } from "@/lib/utils";
@@ -11,6 +11,7 @@ type EconomySummary = {
     dbAvailable: boolean;
     message?: string;
   };
+  date?: string;
   totals: {
     ventas: number;
     totalCents: number;
@@ -26,6 +27,15 @@ type EconomySummary = {
 };
 
 export default function EconomyPage() {
+  const today = useMemo(() => {
+    const d = new Date();
+    const y = d.getFullYear();
+    const m = String(d.getMonth() + 1).padStart(2, "0");
+    const day = String(d.getDate()).padStart(2, "0");
+    return `${y}-${m}-${day}`;
+  }, []);
+
+  const [date, setDate] = useState(today);
   const [data, setData] = useState<EconomySummary | null>(null);
   const [initialLoading, setInitialLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -49,7 +59,9 @@ export default function EconomyPage() {
     setRefreshing(silent);
     if (!silent) setError(null);
     try {
-      const res = await fetch("/api/admin/economy/summary", {
+      const params = new URLSearchParams();
+      params.set("date", date);
+      const res = await fetch(`/api/admin/economy/summary?${params.toString()}`, {
         credentials: "include",
         signal: controller.signal,
       });
@@ -121,6 +133,15 @@ export default function EconomyPage() {
             </p>
           </div>
           <div className="flex items-center gap-2">
+            <label className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wider text-tl-muted">
+              <Calendar className="h-4 w-4" aria-hidden />
+              <input
+                type="date"
+                value={date}
+                onChange={(e) => setDate(e.target.value)}
+                className="tl-input h-9 w-[140px] px-3 py-1 text-xs sm:text-sm"
+              />
+            </label>
             <button
               type="button"
               onClick={() => void load({ silent: true })}

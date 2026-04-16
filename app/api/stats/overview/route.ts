@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { getSessionFromRequest, requireAdmin } from "@/lib/auth";
 import { emptyOverviewPayload, getOverview } from "@/services/analytics-service";
+import { cacheGetOrSet } from "@/lib/ttl-cache";
 
 export async function GET(request: Request) {
   try {
@@ -9,7 +10,11 @@ export async function GET(request: Request) {
       return NextResponse.json({ error: "FORBIDDEN" }, { status: 403 });
     }
 
-    const overview = await getOverview(session.storeId);
+    const overview = await cacheGetOrSet(
+      `overview:${session.storeId}`,
+      30_000,
+      () => getOverview(session.storeId),
+    );
     return NextResponse.json(overview);
   } catch (err) {
     console.error("[api/stats/overview]", err);

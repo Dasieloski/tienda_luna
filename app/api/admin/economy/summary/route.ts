@@ -1,7 +1,28 @@
 import { NextResponse } from "next/server";
+import { z } from "zod";
 import { getSessionFromRequest, requireAdmin } from "@/lib/auth";
 import { prisma } from "@/lib/db";
 import { LOCAL_ADMIN_STORE_ID } from "@/lib/static-admin-auth";
+import { cacheGetOrSet } from "@/lib/ttl-cache";
+
+const querySchema = z.object({
+  date: z
+    .string()
+    .regex(/^\d{4}-\d{2}-\d{2}$/, "Formato esperado: YYYY-MM-DD")
+    .optional(),
+});
+
+function startOfDay(date: Date) {
+  const d = new Date(date);
+  d.setHours(0, 0, 0, 0);
+  return d;
+}
+
+function endOfDay(date: Date) {
+  const d = startOfDay(date);
+  d.setDate(d.getDate() + 1);
+  return d;
+}
 
 type EconomyBucket = {
   method: string;
@@ -29,23 +50,45 @@ export async function GET(request: Request) {
     });
   }
 
+  const url = new URL(request.url);
+  const parsed = querySchema.safeParse({
+    date: url.searchParams.get("date") ?? undefined,
+  });
+  if (!parsed.success) {
+    return NextResponse.json({ error: "INVALID_QUERY" }, { status: 400 });
+  }
+
+  const baseDate = parsed.data.date ? new Date(parsed.data.date) : new Date();
+  if (Number.isNaN(baseDate.getTime())) {
+    return NextResponse.json({ error: "INVALID_DATE" }, { status: 400 });
+  }
+  const from = startOfDay(baseDate);
+  const to = endOfDay(baseDate);
+
   try {
-    const rows = await prisma.$queryRaw<
-      { method: string | null; ventas: bigint; total_cents: bigint }[]
-    >`
-      SELECT
-        (e.payload->>'paymentMethod') AS method,
-        COUNT(*)::bigint AS ventas,
-        COALESCE(SUM(s."totalCents"), 0)::bigint AS total_cents
-      FROM "Event" e
-      JOIN "Sale" s
-        ON s."storeId" = e."storeId"
-       AND s."clientSaleId" = (e.payload->>'saleId')
-      WHERE e."storeId" = ${session.storeId}
-        AND e.type = 'SALE_COMPLETED'
-        AND e.status IN ('ACCEPTED', 'CORRECTED')
-      GROUP BY 1
-    `;
+    const rows = await cacheGetOrSet(
+      `economy:${session.storeId}:${from.toISOString()}`,
+      30_000,
+      () =>
+        prisma.$queryRaw<
+          { method: string | null; ventas: bigint; total_cents: bigint }[]
+        >`
+          SELECT
+            (e.payload->>'paymentMethod') AS method,
+            COUNT(*)::bigint AS ventas,
+            COALESCE(SUM(s."totalCents"), 0)::bigint AS total_cents
+          FROM "Event" e
+          JOIN "Sale" s
+            ON s."storeId" = e."storeId"
+          AND s."clientSaleId" = (e.payload->>'saleId')
+          WHERE e."storeId" = ${session.storeId}
+            AND e.type = 'SALE_COMPLETED'
+            AND e.status IN ('ACCEPTED', 'CORRECTED')
+            AND s."completedAt" >= ${from}
+            AND s."completedAt" < ${to}
+          GROUP BY 1
+        `,
+    );
 
     const buckets: EconomyBucket[] = rows.map((r) => ({
       method: r.method ?? "desconocido",
@@ -73,6 +116,7 @@ export async function GET(request: Request) {
 
     return NextResponse.json({
       meta: { dbAvailable: true as const },
+      date: from.toISOString(),
       totals: {
         ventas,
         totalCents,

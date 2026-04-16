@@ -10,6 +10,7 @@ import {
   ChevronDown,
   ChevronLeft,
   Clock,
+  ClipboardList,
   Landmark,
   LayoutDashboard,
   Monitor,
@@ -34,6 +35,7 @@ const NAV_ITEMS = [
       { href: "/admin/inventario", label: "Inventario", icon: Boxes },
       { href: "/admin/analitica", label: "Analítica", icon: BarChart3 },
       { href: "/admin/economia", label: "Economía", icon: Landmark },
+      { href: "/admin/control-diario", label: "Control diario", icon: ClipboardList },
     ],
   },
   {
