@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import {
   CheckCircle2,
+  Copy,
   Database,
   ExternalLink,
   Home,
@@ -26,18 +27,38 @@ type Overview = {
   };
 };
 
+type SessionMe = {
+  typ: string;
+  storeId: string;
+  deviceId?: string;
+  role?: string | null;
+  userId?: string;
+  isLocalStorePlaceholder?: boolean;
+};
+
 export default function SettingsPage() {
   const [data, setData] = useState<Overview | null>(null);
   const [lastSync, setLastSync] = useState<Date | null>(null);
   const [loading, setLoading] = useState(true);
+  const [sessionMe, setSessionMe] = useState<SessionMe | null>(null);
+  const [copyMsg, setCopyMsg] = useState<string | null>(null);
 
   const loadData = useCallback(async () => {
     try {
-      const res = await fetch("/api/stats/overview", { credentials: "include" });
-      if (!res.ok) return;
-      const json = (await res.json()) as Overview;
-      setData(json);
-      setLastSync(new Date());
+      const [overviewRes, meRes] = await Promise.all([
+        fetch("/api/stats/overview", { credentials: "include" }),
+        fetch("/api/session/me", { credentials: "include" }),
+      ]);
+      if (overviewRes.ok) {
+        const json = (await overviewRes.json()) as Overview;
+        setData(json);
+        setLastSync(new Date());
+      }
+      if (meRes.ok) {
+        setSessionMe((await meRes.json()) as SessionMe);
+      } else {
+        setSessionMe(null);
+      }
     } finally {
       setLoading(false);
     }
@@ -139,6 +160,56 @@ export default function SettingsPage() {
             </p>
           </div>
         </div>
+
+        {/* storeId para APK / integraciones */}
+        {sessionMe && (
+          <div className="tl-glass rounded-xl p-5">
+            <h2 className="text-sm font-semibold text-tl-ink">Tienda (`storeId`) para la APK</h2>
+            <p className="mt-1 text-xs text-tl-muted">
+              Es el identificador de tu tienda en la base de datos. Debe coincidir con el{" "}
+              <code className="font-mono text-tl-accent">storeId</code> del body de{" "}
+              <code className="font-mono text-tl-accent">POST /api/sync/batch</code> y con el JWT
+              del dispositivo.
+            </p>
+            {sessionMe.isLocalStorePlaceholder && (
+              <p className="mt-3 rounded-lg border border-tl-warning/30 bg-tl-warning-subtle px-3 py-2 text-xs text-tl-warning">
+                Estás usando el marcador local sin BD real (
+                <code className="font-mono">__local_sin_bd__</code>). En Vercel define{" "}
+                <code className="font-mono">STATIC_ADMIN_STORE_ID</code> con el{" "}
+                <code className="font-mono">Store.id</code> real o quita{" "}
+                <code className="font-mono">STATIC_ADMIN_SKIP_DB</code> para que el login tome la
+                primera tienda de la base.
+              </p>
+            )}
+            <div className="mt-4 flex flex-col gap-2 sm:flex-row sm:items-center">
+              <code className="block flex-1 break-all rounded-lg bg-tl-canvas-inset px-3 py-2 font-mono text-xs text-tl-ink">
+                {sessionMe.storeId}
+              </code>
+              <button
+                type="button"
+                className="tl-btn tl-btn-secondary tl-interactive shrink-0 !px-3 !py-2 text-xs"
+                onClick={async () => {
+                  try {
+                    await navigator.clipboard.writeText(sessionMe.storeId);
+                    setCopyMsg("Copiado al portapapeles.");
+                    window.setTimeout(() => setCopyMsg(null), 2000);
+                  } catch {
+                    setCopyMsg("No se pudo copiar (permiso del navegador).");
+                    window.setTimeout(() => setCopyMsg(null), 2500);
+                  }
+                }}
+              >
+                <Copy className="h-4 w-4" aria-hidden />
+                Copiar
+              </button>
+            </div>
+            {copyMsg && <p className="mt-2 text-xs text-tl-success">{copyMsg}</p>}
+            <p className="mt-3 text-xs text-tl-muted">
+              También lo devuelve <code className="font-mono">POST /api/auth/login</code> en el
+              campo <code className="font-mono">storeId</code> del JSON.
+            </p>
+          </div>
+        )}
 
         {/* Dashboard layout */}
         <div className="tl-glass rounded-xl p-5">

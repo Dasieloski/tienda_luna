@@ -69,6 +69,16 @@ type SessionClaims = {
 
 Implementación **solo admin estático** (`matchesStaticAdmin`); **no** valida `User` de Prisma aunque el seed cree filas en `User`. Para APK no aplica salvo que embebas un flujo web.
 
+### 3.6 `GET /api/session/me` (sesión actual)
+
+| | |
+|--|--|
+| **Auth** | Cookie `tl_session` o `Authorization: Bearer` (usuario o dispositivo) |
+| **200** | `{ typ, storeId, ... }` — para **usuario**: `role`, `userId`; para **dispositivo**: `deviceId`. Incluye `isLocalStorePlaceholder: true` si el `storeId` es el marcador local sin BD. |
+| **401** | Sin sesión |
+
+Sirve para copiar el **`storeId`** real al configurar la APK sin mirar la base de datos a mano.
+
 ---
 
 ## 4. Modelo de datos (Prisma / PostgreSQL)
@@ -490,6 +500,7 @@ Las rutas API **no** definen en este repo cabeceras CORS globales. Desde una APK
 | Precio venta CUP/USD | `lib/pricing.ts` |
 | Tipos evento cliente | `types/events.ts` |
 | Validación líneas venta | `services/validation-service.ts` |
+| Sesión / `storeId` para APK | `app/api/session/me/route.ts` |
 | Analíticas | `services/analytics-service.ts` |
 | Admin estático | `lib/static-admin-auth.ts` |
 | Middleware web | `middleware.ts` |
