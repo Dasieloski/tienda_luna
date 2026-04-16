@@ -1,9 +1,10 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
-import { Banknote, CreditCard, DollarSign, ReceiptText } from "lucide-react";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { Banknote, CreditCard, DollarSign, ReceiptText, RefreshCw } from "lucide-react";
 import { AdminShell } from "@/components/admin/admin-shell";
 import { formatCup, formatCupAndUsdLabel, formatUsdFromCupCents } from "@/lib/money";
+import { cn } from "@/lib/utils";
 
 type EconomySummary = {
   meta: {
@@ -26,14 +27,32 @@ type EconomySummary = {
 
 export default function EconomyPage() {
   const [data, setData] = useState<EconomySummary | null>(null);
-  const [loading, setLoading] = useState(true);
+  const [initialLoading, setInitialLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const abortRef = useRef<AbortController | null>(null);
+  const lastRefreshAtRef = useRef<number>(0);
 
-  const load = useCallback(async () => {
-    setLoading(true);
-    setError(null);
+  const load = useCallback(async (opts?: { silent?: boolean }) => {
+    const silent = opts?.silent ?? false;
+
+    const now = Date.now();
+    // Evita encadenar refreshes (AdminShell emite cada 5s).
+    if (silent && now - lastRefreshAtRef.current < 4500) return;
+    lastRefreshAtRef.current = now;
+
+    abortRef.current?.abort();
+    const controller = new AbortController();
+    abortRef.current = controller;
+
+    if (!silent) setInitialLoading(true);
+    setRefreshing(silent);
+    if (!silent) setError(null);
     try {
-      const res = await fetch("/api/admin/economy/summary", { credentials: "include" });
+      const res = await fetch("/api/admin/economy/summary", {
+        credentials: "include",
+        signal: controller.signal,
+      });
       const json = (await res.json()) as EconomySummary;
       if (!res.ok) {
         setError(json.meta?.message ?? "No se pudo cargar la economía.");
@@ -43,9 +62,11 @@ export default function EconomyPage() {
         setError(json.meta.message);
       }
     } catch (e) {
+      if (e instanceof DOMException && e.name === "AbortError") return;
       setError(e instanceof Error ? e.message : "Error de red al cargar economía.");
     } finally {
-      setLoading(false);
+      setInitialLoading(false);
+      setRefreshing(false);
     }
   }, []);
 
@@ -55,13 +76,17 @@ export default function EconomyPage() {
 
   useEffect(() => {
     function handleRefresh() {
-      void load();
+      void load({ silent: true });
     }
     window.addEventListener("tl-refresh", handleRefresh);
     return () => window.removeEventListener("tl-refresh", handleRefresh);
   }, [load]);
 
-  if (loading) {
+  useEffect(() => {
+    return () => abortRef.current?.abort();
+  }, []);
+
+  if (initialLoading && !data) {
     return (
       <AdminShell>
         <div className="flex min-h-[60vh] flex-col items-center justify-center gap-3">
@@ -88,11 +113,27 @@ export default function EconomyPage() {
   return (
     <AdminShell title="Economía">
       <div className="space-y-8">
-        <div>
-          <h1 className="tl-welcome-header">Economía de la tienda</h1>
-          <p className="mt-2 text-sm text-tl-muted">
-            Resumen de ventas y cuánto debería haber en caja en efectivo, transferencias y USD.
-          </p>
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+          <div>
+            <h1 className="tl-welcome-header">Economía de la tienda</h1>
+            <p className="mt-2 text-sm text-tl-muted">
+              Resumen de ventas y cuánto debería haber en caja en efectivo, transferencias y USD.
+            </p>
+          </div>
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={() => void load({ silent: true })}
+              className={cn(
+                "tl-btn tl-btn-secondary tl-interactive tl-hover-lift tl-press tl-focus !px-3 !py-2 text-xs sm:text-sm",
+              )}
+              disabled={refreshing}
+              title="Actualizar"
+            >
+              <RefreshCw className={cn("h-4 w-4", refreshing && "animate-spin")} aria-hidden />
+              {refreshing ? "Actualizando..." : "Actualizar"}
+            </button>
+          </div>
         </div>
 
         {error && (
