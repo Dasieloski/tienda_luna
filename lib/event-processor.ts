@@ -526,22 +526,93 @@ export async function processBatch(
             }
           }
 
+          const hasUsdColRows = await tx.$queryRaw<{ ok: number }[]>`
+            SELECT 1::int AS ok
+            FROM information_schema.columns
+            WHERE table_schema = 'public'
+              AND table_name = 'Product'
+              AND column_name = 'priceUsdCents'
+            LIMIT 1
+          `;
+          const hasUsdCol = hasUsdColRows.length > 0;
+
           try {
-            const created = await tx.product.create({
-              data: {
-                storeId: params.storeId,
-                sku,
-                name,
-                priceCents,
-                priceUsdCents,
-                unitsPerBox,
-                wholesaleCupCents,
-                supplierName,
-                stockQty,
-                lowStockAt,
-                active: true,
-              },
-            });
+            const created = hasUsdCol
+              ? await tx.product.create({
+                  data: {
+                    storeId: params.storeId,
+                    sku,
+                    name,
+                    priceCents,
+                    priceUsdCents,
+                    unitsPerBox,
+                    wholesaleCupCents,
+                    supplierName,
+                    stockQty,
+                    lowStockAt,
+                    active: true,
+                  },
+                })
+              : await (async () => {
+                  const legacyRows = await tx.$queryRaw<
+                    {
+                      id: string;
+                      storeId: string;
+                      sku: string;
+                      name: string;
+                      priceCents: number;
+                      costCents: number | null;
+                      supplierName: string | null;
+                      stockQty: number;
+                      lowStockAt: number;
+                      active: boolean;
+                      createdAt: Date;
+                      updatedAt: Date;
+                    }[]
+                  >`
+                    INSERT INTO "Product" (
+                      "storeId",
+                      sku,
+                      name,
+                      "priceCents",
+                      "supplierName",
+                      "stockQty",
+                      "lowStockAt",
+                      active
+                    )
+                    VALUES (
+                      ${params.storeId},
+                      ${sku},
+                      ${name},
+                      ${priceCents},
+                      ${supplierName},
+                      ${stockQty},
+                      ${lowStockAt},
+                      true
+                    )
+                    RETURNING
+                      id,
+                      "storeId",
+                      sku,
+                      name,
+                      "priceCents",
+                      "costCents",
+                      "supplierName",
+                      "stockQty",
+                      "lowStockAt",
+                      active,
+                      "createdAt",
+                      "updatedAt"
+                  `;
+                  const r = legacyRows[0];
+                  if (!r) throw new Error("DB_INSERT_FAILED");
+                  return {
+                    ...r,
+                    priceUsdCents: 0,
+                    unitsPerBox: 1,
+                    wholesaleCupCents: null,
+                  };
+                })();
             productById.set(created.id, created);
             stock.set(created.id, created.stockQty);
             results.push(await record({ status: "ACCEPTED" }));
