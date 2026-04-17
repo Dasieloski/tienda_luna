@@ -37,6 +37,8 @@ type SupplierRow = {
   units: number;
   revenueCents: number;
   profitCents: number;
+  /** Coste proveedor × uds vendidas (líneas con precio de compra en ficha). */
+  payableCents: number;
   linesMissingCost: number;
 };
 
@@ -62,6 +64,12 @@ export async function GET(request: Request) {
       to: null,
       suppliers: [] as SupplierRow[],
       topProducts: [] as SupplierTopProduct[],
+      totals: {
+        payableCents: 0,
+        revenueCents: 0,
+        units: 0,
+        linesMissingCost: 0,
+      },
     });
   }
 
@@ -104,6 +112,7 @@ export async function GET(request: Request) {
           units: bigint;
           revenue_cents: bigint;
           profit_cents: bigint;
+          payable_cents: bigint;
           lines_missing_cost: bigint;
         }[]
       >`
@@ -122,6 +131,7 @@ export async function GET(request: Request) {
           JOIN "Product" p ON p.id = sl."productId"
           LEFT JOIN "Supplier" su ON su.id = p."supplierId"
           WHERE s."storeId" = ${session.storeId}
+            AND s."status" = 'COMPLETED'
             AND s."completedAt" >= ${from}
             AND s."completedAt" < ${to}
         )
@@ -136,6 +146,12 @@ export async function GET(request: Request) {
               ELSE (unit_price_cents - cost_cents) * quantity
             END
           ), 0)::bigint AS profit_cents,
+          COALESCE(SUM(
+            CASE
+              WHEN cost_cents IS NULL THEN 0
+              ELSE cost_cents * quantity
+            END
+          ), 0)::bigint AS payable_cents,
           COALESCE(SUM(CASE WHEN cost_cents IS NULL THEN 1 ELSE 0 END), 0)::bigint AS lines_missing_cost
         FROM base
         GROUP BY supplier
@@ -165,6 +181,7 @@ export async function GET(request: Request) {
           JOIN "Product" p ON p.id = sl."productId"
           LEFT JOIN "Supplier" su ON su.id = p."supplierId"
           WHERE s."storeId" = ${session.storeId}
+            AND s."status" = 'COMPLETED'
             AND s."completedAt" >= ${from}
             AND s."completedAt" < ${to}
         ),
@@ -195,8 +212,19 @@ export async function GET(request: Request) {
         units: Number(r.units ?? BigInt(0)),
         revenueCents: Number(r.revenue_cents ?? BigInt(0)),
         profitCents: Number(r.profit_cents ?? BigInt(0)),
+        payableCents: Number(r.payable_cents ?? BigInt(0)),
         linesMissingCost: Number(r.lines_missing_cost ?? BigInt(0)),
       }));
+
+      const totals = suppliers.reduce(
+        (acc, s) => ({
+          payableCents: acc.payableCents + s.payableCents,
+          revenueCents: acc.revenueCents + s.revenueCents,
+          units: acc.units + s.units,
+          linesMissingCost: acc.linesMissingCost + s.linesMissingCost,
+        }),
+        { payableCents: 0, revenueCents: 0, units: 0, linesMissingCost: 0 },
+      );
 
       const topProducts: SupplierTopProduct[] = topProductsRaw.map((r) => ({
         supplier: r.supplier,
@@ -207,7 +235,7 @@ export async function GET(request: Request) {
         revenueCents: Number(r.revenue_cents ?? BigInt(0)),
       }));
 
-      return { suppliers, topProducts };
+      return { suppliers, topProducts, totals };
     });
 
     return NextResponse.json({
@@ -216,6 +244,7 @@ export async function GET(request: Request) {
       to: to.toISOString(),
       suppliers: out.suppliers,
       topProducts: out.topProducts,
+      totals: out.totals,
     });
   } catch (err) {
     console.error("[api/admin/suppliers/summary]", err);
@@ -230,6 +259,12 @@ export async function GET(request: Request) {
         to: to.toISOString(),
         suppliers: [] as SupplierRow[],
         topProducts: [] as SupplierTopProduct[],
+        totals: {
+          payableCents: 0,
+          revenueCents: 0,
+          units: 0,
+          linesMissingCost: 0,
+        },
       },
       { status: 200 },
     );

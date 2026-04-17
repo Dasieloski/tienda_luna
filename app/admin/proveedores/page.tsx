@@ -2,14 +2,20 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
+  Banknote,
   BookMarked,
   Calendar,
   FileText,
+  Layers,
+  Package,
   Pencil,
   Plus,
   RefreshCw,
+  Store,
   Trash2,
+  TrendingUp,
   Truck,
+  Wallet,
 } from "lucide-react";
 import { AdminShell } from "@/components/admin/admin-shell";
 import { KpiCard } from "@/components/admin/kpi-card";
@@ -23,6 +29,8 @@ type SupplierRow = {
   units: number;
   revenueCents: number;
   profitCents: number;
+  /** Coste proveedor × uds (estimación a pagar por mercancía vendida). */
+  payableCents: number;
   linesMissingCost: number;
 };
 
@@ -41,6 +49,12 @@ type SuppliersResponse = {
   to: string | null;
   suppliers: SupplierRow[];
   topProducts: SupplierTopProduct[];
+  totals?: {
+    payableCents: number;
+    revenueCents: number;
+    units: number;
+    linesMissingCost: number;
+  };
 };
 
 type MasterSupplier = {
@@ -59,9 +73,23 @@ function toInputDate(date: Date) {
   return `${y}-${m}-${d}`;
 }
 
+function fmtShortDate(iso: string | null | undefined) {
+  if (!iso) return "";
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return "";
+  return d.toLocaleDateString("es-ES", { day: "numeric", month: "short", year: "numeric" });
+}
+
 export default function SuppliersPage() {
   const todayInput = useMemo(() => toInputDate(new Date()), []);
-  const [pageTab, setPageTab] = useState<"ranking" | "maestro">("ranking");
+  const defaultAccountsRange = useMemo(() => {
+    const t = new Date();
+    const f = new Date(t);
+    f.setDate(f.getDate() - 29);
+    return { from: toInputDate(f), to: toInputDate(t) };
+  }, []);
+
+  const [pageTab, setPageTab] = useState<"ranking" | "maestro" | "cuentas">("ranking");
   const [mode, setMode] = useState<"days" | "range">("days");
   const [days, setDays] = useState(30);
   const [from, setFrom] = useState(() => todayInput);
@@ -85,6 +113,13 @@ export default function SuppliersPage() {
   const [eMNotes, setEMNotes] = useState("");
   const [eMBusy, setEMBusy] = useState(false);
   const [deleteBusyId, setDeleteBusyId] = useState<string | null>(null);
+
+  const [accountsFrom, setAccountsFrom] = useState(defaultAccountsRange.from);
+  const [accountsTo, setAccountsTo] = useState(defaultAccountsRange.to);
+  const [accountsData, setAccountsData] = useState<SuppliersResponse | null>(null);
+  const [accountsLoading, setAccountsLoading] = useState(false);
+  const [accountsError, setAccountsError] = useState<string | null>(null);
+  const [accountsQuery, setAccountsQuery] = useState("");
 
   const loadMasters = useCallback(async () => {
     setMastersLoading(true);
@@ -110,8 +145,8 @@ export default function SuppliersPage() {
   }, []);
 
   useEffect(() => {
-    if (pageTab === "maestro") void loadMasters();
-  }, [pageTab, loadMasters]);
+    void loadMasters();
+  }, [loadMasters]);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -130,10 +165,10 @@ export default function SuppliersPage() {
       const json = (await res.json()) as SuppliersResponse;
       setData(json);
       if (!res.ok || json.meta?.dbAvailable === false) {
-        setError(json.meta?.message ?? "No se pudo cargar proveedores.");
+        setError(json.meta?.message ?? "No se pudo cargar el resumen.");
       }
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Error de red al cargar proveedores.");
+      setError(e instanceof Error ? e.message : "Error de red.");
     } finally {
       setLoading(false);
     }
@@ -143,7 +178,55 @@ export default function SuppliersPage() {
     void load();
   }, [load]);
 
-  // Sin auto-refresh: solo carga inicial y botón Actualizar.
+  const loadAccounts = useCallback(async () => {
+    setAccountsLoading(true);
+    setAccountsError(null);
+    try {
+      const start = new Date(accountsFrom + "T12:00:00");
+      const end = new Date(accountsTo + "T12:00:00");
+      if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())) {
+        setAccountsError("Fechas no válidas.");
+        setAccountsData(null);
+        return;
+      }
+      if (start > end) {
+        setAccountsError("La fecha inicial no puede ser posterior a la final.");
+        setAccountsData(null);
+        return;
+      }
+      const params = new URLSearchParams();
+      params.set("from", accountsFrom);
+      params.set("to", accountsTo);
+      const res = await fetch(`/api/admin/suppliers/summary?${params.toString()}`, {
+        credentials: "include",
+      });
+      const json = (await res.json()) as SuppliersResponse;
+      setAccountsData(json);
+      if (!res.ok || json.meta?.dbAvailable === false) {
+        setAccountsError(json.meta?.message ?? "No se pudo cargar las cuentas.");
+      }
+    } catch (e) {
+      setAccountsError(e instanceof Error ? e.message : "Error de red.");
+      setAccountsData(null);
+    } finally {
+      setAccountsLoading(false);
+    }
+  }, [accountsFrom, accountsTo]);
+
+  useEffect(() => {
+    if (pageTab !== "cuentas") return;
+    void loadAccounts();
+  }, [pageTab, loadAccounts]);
+
+  const periodDescription = useMemo(() => {
+    if (mode === "days") {
+      return `Últimos ${days} días · hasta ${fmtShortDate(new Date().toISOString())}`;
+    }
+    return `${fmtShortDate(from + "T12:00:00.000Z")} — ${fmtShortDate(to + "T12:00:00.000Z")}`;
+  }, [mode, days, from, to]);
+
+  const nomencladorActive = useMemo(() => masters.filter((m) => m.active).length, [masters]);
+  const nomencladorTotal = masters.length;
 
   const suppliersFiltered = useMemo(() => {
     const list = data?.suppliers ?? [];
@@ -167,6 +250,11 @@ export default function SuppliersPage() {
     return s[0] ?? null;
   }, [data]);
 
+  const topByUnits = useMemo(() => {
+    const s = (data?.suppliers ?? []).slice().sort((a, b) => b.units - a.units);
+    return s[0] ?? null;
+  }, [data]);
+
   const topProductsBySupplier = useMemo(() => {
     const m = new Map<string, SupplierTopProduct[]>();
     for (const p of data?.topProducts ?? []) {
@@ -176,6 +264,44 @@ export default function SuppliersPage() {
     }
     return m;
   }, [data]);
+
+  const withSalesCount = data?.suppliers.length ?? 0;
+
+  const accountsPeriodLabel = useMemo(
+    () => `${fmtShortDate(accountsFrom + "T12:00:00.000Z")} — ${fmtShortDate(accountsTo + "T12:00:00.000Z")}`,
+    [accountsFrom, accountsTo],
+  );
+
+  const accountsFiltered = useMemo(() => {
+    const list = accountsData?.suppliers ?? [];
+    const q = accountsQuery.trim().toLowerCase();
+    if (!q) return list;
+    return list.filter((s) => s.supplier.toLowerCase().includes(q));
+  }, [accountsData, accountsQuery]);
+
+  const accountsSorted = useMemo(() => {
+    return [...accountsFiltered].sort((a, b) => b.payableCents - a.payableCents);
+  }, [accountsFiltered]);
+
+  const accTopRevenue = useMemo(() => {
+    const s = (accountsData?.suppliers ?? []).slice().sort((a, b) => b.revenueCents - a.revenueCents);
+    return s[0] ?? null;
+  }, [accountsData]);
+
+  const accTopUnits = useMemo(() => {
+    const s = (accountsData?.suppliers ?? []).slice().sort((a, b) => b.units - a.units);
+    return s[0] ?? null;
+  }, [accountsData]);
+
+  const accTopProducts = useMemo(() => {
+    const s = (accountsData?.suppliers ?? []).slice().sort((a, b) => b.products - a.products);
+    return s[0] ?? null;
+  }, [accountsData]);
+
+  const accTopPayable = useMemo(() => {
+    const s = (accountsData?.suppliers ?? []).slice().sort((a, b) => b.payableCents - a.payableCents);
+    return s[0] ?? null;
+  }, [accountsData]);
 
   async function onCreateMaster(e: React.FormEvent) {
     e.preventDefault();
@@ -260,7 +386,7 @@ export default function SuppliersPage() {
   async function onDeleteMaster(s: MasterSupplier) {
     if (
       !window.confirm(
-        `¿Eliminar el proveedor «${s.name}» del nomenclador?\n\nSolo se permite si no hay productos vinculados.`,
+        `¿Eliminar «${s.name}» del nomenclador?\n\nSolo si no tiene productos vinculados.`,
       )
     ) {
       return;
@@ -275,7 +401,7 @@ export default function SuppliersPage() {
       const j = (await res.json().catch(() => ({}))) as { error?: string; productCount?: number };
       if (res.status === 409 && j.error === "SUPPLIER_IN_USE") {
         window.alert(
-          `No se puede borrar: hay ${j.productCount ?? 0} producto(s) con este proveedor. Desvincúlalos desde Inventario o archívalos.`,
+          `Hay ${j.productCount ?? 0} producto(s) con este proveedor. Cambia el proveedor en Inventario antes.`,
         );
         return;
       }
@@ -291,209 +417,191 @@ export default function SuppliersPage() {
 
   return (
     <AdminShell title="Proveedores">
-      <div className="space-y-6">
-        <div className="flex flex-col gap-4">
-          <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
-            <div>
+      <div className="mx-auto max-w-7xl space-y-8">
+        {/* Cabecera */}
+        <section className="overflow-hidden rounded-2xl border border-tl-line-subtle bg-gradient-to-br from-tl-canvas-inset via-tl-canvas to-tl-canvas-inset/80 p-5 shadow-sm sm:p-6">
+          <div className="flex flex-col gap-5 lg:flex-row lg:items-start lg:justify-between">
+            <div className="min-w-0">
               <h1 className="tl-welcome-header">Proveedores</h1>
-              <p className="mt-2 text-sm text-tl-muted">
+              <p className="mt-2 max-w-xl text-sm leading-relaxed text-tl-muted">
                 {pageTab === "ranking"
-                  ? "Ranking por proveedor: productos, unidades vendidas, ingresos y ganancia estimada (según costo)."
-                  : "Nomenclador de la tienda: nombres que verás al crear productos y en informes. Los inactivos no se ofrecen en altas nuevas."}
+                  ? "Compara ventas por origen de compra y revisa qué proveedor aporta más en el periodo que elijas."
+                  : pageTab === "cuentas"
+                    ? "Calcula cuánto pagar a cada proveedor según lo vendido y el precio de compra en el producto."
+                    : "Administra la lista de proveedores: son los que podrás elegir al crear productos."}
               </p>
+              {pageTab === "ranking" ? (
+                <p className="mt-2 inline-flex items-center gap-2 rounded-lg bg-tl-accent/8 px-3 py-1.5 text-xs font-medium text-tl-ink-secondary">
+                  <Calendar className="h-3.5 w-3.5 shrink-0 text-tl-accent" aria-hidden />
+                  {periodDescription}
+                </p>
+              ) : pageTab === "cuentas" ? (
+                <p className="mt-2 inline-flex items-center gap-2 rounded-lg bg-amber-500/10 px-3 py-1.5 text-xs font-medium text-amber-900 dark:text-amber-100/90">
+                  <Wallet className="h-3.5 w-3.5 shrink-0 text-amber-600" aria-hidden />
+                  {accountsPeriodLabel}
+                </p>
+              ) : null}
             </div>
 
-            <div className="tl-glass flex shrink-0 flex-wrap gap-1 rounded-xl p-1">
-              <button
-                type="button"
-                onClick={() => setPageTab("ranking")}
-                className={cn(
-                  "tl-btn tl-btn-secondary !px-3 !py-1.5 text-xs",
-                  pageTab === "ranking" && "ring-1 ring-tl-accent/30",
-                )}
-              >
-                <Truck className="mr-1 inline h-3.5 w-3.5" aria-hidden />
-                Ventas por proveedor
-              </button>
-              <button
-                type="button"
-                onClick={() => setPageTab("maestro")}
-                className={cn(
-                  "tl-btn tl-btn-secondary !px-3 !py-1.5 text-xs",
-                  pageTab === "maestro" && "ring-1 ring-tl-accent/30",
-                )}
-              >
-                <BookMarked className="mr-1 inline h-3.5 w-3.5" aria-hidden />
-                Nomenclador
-              </button>
-            </div>
-          </div>
-
-          {pageTab === "ranking" ? (
-          <div className="flex flex-wrap items-center gap-2">
-            <div className="tl-glass flex items-center gap-2 rounded-xl px-3 py-2">
-              <button
-                type="button"
-                className={cn(
-                  "tl-btn tl-btn-secondary !px-3 !py-1.5 text-xs",
-                  mode === "days" && "ring-1 ring-tl-accent/30",
-                )}
-                onClick={() => setMode("days")}
-              >
-                Últimos días
-              </button>
-              <button
-                type="button"
-                className={cn(
-                  "tl-btn tl-btn-secondary !px-3 !py-1.5 text-xs",
-                  mode === "range" && "ring-1 ring-tl-accent/30",
-                )}
-                onClick={() => setMode("range")}
-              >
-                Rango
-              </button>
-            </div>
-
-            {mode === "days" ? (
-              <label className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wider text-tl-muted">
-                <Calendar className="h-4 w-4" aria-hidden />
-                <select
-                  className="tl-input h-9 px-3 py-1 text-xs sm:text-sm"
-                  value={days}
-                  onChange={(e) => setDays(Number(e.target.value))}
-                >
-                  <option value={7}>7 días</option>
-                  <option value={30}>30 días</option>
-                  <option value={90}>90 días</option>
-                  <option value={180}>180 días</option>
-                </select>
-              </label>
-            ) : (
-              <>
-                <label className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wider text-tl-muted">
-                  <Calendar className="h-4 w-4" aria-hidden />
-                  <span className="hidden sm:inline">Desde</span>
-                  <input
-                    type="date"
-                    value={from}
-                    onChange={(e) => setFrom(e.target.value)}
-                    className="tl-input h-9 w-[140px] px-3 py-1 text-xs sm:text-sm"
-                  />
-                </label>
-                <label className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wider text-tl-muted">
-                  <span className="hidden sm:inline">Hasta</span>
-                  <input
-                    type="date"
-                    value={to}
-                    onChange={(e) => setTo(e.target.value)}
-                    className="tl-input h-9 w-[140px] px-3 py-1 text-xs sm:text-sm"
-                  />
-                </label>
-              </>
-            )}
-
-            <button
-              type="button"
-              onClick={() => void load()}
-              className="tl-btn tl-btn-secondary tl-interactive tl-hover-lift tl-press tl-focus !px-3 !py-2 text-xs sm:text-sm"
-              disabled={loading}
-              title="Actualizar"
+            <div
+              className="flex shrink-0 flex-col gap-2 sm:flex-row sm:items-center"
+              role="tablist"
+              aria-label="Sección"
             >
-              <RefreshCw className={cn("h-4 w-4", loading && "animate-spin")} aria-hidden />
-              Actualizar
-            </button>
-          </div>
-          ) : (
-            <div className="flex flex-wrap items-center justify-end gap-2">
-              <button
-                type="button"
-                onClick={() => void loadMasters()}
-                className="tl-btn tl-btn-secondary tl-interactive tl-hover-lift tl-press tl-focus !px-3 !py-2 text-xs sm:text-sm"
-                disabled={mastersLoading}
-                title="Actualizar nomenclador"
-              >
-                <RefreshCw className={cn("h-4 w-4", mastersLoading && "animate-spin")} aria-hidden />
-                Actualizar
-              </button>
+              <div className="flex flex-wrap gap-1 rounded-xl border border-tl-line-subtle bg-tl-canvas p-1 shadow-inner">
+                <button
+                  type="button"
+                  role="tab"
+                  aria-selected={pageTab === "ranking"}
+                  onClick={() => setPageTab("ranking")}
+                  className={cn(
+                    "inline-flex items-center gap-1.5 rounded-lg px-3 py-2 text-xs font-semibold transition-all sm:gap-2 sm:px-4 sm:text-sm",
+                    pageTab === "ranking"
+                      ? "bg-tl-accent text-tl-accent-fg shadow-sm"
+                      : "text-tl-muted hover:text-tl-ink",
+                  )}
+                >
+                  <Truck className="h-4 w-4 shrink-0" aria-hidden />
+                  Ventas
+                </button>
+                <button
+                  type="button"
+                  role="tab"
+                  aria-selected={pageTab === "cuentas"}
+                  onClick={() => setPageTab("cuentas")}
+                  className={cn(
+                    "inline-flex items-center gap-1.5 rounded-lg px-3 py-2 text-xs font-semibold transition-all sm:gap-2 sm:px-4 sm:text-sm",
+                    pageTab === "cuentas"
+                      ? "bg-amber-500 text-white shadow-sm dark:bg-amber-600"
+                      : "text-tl-muted hover:text-tl-ink",
+                  )}
+                >
+                  <Wallet className="h-4 w-4 shrink-0" aria-hidden />
+                  Cuentas
+                </button>
+                <button
+                  type="button"
+                  role="tab"
+                  aria-selected={pageTab === "maestro"}
+                  onClick={() => setPageTab("maestro")}
+                  className={cn(
+                    "inline-flex items-center gap-1.5 rounded-lg px-3 py-2 text-xs font-semibold transition-all sm:gap-2 sm:px-4 sm:text-sm",
+                    pageTab === "maestro"
+                      ? "bg-tl-accent text-tl-accent-fg shadow-sm"
+                      : "text-tl-muted hover:text-tl-ink",
+                  )}
+                >
+                  <BookMarked className="h-4 w-4 shrink-0" aria-hidden />
+                  Nomenclador
+                </button>
+              </div>
             </div>
-          )}
-        </div>
+          </div>
+        </section>
 
         {pageTab === "maestro" ? (
           <>
-            {mastersErr && (
-              <div className="rounded-xl border border-tl-warning/20 bg-tl-warning-subtle px-4 py-3 text-sm text-tl-warning">
+            {mastersErr ? (
+              <div className="rounded-xl border border-tl-warning/25 bg-tl-warning-subtle px-4 py-3 text-sm text-tl-warning">
                 {mastersErr}
               </div>
-            )}
+            ) : null}
 
-            <section className="tl-glass rounded-xl p-4">
-              <h2 className="flex items-center gap-2 text-sm font-semibold text-tl-ink">
-                <Plus className="h-4 w-4 text-tl-accent" aria-hidden />
-                Nuevo proveedor
-              </h2>
-              <form onSubmit={onCreateMaster} className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-                <div className="sm:col-span-2">
-                  <label className="text-xs text-tl-muted" htmlFor="ms-name">
-                    Nombre
+            <section className="rounded-2xl border border-emerald-500/20 bg-gradient-to-br from-emerald-500/[0.07] to-tl-canvas-inset p-5 sm:p-6">
+              <div className="flex items-center gap-3 border-b border-emerald-500/15 pb-4">
+                <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-emerald-500/15 text-emerald-600">
+                  <Plus className="h-5 w-5" aria-hidden />
+                </div>
+                <div>
+                  <h2 className="text-base font-semibold text-tl-ink">Añadir proveedor</h2>
+                  <p className="text-xs text-tl-muted">Nombre obligatorio · teléfono y notas opcionales</p>
+                </div>
+              </div>
+              <form onSubmit={onCreateMaster} className="mt-5 grid gap-4 sm:grid-cols-2 lg:grid-cols-12">
+                <div className="sm:col-span-2 lg:col-span-5">
+                  <label className="text-xs font-medium text-tl-muted" htmlFor="ms-name">
+                    Nombre comercial
                   </label>
                   <input
                     id="ms-name"
                     value={mName}
                     onChange={(e) => setMName(e.target.value)}
-                    className="tl-input mt-1"
-                    placeholder="Ej. Distribuidora X"
+                    className="tl-input mt-1.5 w-full"
+                    placeholder="Ej. Distribuidora regional"
                     required
                   />
                 </div>
-                <div>
-                  <label className="text-xs text-tl-muted" htmlFor="ms-phone">
+                <div className="lg:col-span-3">
+                  <label className="text-xs font-medium text-tl-muted" htmlFor="ms-phone">
                     Teléfono
                   </label>
                   <input
                     id="ms-phone"
                     value={mPhone}
                     onChange={(e) => setMPhone(e.target.value)}
-                    className="tl-input mt-1"
-                    placeholder="opcional"
+                    className="tl-input mt-1.5 w-full"
+                    placeholder="Opcional"
+                    inputMode="tel"
                   />
                 </div>
-                <div>
-                  <label className="text-xs text-tl-muted" htmlFor="ms-notes">
-                    Notas
+                <div className="lg:col-span-4">
+                  <label className="text-xs font-medium text-tl-muted" htmlFor="ms-notes">
+                    Notas internas
                   </label>
                   <input
                     id="ms-notes"
                     value={mNotes}
                     onChange={(e) => setMNotes(e.target.value)}
-                    className="tl-input mt-1"
-                    placeholder="opcional"
+                    className="tl-input mt-1.5 w-full"
+                    placeholder="Opcional"
                   />
                 </div>
-                <div className="flex items-end sm:col-span-2 lg:col-span-4">
-                  <button type="submit" disabled={mBusy} className="tl-btn-primary">
-                    {mBusy ? "Guardando…" : "Añadir al nomenclador"}
+                <div className="flex items-end sm:col-span-2 lg:col-span-12">
+                  <button type="submit" disabled={mBusy} className="tl-btn-primary w-full sm:w-auto">
+                    {mBusy ? "Guardando…" : "Guardar en el nomenclador"}
                   </button>
                 </div>
               </form>
             </section>
 
-            <section className="tl-glass rounded-xl p-4">
-              <h2 className="text-sm font-semibold text-tl-ink">Proveedores registrados</h2>
-              <div className="mt-4 overflow-x-auto">
-                <table className="w-full min-w-[720px] text-left text-sm">
-                  <thead className="border-b border-tl-line bg-tl-canvas-subtle text-xs uppercase tracking-wide text-tl-muted">
+            <section className="rounded-2xl border border-tl-line-subtle bg-tl-canvas-inset p-0 shadow-sm">
+              <div className="flex flex-col gap-3 border-b border-tl-line-subtle px-4 py-4 sm:flex-row sm:items-center sm:justify-between sm:px-6">
+                <div className="flex items-center gap-3">
+                  <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-violet-500/12 text-violet-600">
+                    <Layers className="h-5 w-5" aria-hidden />
+                  </div>
+                  <div>
+                    <h2 className="text-base font-semibold text-tl-ink">Listado</h2>
+                    <p className="text-xs text-tl-muted">
+                      {mastersLoading ? "Cargando…" : `${nomencladorTotal} registro(s) · ${nomencladorActive} activo(s)`}
+                    </p>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => void loadMasters()}
+                  className="tl-btn tl-btn-secondary inline-flex items-center justify-center gap-2 self-start sm:self-auto"
+                  disabled={mastersLoading}
+                >
+                  <RefreshCw className={cn("h-4 w-4", mastersLoading && "animate-spin")} aria-hidden />
+                  Actualizar
+                </button>
+              </div>
+
+              <div className="overflow-x-auto px-2 pb-2 sm:px-0">
+                <table className="w-full min-w-[640px] text-left text-sm">
+                  <thead className="bg-tl-canvas-subtle/90 text-xs font-semibold uppercase tracking-wide text-tl-muted">
                     <tr>
-                      <th className="px-4 py-3">Nombre</th>
+                      <th className="rounded-tl-lg px-4 py-3 pl-5">Nombre</th>
                       <th className="px-4 py-3">Teléfono</th>
                       <th className="px-4 py-3 text-right">Productos</th>
                       <th className="px-4 py-3">Estado</th>
-                      <th className="px-4 py-3 text-right">Acciones</th>
+                      <th className="rounded-tr-lg px-4 py-3 pr-5 text-right">Acciones</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-tl-line-subtle">
                     {mastersLoading ? (
-                      Array.from({ length: 6 }).map((_, i) => (
+                      Array.from({ length: 5 }).map((_, i) => (
                         <tr key={i}>
                           {Array.from({ length: 5 }).map((__, j) => (
                             <td key={j} className="px-4 py-3">
@@ -504,38 +612,37 @@ export default function SuppliersPage() {
                       ))
                     ) : masters.length === 0 ? (
                       <tr>
-                        <td colSpan={5} className="px-4 py-8 text-center text-sm text-tl-muted">
-                          No hay proveedores en el nomenclador. Crea el primero con el formulario de arriba; luego
-                          podrás elegirlos al dar de alta productos en Inventario.
+                        <td colSpan={5} className="px-5 py-12 text-center text-sm text-tl-muted">
+                          Aún no hay proveedores. Usa el formulario de arriba para crear el primero.
                         </td>
                       </tr>
                     ) : (
                       masters.map((s) => (
-                        <tr key={s.id}>
-                          <td className="px-4 py-3 font-medium text-tl-ink">{s.name}</td>
-                          <td className="px-4 py-3 text-tl-muted">{s.phone ?? "—"}</td>
-                          <td className="px-4 py-3 text-right tabular-nums text-tl-ink">
+                        <tr key={s.id} className="transition-colors hover:bg-tl-canvas-subtle/50">
+                          <td className="px-4 py-3.5 pl-5 font-medium text-tl-ink">{s.name}</td>
+                          <td className="px-4 py-3.5 text-tl-muted">{s.phone ?? "—"}</td>
+                          <td className="px-4 py-3.5 text-right tabular-nums text-tl-ink">
                             {s.productCount.toLocaleString("es-ES")}
                           </td>
-                          <td className="px-4 py-3">
+                          <td className="px-4 py-3.5">
                             <button
                               type="button"
                               onClick={() => void toggleMasterActive(s)}
                               className={cn(
-                                "rounded-lg px-2 py-1 text-xs font-medium",
+                                "rounded-full px-3 py-1 text-xs font-semibold transition-colors",
                                 s.active
-                                  ? "bg-tl-success-subtle text-tl-success"
-                                  : "bg-tl-canvas-subtle text-tl-muted",
+                                  ? "bg-emerald-500/15 text-emerald-700 dark:text-emerald-300"
+                                  : "bg-zinc-500/10 text-tl-muted",
                               )}
                             >
                               {s.active ? "Activo" : "Inactivo"}
                             </button>
                           </td>
-                          <td className="px-4 py-3 text-right">
+                          <td className="px-4 py-3.5 pr-5 text-right">
                             <button
                               type="button"
                               onClick={() => openEditMaster(s)}
-                              className="tl-btn tl-btn-secondary !px-2 !py-1 text-xs"
+                              className="tl-btn tl-btn-secondary inline-flex !px-2.5 !py-1.5"
                               title="Editar"
                             >
                               <Pencil className="h-3.5 w-3.5" aria-hidden />
@@ -544,8 +651,8 @@ export default function SuppliersPage() {
                               type="button"
                               onClick={() => void onDeleteMaster(s)}
                               disabled={deleteBusyId === s.id || s.productCount > 0}
-                              className="tl-btn tl-btn-secondary !ml-2 !px-2 !py-1 text-xs disabled:opacity-40"
-                              title={s.productCount > 0 ? "Hay productos vinculados" : "Eliminar"}
+                              className="tl-btn tl-btn-secondary !ml-2 inline-flex !px-2.5 !py-1.5 disabled:opacity-40"
+                              title={s.productCount > 0 ? "Hay productos usando este proveedor" : "Eliminar"}
                             >
                               <Trash2 className="h-3.5 w-3.5" aria-hidden />
                             </button>
@@ -556,13 +663,12 @@ export default function SuppliersPage() {
                   </tbody>
                 </table>
               </div>
-              <p className="mt-3 text-xs text-tl-muted">
-                Inactivo: no aparece en el desplegable de nuevos productos; los ya vinculados siguen mostrando el
-                nombre. Eliminar solo está permitido sin productos asociados.
+              <p className="border-t border-tl-line-subtle px-5 py-3 text-xs leading-relaxed text-tl-muted">
+                Los inactivos no aparecen al crear productos nuevos. No se puede borrar si hay productos vinculados.
               </p>
             </section>
 
-            {editMaster && (
+            {editMaster ? (
               <div
                 className="fixed inset-0 z-[100] flex items-end justify-center bg-black/50 p-4 sm:items-center"
                 role="dialog"
@@ -571,38 +677,38 @@ export default function SuppliersPage() {
                 onClick={() => setEditMaster(null)}
               >
                 <div
-                  className="tl-glass w-full max-w-md rounded-2xl p-5 shadow-xl"
+                  className="tl-glass w-full max-w-md rounded-2xl p-6 shadow-xl"
                   onClick={(e) => e.stopPropagation()}
                 >
                   <h2 id="edit-supplier-title" className="text-lg font-semibold text-tl-ink">
                     Editar proveedor
                   </h2>
-                  <form onSubmit={onSaveEditMaster} className="mt-4 space-y-3">
+                  <form onSubmit={onSaveEditMaster} className="mt-5 space-y-4">
                     <div>
-                      <label className="text-xs text-tl-muted" htmlFor="ems-name">
+                      <label className="text-xs font-medium text-tl-muted" htmlFor="ems-name">
                         Nombre
                       </label>
                       <input
                         id="ems-name"
                         value={eMName}
                         onChange={(e) => setEMName(e.target.value)}
-                        className="tl-input mt-1"
+                        className="tl-input mt-1.5 w-full"
                         required
                       />
                     </div>
                     <div>
-                      <label className="text-xs text-tl-muted" htmlFor="ems-phone">
+                      <label className="text-xs font-medium text-tl-muted" htmlFor="ems-phone">
                         Teléfono
                       </label>
                       <input
                         id="ems-phone"
                         value={eMPhone}
                         onChange={(e) => setEMPhone(e.target.value)}
-                        className="tl-input mt-1"
+                        className="tl-input mt-1.5 w-full"
                       />
                     </div>
                     <div>
-                      <label className="text-xs text-tl-muted" htmlFor="ems-notes">
+                      <label className="text-xs font-medium text-tl-muted" htmlFor="ems-notes">
                         Notas
                       </label>
                       <textarea
@@ -610,166 +716,478 @@ export default function SuppliersPage() {
                         value={eMNotes}
                         onChange={(e) => setEMNotes(e.target.value)}
                         rows={3}
-                        className="tl-input mt-1"
+                        className="tl-input mt-1.5 w-full"
                       />
                     </div>
-                    <div className="flex justify-end gap-2 pt-2">
+                    <div className="flex flex-col-reverse gap-2 pt-2 sm:flex-row sm:justify-end">
                       <button
                         type="button"
-                        className="tl-btn tl-btn-secondary"
+                        className="tl-btn tl-btn-secondary w-full sm:w-auto"
                         onClick={() => setEditMaster(null)}
                       >
                         Cancelar
                       </button>
-                      <button type="submit" disabled={eMBusy} className="tl-btn-primary">
-                        {eMBusy ? "Guardando…" : "Guardar"}
+                      <button type="submit" disabled={eMBusy} className="tl-btn-primary w-full sm:w-auto">
+                        {eMBusy ? "Guardando…" : "Guardar cambios"}
                       </button>
                     </div>
                   </form>
                 </div>
               </div>
-            )}
+            ) : null}
+          </>
+        ) : pageTab === "cuentas" ? (
+          <>
+            {accountsError ? (
+              <div className="rounded-xl border border-tl-warning/25 bg-tl-warning-subtle px-4 py-3 text-sm text-tl-warning">
+                {accountsError}
+              </div>
+            ) : null}
+
+            <section className="rounded-2xl border border-amber-500/20 bg-gradient-to-br from-amber-500/[0.06] to-tl-canvas-inset p-4 sm:p-5">
+              <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
+                <div>
+                  <h2 className="text-sm font-semibold text-tl-ink">Rango de fechas</h2>
+                  <p className="mt-1 text-xs text-tl-muted">
+                    Se consideran ventas cerradas. El importe a pagar es precio de compra × unidades vendidas (por
+                    línea).
+                  </p>
+                </div>
+                <div className="flex flex-wrap items-end gap-3">
+                  <label className="flex flex-col gap-1 text-xs font-medium text-tl-muted">
+                    Desde
+                    <input
+                      type="date"
+                      value={accountsFrom}
+                      onChange={(e) => setAccountsFrom(e.target.value)}
+                      className="tl-input h-10 px-3 text-sm"
+                    />
+                  </label>
+                  <label className="flex flex-col gap-1 text-xs font-medium text-tl-muted">
+                    Hasta
+                    <input
+                      type="date"
+                      value={accountsTo}
+                      onChange={(e) => setAccountsTo(e.target.value)}
+                      className="tl-input h-10 px-3 text-sm"
+                    />
+                  </label>
+                  <button
+                    type="button"
+                    onClick={() => void loadAccounts()}
+                    className="tl-btn tl-btn-secondary inline-flex h-10 items-center gap-2 self-end"
+                    disabled={accountsLoading}
+                  >
+                    <RefreshCw className={cn("h-4 w-4", accountsLoading && "animate-spin")} aria-hidden />
+                    Calcular
+                  </button>
+                </div>
+              </div>
+            </section>
+
+            <section className="overflow-hidden rounded-2xl border-2 border-amber-500/35 bg-gradient-to-br from-amber-500/10 via-tl-canvas-inset to-tl-canvas p-6 shadow-md sm:p-8">
+              <div className="flex flex-wrap items-start justify-between gap-4">
+                <div>
+                  <p className="text-xs font-bold uppercase tracking-wider text-amber-800 dark:text-amber-200/90">
+                    Total estimado a pagar proveedores
+                  </p>
+                  <p className="mt-1 text-xs text-tl-muted">Suma de costes de compra sobre unidades vendidas en el rango</p>
+                </div>
+                <Banknote className="h-10 w-10 shrink-0 text-amber-600 opacity-90" aria-hidden />
+              </div>
+              <div className="mt-4 text-3xl font-bold tracking-tight text-tl-ink sm:text-4xl">
+                {accountsLoading ? (
+                  "…"
+                ) : (
+                  <CupUsdMoney cents={accountsData?.totals?.payableCents ?? 0} className="!text-3xl sm:!text-4xl" />
+                )}
+              </div>
+            </section>
+
+            <section aria-labelledby="kpi-acc">
+              <h2 id="kpi-acc" className="mb-3 flex items-center gap-2 text-xs font-bold uppercase tracking-wider text-tl-muted">
+                <TrendingUp className="h-4 w-4 text-amber-600" aria-hidden />
+                Quién destaca en este periodo
+              </h2>
+              <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+                <KpiCard
+                  label="Más ingresos por ventas"
+                  value={
+                    accountsLoading ? "…" : accTopRevenue ? <CupUsdMoney cents={accTopRevenue.revenueCents} /> : "—"
+                  }
+                  hint={accTopRevenue?.supplier ?? "Sin datos"}
+                  variant="info"
+                  icon={<TrendingUp className="h-4 w-4" />}
+                />
+                <KpiCard
+                  label="Más unidades vendidas"
+                  value={accountsLoading ? "…" : accTopUnits ? accTopUnits.units.toLocaleString("es-ES") : "—"}
+                  hint={accTopUnits?.supplier ?? "—"}
+                  variant="warning"
+                  icon={<Truck className="h-4 w-4" />}
+                />
+                <KpiCard
+                  label="Más referencias distintas"
+                  value={accountsLoading ? "…" : accTopProducts ? String(accTopProducts.products) : "—"}
+                  hint={accTopProducts?.supplier ?? "—"}
+                  variant="default"
+                  icon={<Package className="h-4 w-4" />}
+                />
+                <KpiCard
+                  label="Mayor monto a pagar"
+                  value={
+                    accountsLoading ? "…" : accTopPayable ? <CupUsdMoney cents={accTopPayable.payableCents} /> : "—"
+                  }
+                  hint={accTopPayable?.supplier ?? "—"}
+                  variant="accent"
+                  icon={<Wallet className="h-4 w-4" />}
+                />
+              </div>
+            </section>
+
+            <section className="overflow-hidden rounded-2xl border border-tl-line-subtle bg-tl-canvas-inset shadow-sm">
+              <div className="flex flex-col gap-3 border-b border-tl-line-subtle px-4 py-4 sm:flex-row sm:items-center sm:justify-between sm:px-6">
+                <div>
+                  <h2 className="text-base font-semibold text-tl-ink">Detalle por proveedor</h2>
+                  <p className="text-xs text-tl-muted">Ordenado por importe a pagar (mayor primero)</p>
+                </div>
+                <input
+                  value={accountsQuery}
+                  onChange={(e) => setAccountsQuery(e.target.value)}
+                  placeholder="Buscar proveedor…"
+                  className="tl-input h-10 w-full sm:max-w-xs"
+                  type="search"
+                />
+              </div>
+              <div className="overflow-x-auto">
+                <table className="w-full min-w-[880px] text-left text-sm">
+                  <thead className="sticky top-0 z-10 bg-tl-canvas-subtle/95 text-xs font-semibold uppercase tracking-wide text-tl-muted backdrop-blur-sm">
+                    <tr>
+                      <th className="px-4 py-3 pl-5">Proveedor</th>
+                      <th className="px-4 py-3 text-right">Unidades</th>
+                      <th className="px-4 py-3 text-right">Ingresos venta</th>
+                      <th className="px-4 py-3 text-right">A pagar prov.</th>
+                      <th className="px-4 py-3 text-right">Ganancia est.</th>
+                      <th className="px-4 py-3 text-right">Refs.</th>
+                      <th className="px-4 py-3 pr-5 text-right">Líneas sin coste</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-tl-line-subtle">
+                    {accountsLoading ? (
+                      Array.from({ length: 6 }).map((_, i) => (
+                        <tr key={i}>
+                          {Array.from({ length: 7 }).map((__, j) => (
+                            <td key={j} className="px-4 py-3">
+                              <div className="tl-skeleton h-3 rounded-md" />
+                            </td>
+                          ))}
+                        </tr>
+                      ))
+                    ) : accountsSorted.length === 0 ? (
+                      <tr>
+                        <td colSpan={7} className="px-5 py-12 text-center text-sm text-tl-muted">
+                          No hay ventas en este rango o no coincide la búsqueda.
+                        </td>
+                      </tr>
+                    ) : (
+                      accountsSorted.map((s) => (
+                        <tr key={s.supplier} className="hover:bg-tl-canvas-subtle/40">
+                          <td className="px-4 py-3.5 pl-5 font-medium text-tl-ink">{s.supplier}</td>
+                          <td className="px-4 py-3.5 text-right tabular-nums">{s.units.toLocaleString("es-ES")}</td>
+                          <td className="px-4 py-3.5 text-right">
+                            <TablePriceCupCell cupCents={s.revenueCents} compact />
+                          </td>
+                          <td className="px-4 py-3.5 text-right font-medium text-amber-900 dark:text-amber-100/95">
+                            <TablePriceCupCell cupCents={s.payableCents ?? 0} compact />
+                          </td>
+                          <td className="px-4 py-3.5 text-right">
+                            <TablePriceCupCell cupCents={s.profitCents} compact />
+                          </td>
+                          <td className="px-4 py-3.5 text-right tabular-nums text-tl-muted">
+                            {s.products.toLocaleString("es-ES")}
+                          </td>
+                          <td className="px-4 py-3.5 pr-5 text-right tabular-nums text-tl-muted">
+                            {s.linesMissingCost > 0 ? s.linesMissingCost.toLocaleString("es-ES") : "—"}
+                          </td>
+                        </tr>
+                      ))
+                    )}
+                  </tbody>
+                </table>
+              </div>
+              <p className="border-t border-tl-line-subtle px-5 py-3 text-xs leading-relaxed text-tl-muted">
+                «A pagar» usa el precio de compra del producto. Si falta, esa línea no suma al pago y se cuenta en
+                líneas sin coste.
+              </p>
+            </section>
           </>
         ) : (
           <>
-        {error && (
-          <div className="rounded-xl border border-tl-warning/20 bg-tl-warning-subtle px-4 py-3 text-sm text-tl-warning">
-            {error}
-          </div>
-        )}
+            {error ? (
+              <div className="rounded-xl border border-tl-warning/25 bg-tl-warning-subtle px-4 py-3 text-sm text-tl-warning">
+                {error}
+              </div>
+            ) : null}
 
-        <section>
-          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-            <KpiCard
-              label="Proveedores activos"
-              value={String(data?.suppliers.length ?? 0)}
-              icon={<Truck className="h-4 w-4" />}
-            />
-            <KpiCard
-              label="Top ingresos"
-              value={topByRevenue ? <CupUsdMoney cents={topByRevenue.revenueCents} /> : "—"}
-              hint={topByRevenue?.supplier}
-              variant="info"
-            />
-            <KpiCard
-              label="Top ganancia"
-              value={topByProfit ? <CupUsdMoney cents={topByProfit.profitCents} /> : "—"}
-              hint={topByProfit?.supplier}
-              variant="success"
-            />
-            <KpiCard
-              label="Más productos"
-              value={topByProducts ? String(topByProducts.products) : "—"}
-              hint={topByProducts?.supplier}
-            />
-          </div>
-        </section>
+            {/* Filtros */}
+            <section className="rounded-2xl border border-tl-line-subtle bg-tl-canvas-inset p-4 sm:p-5">
+              <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+                <div className="flex flex-wrap items-center gap-2">
+                  <span className="text-xs font-semibold uppercase tracking-wider text-tl-muted">Periodo</span>
+                  <div className="inline-flex rounded-lg border border-tl-line-subtle bg-tl-canvas p-0.5">
+                    <button
+                      type="button"
+                      className={cn(
+                        "rounded-md px-3 py-1.5 text-xs font-semibold transition-colors",
+                        mode === "days" ? "bg-tl-accent text-tl-accent-fg shadow-sm" : "text-tl-muted hover:text-tl-ink",
+                      )}
+                      onClick={() => setMode("days")}
+                    >
+                      Últimos días
+                    </button>
+                    <button
+                      type="button"
+                      className={cn(
+                        "rounded-md px-3 py-1.5 text-xs font-semibold transition-colors",
+                        mode === "range" ? "bg-tl-accent text-tl-accent-fg shadow-sm" : "text-tl-muted hover:text-tl-ink",
+                      )}
+                      onClick={() => setMode("range")}
+                    >
+                      Entre fechas
+                    </button>
+                  </div>
+                </div>
 
-        <section className="tl-glass rounded-xl p-4">
-          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-            <div className="flex items-center gap-2">
-              <FileText className="h-4 w-4 text-tl-muted" aria-hidden />
-              <p className="text-sm font-semibold text-tl-ink">Resumen por proveedor</p>
-            </div>
-            <input
-              value={query}
-              onChange={(e) => setQuery(e.target.value)}
-              placeholder="Buscar proveedor…"
-              className="tl-input h-9 w-full sm:w-[260px]"
-            />
-          </div>
+                <div className="flex flex-wrap items-center gap-3">
+                  {mode === "days" ? (
+                    <label className="flex items-center gap-2 text-sm text-tl-ink">
+                      <span className="text-xs text-tl-muted">Rango</span>
+                      <select
+                        className="tl-input h-10 min-w-[8rem] px-3 text-sm"
+                        value={days}
+                        onChange={(e) => setDays(Number(e.target.value))}
+                      >
+                        <option value={7}>7 días</option>
+                        <option value={30}>30 días</option>
+                        <option value={90}>90 días</option>
+                        <option value={180}>180 días</option>
+                      </select>
+                    </label>
+                  ) : (
+                    <div className="flex flex-wrap items-center gap-2">
+                      <input
+                        type="date"
+                        value={from}
+                        onChange={(e) => setFrom(e.target.value)}
+                        className="tl-input h-10 w-full min-w-[140px] px-3 text-sm sm:w-auto"
+                        aria-label="Desde"
+                      />
+                      <span className="text-tl-muted">—</span>
+                      <input
+                        type="date"
+                        value={to}
+                        onChange={(e) => setTo(e.target.value)}
+                        className="tl-input h-10 w-full min-w-[140px] px-3 text-sm sm:w-auto"
+                        aria-label="Hasta"
+                      />
+                    </div>
+                  )}
+                  <button
+                    type="button"
+                    onClick={() => void load()}
+                    className="tl-btn tl-btn-secondary inline-flex items-center gap-2"
+                    disabled={loading}
+                  >
+                    <RefreshCw className={cn("h-4 w-4", loading && "animate-spin")} aria-hidden />
+                    Actualizar datos
+                  </button>
+                </div>
+              </div>
+            </section>
 
-          <div className="mt-4 overflow-x-auto">
-            <table className="w-full min-w-[980px] text-left text-sm">
-              <thead className="border-b border-tl-line bg-tl-canvas-subtle text-xs uppercase tracking-wide text-tl-muted">
-                <tr>
-                  <th className="px-4 py-3">Proveedor</th>
-                  <th className="px-4 py-3 text-right">Productos</th>
-                  <th className="px-4 py-3 text-right">Unidades vendidas</th>
-                  <th className="px-4 py-3 text-right">Ingresos</th>
-                  <th className="px-4 py-3 text-right">Ganancia (estim.)</th>
-                  <th className="px-4 py-3 text-right">Costos faltantes</th>
-                  <th className="px-4 py-3">Top productos</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-tl-line-subtle">
-                {loading ? (
-                  Array.from({ length: 10 }).map((_, i) => (
-                    <tr key={i}>
-                      {Array.from({ length: 7 }).map((__, j) => (
-                        <td key={j} className="px-4 py-3">
-                          <div className="tl-skeleton h-3 rounded-md" />
-                        </td>
-                      ))}
+            {/* Bloque: nomenclador (datos reales de la lista) */}
+            <section aria-labelledby="kpi-nom">
+              <h2 id="kpi-nom" className="mb-3 flex items-center gap-2 text-xs font-bold uppercase tracking-wider text-tl-muted">
+                <Store className="h-4 w-4 text-violet-500" aria-hidden />
+                Tu nomenclador
+              </h2>
+              <div className="grid gap-4 sm:grid-cols-2">
+                <KpiCard
+                  label="Activos en la lista"
+                  value={mastersLoading ? "…" : String(nomencladorActive)}
+                  hint="Se ofrecen al crear productos"
+                  variant="accent"
+                  icon={<BookMarked className="h-4 w-4" />}
+                />
+                <KpiCard
+                  label="Registros en total"
+                  value={mastersLoading ? "…" : String(nomencladorTotal)}
+                  hint="Incluye inactivos"
+                  variant="default"
+                  icon={<Layers className="h-4 w-4" />}
+                />
+              </div>
+            </section>
+
+            {/* Bloque: ventas del periodo */}
+            <section aria-labelledby="kpi-sales">
+              <h2 id="kpi-sales" className="mb-3 flex items-center gap-2 text-xs font-bold uppercase tracking-wider text-tl-muted">
+                <TrendingUp className="h-4 w-4 text-cyan-600" aria-hidden />
+                Resultados en el periodo
+              </h2>
+              <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
+                <KpiCard
+                  label="Con ventas"
+                  value={loading ? "…" : String(withSalesCount)}
+                  hint="Proveedores con movimiento"
+                  variant="info"
+                  icon={<Truck className="h-4 w-4" />}
+                />
+                <KpiCard
+                  label="Total a pagar prov."
+                  value={
+                    loading ? "…" : <CupUsdMoney cents={data?.totals?.payableCents ?? 0} compact />
+                  }
+                  hint="Coste × uds vendidas"
+                  variant="accent"
+                  icon={<Wallet className="h-4 w-4" />}
+                />
+                <KpiCard
+                  label="Mayor ingreso"
+                  value={loading ? "…" : topByRevenue ? <CupUsdMoney cents={topByRevenue.revenueCents} /> : "—"}
+                  hint={topByRevenue?.supplier ?? "Sin datos"}
+                  variant="info"
+                />
+                <KpiCard
+                  label="Más unidades"
+                  value={loading ? "…" : topByUnits ? topByUnits.units.toLocaleString("es-ES") : "—"}
+                  hint={topByUnits?.supplier ?? "—"}
+                  variant="warning"
+                />
+                <KpiCard
+                  label="Mayor ganancia est."
+                  value={loading ? "…" : topByProfit ? <CupUsdMoney cents={topByProfit.profitCents} /> : "—"}
+                  hint={topByProfit?.supplier ?? "Sin datos"}
+                  variant="success"
+                />
+                <KpiCard
+                  label="Más referencias vendidas"
+                  value={loading ? "…" : topByProducts ? String(topByProducts.products) : "—"}
+                  hint={topByProducts?.supplier ?? "Productos distintos"}
+                  variant="default"
+                  icon={<Package className="h-4 w-4" />}
+                />
+              </div>
+            </section>
+
+            {/* Tabla */}
+            <section className="overflow-hidden rounded-2xl border border-tl-line-subtle bg-tl-canvas-inset shadow-sm">
+              <div className="flex flex-col gap-3 border-b border-tl-line-subtle px-4 py-4 sm:flex-row sm:items-center sm:justify-between sm:px-6">
+                <div className="flex items-center gap-2">
+                  <FileText className="h-5 w-5 text-tl-accent" aria-hidden />
+                  <div>
+                    <h2 className="text-base font-semibold text-tl-ink">Detalle por proveedor</h2>
+                    <p className="text-xs text-tl-muted">Ingresos y ganancia según coste en ficha de producto</p>
+                  </div>
+                </div>
+                <input
+                  value={query}
+                  onChange={(e) => setQuery(e.target.value)}
+                  placeholder="Buscar en la tabla…"
+                  className="tl-input h-10 w-full sm:max-w-xs"
+                  type="search"
+                />
+              </div>
+
+              <div className="overflow-x-auto">
+                <table className="w-full min-w-[1080px] text-left text-sm">
+                  <thead className="sticky top-0 z-10 bg-tl-canvas-subtle/95 text-xs font-semibold uppercase tracking-wide text-tl-muted backdrop-blur-sm">
+                    <tr>
+                      <th className="px-4 py-3 pl-5">Proveedor</th>
+                      <th className="px-4 py-3 text-right">Refs.</th>
+                      <th className="px-4 py-3 text-right">Unidades</th>
+                      <th className="px-4 py-3 text-right">Ingresos</th>
+                      <th className="px-4 py-3 text-right">A pagar prov.</th>
+                      <th className="px-4 py-3 text-right">Ganancia est.</th>
+                      <th className="px-4 py-3 text-right">Sin coste</th>
+                      <th className="px-4 py-3 pr-5">Destacados</th>
                     </tr>
-                  ))
-                ) : suppliersFiltered.length === 0 ? (
-                  <tr>
-                    <td colSpan={7} className="px-4 py-8 text-center text-sm text-tl-muted">
-                      No hay datos para el filtro seleccionado.
-                    </td>
-                  </tr>
-                ) : (
-                  suppliersFiltered.map((s) => {
-                    const tops = topProductsBySupplier.get(s.supplier) ?? [];
-                    return (
-                      <tr key={s.supplier}>
-                        <td className="px-4 py-3 font-medium text-tl-ink">{s.supplier}</td>
-                        <td className="px-4 py-3 text-right tabular-nums text-tl-ink">
-                          {s.products.toLocaleString("es-ES")}
-                        </td>
-                        <td className="px-4 py-3 text-right tabular-nums text-tl-ink">
-                          {s.units.toLocaleString("es-ES")}
-                        </td>
-                        <td className="px-4 py-3 text-right text-tl-ink align-top">
-                          <TablePriceCupCell cupCents={s.revenueCents} compact />
-                        </td>
-                        <td className="px-4 py-3 text-right text-tl-ink align-top">
-                          <TablePriceCupCell cupCents={s.profitCents} compact />
-                        </td>
-                        <td className="px-4 py-3 text-right tabular-nums text-tl-muted">
-                          {s.linesMissingCost > 0 ? s.linesMissingCost.toLocaleString("es-ES") : "0"}
-                        </td>
-                        <td className="px-4 py-3">
-                          {tops.length === 0 ? (
-                            <span className="text-xs text-tl-muted">—</span>
-                          ) : (
-                            <ul className="space-y-1">
-                              {tops.map((p) => (
-                                <li key={p.productId} className="flex items-center justify-between gap-3">
-                                  <span className="truncate text-xs text-tl-ink">
-                                    {p.name}
-                                    {p.sku ? (
-                                      <span className="ml-2 font-mono text-[10px] text-tl-muted">
-                                        {p.sku}
-                                      </span>
-                                    ) : null}
-                                  </span>
-                                  <span className="shrink-0 text-xs tabular-nums text-tl-muted">
-                                    {p.units} u · <TablePriceCupCell cupCents={p.revenueCents} compact />
-                                  </span>
-                                </li>
-                              ))}
-                            </ul>
-                          )}
+                  </thead>
+                  <tbody className="divide-y divide-tl-line-subtle">
+                    {loading ? (
+                      Array.from({ length: 8 }).map((_, i) => (
+                        <tr key={i}>
+                          {Array.from({ length: 8 }).map((__, j) => (
+                            <td key={j} className="px-4 py-3">
+                              <div className="tl-skeleton h-3 rounded-md" />
+                            </td>
+                          ))}
+                        </tr>
+                      ))
+                    ) : suppliersFiltered.length === 0 ? (
+                      <tr>
+                        <td colSpan={8} className="px-5 py-12 text-center text-sm text-tl-muted">
+                          No hay ventas en este periodo o no coincide la búsqueda.
                         </td>
                       </tr>
-                    );
-                  })
-                )}
-              </tbody>
-            </table>
-          </div>
-
-          <div className="mt-4 text-xs text-tl-muted">
-            La ganancia mostrada es estimada (precio de venta menos costo del producto, por unidad). Si falta
-            el costo en ficha de producto, esa venta cuenta en “Costos faltantes” y no suma a la ganancia.
-          </div>
-        </section>
+                    ) : (
+                      suppliersFiltered.map((s) => {
+                        const tops = topProductsBySupplier.get(s.supplier) ?? [];
+                        return (
+                          <tr key={s.supplier} className="hover:bg-tl-canvas-subtle/40">
+                            <td className="px-4 py-3.5 pl-5 font-medium text-tl-ink">{s.supplier}</td>
+                            <td className="px-4 py-3.5 text-right tabular-nums text-tl-ink">
+                              {s.products.toLocaleString("es-ES")}
+                            </td>
+                            <td className="px-4 py-3.5 text-right tabular-nums text-tl-ink">
+                              {s.units.toLocaleString("es-ES")}
+                            </td>
+                            <td className="px-4 py-3.5 text-right align-top">
+                              <TablePriceCupCell cupCents={s.revenueCents} compact />
+                            </td>
+                            <td className="px-4 py-3.5 text-right align-top text-amber-900/90 dark:text-amber-100/80">
+                              <TablePriceCupCell cupCents={s.payableCents ?? 0} compact />
+                            </td>
+                            <td className="px-4 py-3.5 text-right align-top">
+                              <TablePriceCupCell cupCents={s.profitCents} compact />
+                            </td>
+                            <td className="px-4 py-3.5 text-right tabular-nums text-tl-muted">
+                              {s.linesMissingCost > 0 ? s.linesMissingCost.toLocaleString("es-ES") : "—"}
+                            </td>
+                            <td className="max-w-[220px] px-4 py-3.5 pr-5">
+                              {tops.length === 0 ? (
+                                <span className="text-xs text-tl-muted">—</span>
+                              ) : (
+                                <ul className="space-y-1.5">
+                                  {tops.map((p) => (
+                                    <li
+                                      key={p.productId}
+                                      className="flex flex-col gap-0.5 text-xs sm:flex-row sm:items-center sm:justify-between sm:gap-2"
+                                    >
+                                      <span className="min-w-0 truncate text-tl-ink">{p.name}</span>
+                                      <span className="shrink-0 tabular-nums text-tl-muted">
+                                        {p.units} u. · <TablePriceCupCell cupCents={p.revenueCents} compact />
+                                      </span>
+                                    </li>
+                                  ))}
+                                </ul>
+                              )}
+                            </td>
+                          </tr>
+                        );
+                      })
+                    )}
+                  </tbody>
+                </table>
+              </div>
+              <p className="border-t border-tl-line-subtle px-5 py-3 text-xs leading-relaxed text-tl-muted">
+                «A pagar» es coste de compra × unidades. La ganancia usa PVP − ese coste. Si falta precio de compra, se
+                indica en «Sin coste».
+              </p>
+            </section>
           </>
         )}
       </div>
     </AdminShell>
   );
 }
-

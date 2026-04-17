@@ -24,8 +24,6 @@ export function AdminShell({ children, title = "Dashboard" }: AdminShellProps) {
     localStorage.setItem("tl-sidebar-collapsed", String(sidebarCollapsed));
   }, [sidebarCollapsed]);
 
-  // Nota: quitamos auto-refresh global para evitar recargas mientras el usuario interactúa.
-
   // Load exchange rate once (and refresh on tl-refresh if missing)
   useEffect(() => {
     let cancelled = false;
