@@ -1030,3 +1030,83 @@
   background: var(--tl-canvas-subtle);
   color: var(--tl-ink);
 }
+
+/* =========================
+ * Print / PDF (modo profesional)
+ * - Oculta navegación (sidebar/topbar) y controles.
+ * - Muestra solo cabecera + tabla(s) dentro de .tl-print-area.
+ * ========================= */
+.tl-print-only {
+  display: none;
+}
+
+@media print {
+  html,
+  body {
+    background: #ffffff !important;
+  }
+
+  /* Ocultar todo por defecto */
+  body * {
+    visibility: hidden;
+  }
+
+  /* Mostrar solo el área imprimible */
+  .tl-print-area,
+  .tl-print-area * {
+    visibility: visible;
+  }
+
+  .tl-print-area {
+    position: absolute;
+    left: 0;
+    top: 0;
+    width: 100%;
+    padding: 20px;
+  }
+
+  .tl-no-print {
+    display: none !important;
+  }
+
+  .tl-print-only {
+    display: block !important;
+  }
+
+  /* Tabla en papel */
+  .tl-glass {
+    background: transparent !important;
+    border: none !important;
+    backdrop-filter: none !important;
+  }
+
+  .tl-table,
+  table {
+    border-collapse: collapse;
+    width: 100%;
+  }
+
+  .tl-table th,
+  table th {
+    background: #f3f4f6 !important;
+    color: #111827 !important;
+    border-bottom: 1px solid #e5e7eb !important;
+  }
+
+  .tl-table td,
+  table td {
+    color: #111827 !important;
+    border-bottom: 1px solid #f1f5f9 !important;
+  }
+
+  /* Evita cortar filas */
+  tr {
+    break-inside: avoid;
+    page-break-inside: avoid;
+  }
+
+  /* Márgenes del navegador */
+  @page {
+    margin: 12mm;
+  }
+}
