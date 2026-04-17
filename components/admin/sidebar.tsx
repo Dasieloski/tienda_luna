@@ -17,6 +17,7 @@ import {
   Radio,
   Settings,
   Store,
+  Truck,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -33,6 +34,7 @@ const NAV_ITEMS = [
     section: "Gestión",
     items: [
       { href: "/admin/inventario", label: "Inventario", icon: Boxes },
+      { href: "/admin/proveedores", label: "Proveedores", icon: Truck },
       { href: "/admin/analitica", label: "Analítica", icon: BarChart3 },
       { href: "/admin/economia", label: "Economía", icon: Landmark },
       { href: "/admin/control-diario", label: "Control diario", icon: ClipboardList },

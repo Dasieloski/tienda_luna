@@ -45,13 +45,6 @@ export function emptyOverviewPayload(now = new Date()) {
     level2: {
       rotacionInventario30d: 0,
       margenAprox30d: 0,
-      clientesFrecuentes: [] as {
-        customerId: string | null;
-        nombre: string | null;
-        telefono: string | null;
-        compras: number;
-        totalCents: number;
-      }[],
       ventasPorHoraHoy: [] as { hora: number; ventas: number; ingresosCents: number }[],
       rendimientoDispositivoMes: [] as {
         deviceId: string;
@@ -60,8 +53,6 @@ export function emptyOverviewPayload(now = new Date()) {
       }[],
     },
     level3: {
-      cohortesClientesNuevos: [] as { mes: string; clientes: number }[],
-      ltvTop: [] as { customerId: string; pedidos: number; totalCents: number }[],
       alertasStock: [] as {
         productId: string;
         sku: string;
@@ -264,20 +255,6 @@ async function computeOverviewFromDb(storeId: string, now: Date) {
   );
   const rotacionInventario = inventoryValue > 0 ? cogs / inventoryValue : 0;
 
-  const topCustomers = await prisma.sale.groupBy({
-    by: ["customerId"],
-    where: { storeId, customerId: { not: null } },
-    _sum: { totalCents: true },
-    _count: true,
-    orderBy: { _sum: { totalCents: "desc" } },
-    take: 8,
-  });
-  const custIds = topCustomers.map((c) => c.customerId).filter(Boolean) as string[];
-  const customers = await prisma.customer.findMany({
-    where: { id: { in: custIds } },
-  });
-  const custById = new Map(customers.map((c) => [c.id, c]));
-
   const devicePerf = await prisma.sale.groupBy({
     by: ["deviceId"],
     where: { storeId, completedAt: { gte: monthStart } },
@@ -290,13 +267,6 @@ async function computeOverviewFromDb(storeId: string, now: Date) {
   const level2 = {
     rotacionInventario30d: Number(rotacionInventario.toFixed(4)),
     margenAprox30d: revenue30 - cogs,
-    clientesFrecuentes: topCustomers.map((c) => ({
-      customerId: c.customerId,
-      nombre: c.customerId ? custById.get(c.customerId)?.name : null,
-      telefono: c.customerId ? custById.get(c.customerId)?.phone : null,
-      compras: c._count,
-      totalCents: c._sum.totalCents ?? 0,
-    })),
     ventasPorHoraHoy: ventasPorHoraHoyFull,
     rendimientoDispositivoMes: devicePerf.map((d) => ({
       deviceId: d.deviceId,
@@ -304,29 +274,6 @@ async function computeOverviewFromDb(storeId: string, now: Date) {
       ingresosCents: d._sum.totalCents ?? 0,
     })),
   };
-
-  const cohortRows = await prisma.$queryRaw<{ month: string; clientes: bigint }[]>`
-    SELECT to_char(date_trunc('month', "createdAt"), 'YYYY-MM') AS month,
-           COUNT(*)::bigint AS clientes
-    FROM "Customer"
-    WHERE "storeId" = ${storeId}
-    GROUP BY 1
-    ORDER BY 1 DESC
-    LIMIT 12
-  `;
-
-  const ltvRows = await prisma.$queryRaw<
-    { customerId: string; orders: bigint; total_cents: bigint }[]
-  >`
-    SELECT "customerId",
-           COUNT(*)::bigint AS orders,
-           COALESCE(SUM("totalCents"),0)::bigint AS total_cents
-    FROM "Sale"
-    WHERE "storeId" = ${storeId} AND "customerId" IS NOT NULL
-    GROUP BY "customerId"
-    ORDER BY total_cents DESC
-    LIMIT 20
-  `;
 
   const demandHeuristic = await prisma.$queryRaw<
     { productId: string; qty: bigint }[]
@@ -376,15 +323,6 @@ async function computeOverviewFromDb(storeId: string, now: Date) {
     }));
 
   const level3 = {
-    cohortesClientesNuevos: cohortRows.map((r) => ({
-      mes: r.month,
-      clientes: Number(r.clientes),
-    })),
-    ltvTop: ltvRows.map((r) => ({
-      customerId: r.customerId,
-      pedidos: Number(r.orders),
-      totalCents: Number(r.total_cents),
-    })),
     alertasStock: lowStockAlerts,
     anomalias: anomalies,
     demandaHeuristica30d: demandHeuristic.map((d) => ({

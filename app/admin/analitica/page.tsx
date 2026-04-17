@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { BarChart3, TrendingUp, Users } from "lucide-react";
+import { BarChart3, TrendingUp } from "lucide-react";
 import { AdminShell } from "@/components/admin/admin-shell";
 import { KpiCard } from "@/components/admin/kpi-card";
 import { formatCupAndUsdLabel } from "@/lib/money";
@@ -10,17 +10,8 @@ type Overview = {
   level2: {
     rotacionInventario30d: number;
     margenAprox30d: number;
-    clientesFrecuentes: {
-      customerId: string | null;
-      nombre: string | null;
-      telefono: string | null;
-      compras: number;
-      totalCents: number;
-    }[];
   };
   level3: {
-    cohortesClientesNuevos: { mes: string; clientes: number }[];
-    ltvTop: { customerId: string; pedidos: number; totalCents: number }[];
     demandaHeuristica30d: { productId: string; unidades: number }[];
   };
 };
@@ -81,7 +72,7 @@ export default function AnalyticsPage() {
         <div>
           <h1 className="tl-welcome-header">Analítica</h1>
           <p className="mt-1 text-sm text-tl-muted">
-            Métricas avanzadas y comportamiento de clientes
+            Métricas avanzadas de la tienda
           </p>
         </div>
 
@@ -101,133 +92,39 @@ export default function AnalyticsPage() {
               variant="success"
             />
             <KpiCard
-              label="Clientes frecuentes"
-              value={String(data?.level2.clientesFrecuentes.length ?? 0)}
-              icon={<Users className="h-4 w-4" />}
+              label="Top demanda 30d"
+              value={String(data?.level3.demandaHeuristica30d.length ?? 0)}
+              hint="Productos"
             />
-          </div>
-        </section>
-
-        {/* Clients and Cohorts */}
-        <section>
-          <SectionHeader title="Clientes y cohortes" />
-          <div className="grid gap-6 lg:grid-cols-2">
-            {/* Frequent clients */}
-            <div className="tl-glass overflow-hidden rounded-xl">
-              <div className="border-b border-tl-line px-4 py-3">
-                <h3 className="text-sm font-semibold text-tl-ink">Clientes frecuentes</h3>
-              </div>
-              <ul className="divide-y divide-tl-line-subtle">
-                {data?.level2.clientesFrecuentes.length === 0 ? (
-                  <li className="p-4 text-sm text-tl-muted">Sin datos aún</li>
-                ) : (
-                  data?.level2.clientesFrecuentes.map((c) => (
-                    <li
-                      key={c.customerId ?? "anon"}
-                      className="flex items-center justify-between px-4 py-3"
-                    >
-                      <div>
-                        <p className="font-medium text-tl-ink">{c.nombre ?? "Anónimo"}</p>
-                        {c.telefono && (
-                          <p className="text-xs text-tl-muted">{c.telefono}</p>
-                        )}
-                      </div>
-                      <div className="text-right">
-                        <p className="font-semibold tabular-nums text-tl-ink">
-                          {formatCupAndUsdLabel(c.totalCents)}
-                        </p>
-                        <p className="text-xs text-tl-muted">{c.compras} pedidos</p>
-                      </div>
-                    </li>
-                  ))
-                )}
-              </ul>
-            </div>
-
-            {/* Cohorts */}
-            <div className="tl-glass overflow-hidden rounded-xl">
-              <div className="border-b border-tl-line px-4 py-3">
-                <h3 className="text-sm font-semibold text-tl-ink">Cohortes (clientes nuevos)</h3>
-              </div>
-              <ul className="divide-y divide-tl-line-subtle">
-                {data?.level3.cohortesClientesNuevos.length === 0 ? (
-                  <li className="p-4 text-sm text-tl-muted">Sin datos aún</li>
-                ) : (
-                  data?.level3.cohortesClientesNuevos.map((c) => (
-                    <li
-                      key={c.mes}
-                      className="flex items-center justify-between px-4 py-3"
-                    >
-                      <span className="text-tl-ink">{c.mes}</span>
-                      <span className="font-semibold tabular-nums text-tl-ink">
-                        {c.clientes}
-                      </span>
-                    </li>
-                  ))
-                )}
-              </ul>
-            </div>
           </div>
         </section>
 
         {/* LTV and Demand */}
         <section>
-          <SectionHeader title="LTV y demanda" />
-          <div className="grid gap-6 lg:grid-cols-2">
-            {/* LTV */}
-            <div className="tl-glass overflow-hidden rounded-xl">
-              <div className="border-b border-tl-line px-4 py-3">
-                <h3 className="text-sm font-semibold text-tl-ink">LTV aproximado</h3>
-              </div>
-              <ul className="divide-y divide-tl-line-subtle max-h-64 overflow-auto">
-                {data?.level3.ltvTop.length === 0 ? (
-                  <li className="p-4 text-sm text-tl-muted">Sin datos aún</li>
-                ) : (
-                  data?.level3.ltvTop.map((l) => (
-                    <li
-                      key={l.customerId}
-                      className="flex items-center justify-between px-4 py-3"
-                    >
-                      <span className="truncate font-mono text-xs text-tl-muted">
-                        {l.customerId}
-                      </span>
-                      <div className="text-right">
-                        <p className="font-semibold tabular-nums text-tl-ink">
-                          {formatCupAndUsdLabel(l.totalCents)}
-                        </p>
-                        <p className="text-xs text-tl-muted">{l.pedidos} pedidos</p>
-                      </div>
-                    </li>
-                  ))
-                )}
-              </ul>
+          <SectionHeader title="Demanda" description="Top productos por unidades en los últimos 30 días" />
+          <div className="tl-glass overflow-hidden rounded-xl">
+            <div className="border-b border-tl-line px-4 py-3">
+              <h3 className="text-sm font-semibold text-tl-ink">Demanda 30d (unidades)</h3>
             </div>
-
-            {/* Demand */}
-            <div className="tl-glass overflow-hidden rounded-xl">
-              <div className="border-b border-tl-line px-4 py-3">
-                <h3 className="text-sm font-semibold text-tl-ink">Demanda 30d (unidades)</h3>
-              </div>
-              <ul className="divide-y divide-tl-line-subtle max-h-64 overflow-auto">
-                {data?.level3.demandaHeuristica30d.length === 0 ? (
-                  <li className="p-4 text-sm text-tl-muted">Sin datos aún</li>
-                ) : (
-                  data?.level3.demandaHeuristica30d.map((d) => (
-                    <li
-                      key={d.productId}
-                      className="flex items-center justify-between px-4 py-3"
-                    >
-                      <span className="truncate font-mono text-xs text-tl-muted">
-                        {d.productId}
-                      </span>
-                      <span className="font-semibold tabular-nums text-tl-ink">
-                        {d.unidades} u.
-                      </span>
-                    </li>
-                  ))
-                )}
-              </ul>
-            </div>
+            <ul className="divide-y divide-tl-line-subtle max-h-80 overflow-auto">
+              {(data?.level3.demandaHeuristica30d ?? []).length === 0 ? (
+                <li className="p-4 text-sm text-tl-muted">Sin datos aún</li>
+              ) : (
+                data?.level3.demandaHeuristica30d.map((d) => (
+                  <li
+                    key={d.productId}
+                    className="flex items-center justify-between px-4 py-3"
+                  >
+                    <span className="truncate font-mono text-xs text-tl-muted">
+                      {d.productId}
+                    </span>
+                    <span className="font-semibold tabular-nums text-tl-ink">
+                      {d.unidades} u.
+                    </span>
+                  </li>
+                ))
+              )}
+            </ul>
           </div>
         </section>
       </div>

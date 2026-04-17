@@ -57,19 +57,10 @@ type Overview = {
   level2: {
     rotacionInventario30d: number;
     margenAprox30d: number;
-    clientesFrecuentes: {
-      customerId: string | null;
-      nombre: string | null;
-      telefono: string | null;
-      compras: number;
-      totalCents: number;
-    }[];
     ventasPorHoraHoy: { hora: number; ventas: number; ingresosCents: number }[];
     rendimientoDispositivoMes: { deviceId: string; ventas: number; ingresosCents: number }[];
   };
   level3: {
-    cohortesClientesNuevos: { mes: string; clientes: number }[];
-    ltvTop: { customerId: string; pedidos: number; totalCents: number }[];
     alertasStock: {
       productId: string;
       sku: string;
@@ -802,49 +793,8 @@ export function AdminDashboard() {
         <div className="space-y-6">
           <h1 className="text-2xl font-bold tracking-tight text-white">Analítica profunda</h1>
 
-          <SectionTitle>Clientes y cohortes</SectionTitle>
+          <SectionTitle>Demanda · alertas</SectionTitle>
           <div className="grid gap-6 lg:grid-cols-2">
-            <div className="rounded-2xl border border-white/10 bg-zinc-900/40 p-4 ring-1 ring-white/5">
-              <h3 className="text-sm font-medium text-zinc-200">Clientes frecuentes</h3>
-              <ul className="mt-3 space-y-2 text-sm text-zinc-400">
-                {data.level2.clientesFrecuentes.map((c) => (
-                  <li key={c.customerId ?? "x"} className="flex justify-between gap-2">
-                    <span className="text-zinc-200">{c.nombre ?? c.customerId}</span>
-                    <span>
-                      {c.compras} ped. · {formatCupAndUsdLabel(c.totalCents)}
-                    </span>
-                  </li>
-                ))}
-              </ul>
-            </div>
-            <div className="rounded-2xl border border-white/10 bg-zinc-900/40 p-4 ring-1 ring-white/5">
-              <h3 className="text-sm font-medium text-zinc-200">Cohortes (clientes nuevos)</h3>
-              <ul className="mt-3 space-y-1 text-sm text-zinc-400">
-                {data.level3.cohortesClientesNuevos.map((c) => (
-                  <li key={c.mes} className="flex justify-between">
-                    <span>{c.mes}</span>
-                    <span>{c.clientes}</span>
-                  </li>
-                ))}
-              </ul>
-            </div>
-          </div>
-
-          <SectionTitle>LTV · demanda · alertas</SectionTitle>
-          <div className="grid gap-6 lg:grid-cols-2">
-            <div className="rounded-2xl border border-white/10 bg-zinc-900/40 p-4 ring-1 ring-white/5">
-              <h3 className="text-sm font-medium text-zinc-200">LTV aproximado</h3>
-              <ul className="mt-3 space-y-1 text-sm text-zinc-400">
-                {data.level3.ltvTop.map((l) => (
-                  <li key={l.customerId} className="flex justify-between gap-2 font-mono text-xs">
-                    <span className="truncate text-zinc-300">{l.customerId}</span>
-                    <span>
-                      {l.pedidos} ped. · {formatCupAndUsdLabel(l.totalCents)}
-                    </span>
-                  </li>
-                ))}
-              </ul>
-            </div>
             <div className="rounded-2xl border border-white/10 bg-zinc-900/40 p-4 ring-1 ring-white/5">
               <h3 className="text-sm font-medium text-zinc-200">Demanda 30d (unidades)</h3>
               <ul className="mt-3 space-y-1 text-sm text-zinc-400">
@@ -856,24 +806,23 @@ export function AdminDashboard() {
                 ))}
               </ul>
             </div>
-          </div>
-
-          <div className="rounded-2xl border border-white/10 bg-zinc-900/40 p-4 ring-1 ring-white/5">
-            <h3 className="text-sm font-medium text-zinc-200">Alertas de stock</h3>
-            <ul className="mt-3 space-y-2 text-sm text-zinc-400">
-              {data.level3.alertasStock.length === 0 ? (
-                <li>Sin alertas.</li>
-              ) : (
-                data.level3.alertasStock.map((a) => (
-                  <li key={a.productId} className="flex justify-between">
-                    <span className="text-zinc-200">{a.nombre}</span>
-                    <span className="text-amber-400">
-                      {a.stock} ≤ {a.umbral}
-                    </span>
-                  </li>
-                ))
-              )}
-            </ul>
+            <div className="rounded-2xl border border-white/10 bg-zinc-900/40 p-4 ring-1 ring-white/5">
+              <h3 className="text-sm font-medium text-zinc-200">Alertas de stock</h3>
+              <ul className="mt-3 space-y-2 text-sm text-zinc-400">
+                {data.level3.alertasStock.length === 0 ? (
+                  <li>Sin alertas.</li>
+                ) : (
+                  data.level3.alertasStock.map((a) => (
+                    <li key={a.productId} className="flex justify-between">
+                      <span className="text-zinc-200">{a.nombre}</span>
+                      <span className="text-amber-400">
+                        {a.stock} ≤ {a.umbral}
+                      </span>
+                    </li>
+                  ))
+                )}
+              </ul>
+            </div>
           </div>
 
           <SectionTitle>Anomalías</SectionTitle>

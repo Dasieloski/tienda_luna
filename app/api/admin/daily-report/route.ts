@@ -13,16 +13,24 @@ const querySchema = z.object({
     .optional(),
 });
 
-function startOfDay(date: Date) {
-  const d = new Date(date);
-  d.setHours(0, 0, 0, 0);
-  return d;
+/**
+ * Interpreta `YYYY-MM-DD` como fecha local de la tienda y la convierte a rango UTC.
+ * Evita desfases cuando el servidor corre en UTC (Vercel) pero el negocio opera en otra zona.
+ *
+ * Convención: offset en minutos respecto a UTC (ej. Cuba suele ser -240).
+ */
+function utcRangeForLocalDate(dateStr: string, offsetMinutes: number) {
+  const [yy, mm, dd] = dateStr.split("-").map((x) => Number(x));
+  const baseUtcMidnight = Date.UTC(yy, mm - 1, dd, 0, 0, 0, 0);
+  const from = new Date(baseUtcMidnight - offsetMinutes * 60_000);
+  const to = new Date(from.getTime() + 24 * 60 * 60_000);
+  return { from, to };
 }
 
-function endOfDay(date: Date) {
-  const d = startOfDay(date);
-  d.setDate(d.getDate() + 1);
-  return d;
+function storeTzOffsetMinutes() {
+  const raw = process.env.TL_TZ_OFFSET_MINUTES ?? process.env.NEXT_PUBLIC_TL_TZ_OFFSET_MINUTES;
+  const v = raw == null ? -240 : Number(raw); // default Cuba (UTC-4)
+  return Number.isFinite(v) ? v : -240;
 }
 
 type Row = {
@@ -59,13 +67,20 @@ export async function GET(request: Request) {
     return NextResponse.json({ error: "INVALID_QUERY" }, { status: 400 });
   }
 
-  const baseDate = parsed.data.date ? new Date(parsed.data.date) : new Date();
-  if (Number.isNaN(baseDate.getTime())) {
-    return NextResponse.json({ error: "INVALID_DATE" }, { status: 400 });
-  }
+  const offset = storeTzOffsetMinutes();
+  const dateStr =
+    parsed.data.date ??
+    (() => {
+      // “hoy” en zona local de tienda, pero calculado desde UTC
+      const now = new Date();
+      const local = new Date(now.getTime() + offset * 60_000);
+      const y = local.getUTCFullYear();
+      const m = String(local.getUTCMonth() + 1).padStart(2, "0");
+      const d = String(local.getUTCDate()).padStart(2, "0");
+      return `${y}-${m}-${d}`;
+    })();
 
-  const from = startOfDay(baseDate);
-  const to = endOfDay(baseDate);
+  const { from, to } = utcRangeForLocalDate(dateStr, offset);
 
   try {
     const rows = await cacheGetOrSet(

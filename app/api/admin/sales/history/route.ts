@@ -49,7 +49,6 @@ export async function GET(request: Request) {
           OR: [
             { deviceId: { contains: q, mode: "insensitive" as const } },
             { soldBy: { contains: q, mode: "insensitive" as const } },
-            { customer: { name: { contains: q, mode: "insensitive" as const } } },
           ],
         }
       : {}),
@@ -64,7 +63,6 @@ export async function GET(request: Request) {
         skip,
         take: limit,
         include: {
-          customer: { select: { id: true, name: true, phone: true } },
           lines: {
             include: {
               product: { select: { name: true, sku: true } },
@@ -89,7 +87,6 @@ export async function GET(request: Request) {
         totalCents: s.totalCents,
         status: s.status,
         completedAt: s.completedAt.toISOString(),
-        customer: s.customer ? { ...s.customer } : null,
         lines: s.lines.map((l) => ({
           id: l.id,
           quantity: l.quantity,

@@ -49,19 +49,10 @@ type Overview = {
   level2: {
     rotacionInventario30d: number;
     margenAprox30d: number;
-    clientesFrecuentes: {
-      customerId: string | null;
-      nombre: string | null;
-      telefono: string | null;
-      compras: number;
-      totalCents: number;
-    }[];
     ventasPorHoraHoy: { hora: number; ventas: number; ingresosCents: number }[];
     rendimientoDispositivoMes: { deviceId: string; ventas: number; ingresosCents: number }[];
   };
   level3: {
-    cohortesClientesNuevos: { mes: string; clientes: number }[];
-    ltvTop: { customerId: string; pedidos: number; totalCents: number }[];
     alertasStock: {
       productId: string;
       sku: string;

@@ -420,22 +420,14 @@ export async function processBatch(
           });
           results.push(main);
 
-          let customerId: string | undefined = draft.customerId;
-          if (
-            customerId &&
-            !(await tx.customer.findFirst({
-              where: { id: customerId, storeId: params.storeId },
-            }))
-          ) {
-            customerId = undefined;
-          }
+          // La app no gestiona datos de cliente; cada venta cuenta como 1 cliente.
 
           const sale = await tx.sale.create({
             data: {
               storeId: params.storeId,
               deviceId: params.deviceId,
               clientSaleId: saleId,
-              customerId: customerId ?? null,
+              customerId: null,
               totalCents,
               status: shortfall ? "PARTIAL" : "COMPLETED",
               lines: {

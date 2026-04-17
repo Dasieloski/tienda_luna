@@ -29,7 +29,6 @@ export type ClientSyncEvent = {
 
 export type SaleCreatedPayload = {
   saleId: string;
-  customerId?: string;
 };
 
 export type ProductAddedPayload = {

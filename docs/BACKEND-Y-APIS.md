@@ -145,13 +145,12 @@ Relaciones: `users`, `devices`, `products`, `customers`, `events`, `sales`.
 | `active` | Boolean | Solo `active: true` en catálogo GET |
 | `createdAt`, `updatedAt` | DateTime | |
 
-### 4.6 `Customer`
+### 4.6 `Customer` (legacy)
 
-| Campo | Tipo |
-|-------|------|
-| `id`, `storeId`, `name?`, `phone?`, `email?`, `externalId?`, `createdAt` | |
+Actualmente **no gestionamos datos de clientes** (nombres/teléfonos).
 
-Índices: `[storeId]`, `[storeId, phone]`.
+- A nivel de negocio: **cada venta cuenta como 1 cliente**.
+- A nivel técnico: puede existir la tabla/campo por compatibilidad histórica, pero **no se usa** en el flujo actual.
 
 ### 4.7 `Event` (libro mayor / idempotencia)
 
@@ -179,7 +178,7 @@ Relaciones: `users`, `devices`, `products`, `customers`, `events`, `sales`.
 | `id` | String @id | |
 | `storeId`, `deviceId` | String | |
 | `clientSaleId` | String? | id venta en cliente |
-| `customerId` | String? | |
+| `customerId` | String? | legacy (no usado) |
 | `totalCents` | Int | Calculado en servidor |
 | `status` | String | p. ej. `COMPLETED`, `PARTIAL` |
 | `completedAt` | DateTime | |
@@ -274,7 +273,7 @@ Definidos en `types/events.ts`. El servidor **solo procesa explícitamente** un 
 
 | Tipo | Payload mínimo |
 |------|----------------|
-| `SALE_CREATED` | `saleId` (string); opcional `customerId` |
+| `SALE_CREATED` | `saleId` (string) |
 | `PRODUCT_ADDED_TO_CART` | `saleId`, `productId`, `quantity` (>0); opcional `unitPriceCents` (el servidor **usa precio de catálogo** al completar) |
 | `STOCK_DECREASED` | `productId`, `quantity` (>0); opcional `saleId` — si viene `saleId`, **no** descuenta stock (solo auditoría) |
 | `SALE_CANCELLED` | `saleId` |
@@ -461,13 +460,13 @@ Siempre incluye `generatedAt` (ISO). Con BD sana, `meta: { dbAvailable: true }`.
 |-------|--------|
 | `rotacionInventario30d` | Heurística |
 | `margenAprox30d` | Ingresos − COGS aprox. 30d |
-| `clientesFrecuentes` | Agrupado por `customerId` |
+| `clientesFrecuentes` | (eliminado) |
 | `ventasPorHoraHoy` | **24 entradas** `hora` 0–23 (ceros si no hay datos) |
 | `rendimientoDispositivoMes` | Por `deviceId` |
 
 ### 8.3 `level3`
 
-`cohortesClientesNuevos`, `ltvTop`, `alertasStock`, `anomalias`, `demandaHeuristica30d`, `dashboardLayout` (Json de tienda).
+`alertasStock`, `anomalias`, `demandaHeuristica30d`, `dashboardLayout` (Json de tienda).
 
 ---
 

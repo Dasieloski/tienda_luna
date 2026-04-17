@@ -15,7 +15,6 @@ type HistorySale = {
   totalCents: number;
   status: string;
   completedAt: string;
-  customer: { id: string; name: string | null; phone: string | null } | null;
   lines: {
     id: string;
     quantity: number;
@@ -166,16 +165,6 @@ export default function SalesHistoryPage() {
         ),
       },
       {
-        key: "customer",
-        label: "Cliente",
-        width: "200px",
-        render: (row) => (
-          <span className="text-sm text-tl-ink-secondary">
-            {row.customer?.name ?? row.customer?.phone ?? "—"}
-          </span>
-        ),
-      },
-      {
         key: "lines",
         label: "Items",
         render: (row) => (
@@ -221,7 +210,7 @@ export default function SalesHistoryPage() {
           <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-end">
             <div className="min-w-0 flex-1 sm:min-w-[240px]">
               <label className="mb-1 block text-xs font-semibold uppercase tracking-wider text-tl-muted">
-                Buscar (cajero, cliente, dispositivo)
+              Buscar (cajero, dispositivo)
               </label>
               <input
                 value={q}
@@ -230,7 +219,7 @@ export default function SalesHistoryPage() {
                   setQ(e.target.value);
                 }}
                 className="tl-input"
-                placeholder="Ej: cajero@..., Ana, Caja 1..."
+              placeholder="Ej: cajero@..., Caja 1..."
               />
             </div>
             <div>

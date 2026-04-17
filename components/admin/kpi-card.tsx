@@ -86,10 +86,12 @@ export function KpiCard({
       <div className="relative">
         {/* Header with label and action/icon */}
         <div className="flex items-start justify-between gap-2">
-          <p className={cn(
-            "text-xs font-semibold uppercase tracking-wider",
-            isAccentCard ? "text-tl-accent-fg/70" : "text-tl-muted"
-          )}>
+          <p
+            className={cn(
+              "text-sm font-extrabold tracking-wide",
+              isAccentCard ? "text-tl-accent-fg/80" : "text-tl-ink",
+            )}
+          >
             {label}
           </p>
           {actionable ? (
@@ -121,10 +123,12 @@ export function KpiCard({
         {/* Hint and trend row */}
         <div className="mt-2 flex items-center justify-between gap-2">
           {hint && (
-            <p className={cn(
-              "text-xs",
-              isAccentCard ? "text-tl-accent-fg/70" : "text-tl-muted"
-            )}>
+            <p
+              className={cn(
+                "text-sm font-medium",
+                isAccentCard ? "text-tl-accent-fg/75" : "text-tl-ink/80",
+              )}
+            >
               {hint}
             </p>
           )}
