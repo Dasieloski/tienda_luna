@@ -178,44 +178,16 @@ export default function EconomyPage() {
     return () => abortRef.current?.abort();
   }, []);
 
-  if (initialLoading && !data) {
-    return (
-      <AdminShell>
-        <div className="flex min-h-[60vh] flex-col items-center justify-center gap-3">
-          <div className="h-10 w-10 rounded-full border-2 border-tl-accent border-t-transparent tl-spin" />
-          <p className="text-sm text-tl-muted">Cargando economía de la tienda…</p>
-        </div>
-      </AdminShell>
-    );
-  }
-
-  const totals = data?.totals ?? {
-    ventas: 0,
-    totalCents: 0,
-    efectivoCents: 0,
-    transferenciaCents: 0,
-    usdCents: 0,
-  };
-
-  const cajaCup = totals.efectivoCents + totals.transferenciaCents + totals.usdCents;
-
-  const t = analytics?.totals;
-  const avg = analytics?.averages;
-  const cmp = analytics?.comparisons;
-  const ext = analytics?.extrema?.last90Days;
-  const proj = analytics?.projection;
-  const mar = analytics?.marginFromCost;
-  const pay = analytics?.paymentMixLast30 ?? [];
-  const dev = analytics?.devicesLast30 ?? [];
-  const hrs = analytics?.hourOfDayLast30 ?? [];
-  const peakH = analytics?.peakHourLast30;
-  const dow = analytics?.seasonalityByWeekday365d ?? [];
-  const peakD = analytics?.peakWeekday365d;
-  const months = analytics?.monthlySeries ?? [];
-
   const conclusions = useMemo(() => {
     const out: string[] = [];
     if (!analytics?.meta?.dbAvailable) return out;
+    const cmp = analytics.comparisons;
+    const avg = analytics.averages;
+    const peakH = analytics.peakHourLast30;
+    const peakD = analytics.peakWeekday365d;
+    const pay = analytics.paymentMixLast30 ?? [];
+    const dev = analytics.devicesLast30 ?? [];
+    const mar = analytics.marginFromCost;
     if (cmp?.momRevenuePct != null) {
       out.push(
         `Mes en curso vs. mes anterior: ingresos ${cmp.momRevenuePct >= 0 ? "superiores" : "inferiores"} en ${Math.abs(cmp.momRevenuePct).toFixed(1)} % (solo ventas COMPLETED en base).`,
@@ -252,7 +224,42 @@ export default function EconomyPage() {
       );
     }
     return out;
-  }, [analytics, cmp, dev, mar, pay, peakD, peakH]);
+  }, [analytics]);
+
+  if (initialLoading && !data) {
+    return (
+      <AdminShell>
+        <div className="flex min-h-[60vh] flex-col items-center justify-center gap-3">
+          <div className="h-10 w-10 rounded-full border-2 border-tl-accent border-t-transparent tl-spin" />
+          <p className="text-sm text-tl-muted">Cargando economía de la tienda…</p>
+        </div>
+      </AdminShell>
+    );
+  }
+
+  const totals = data?.totals ?? {
+    ventas: 0,
+    totalCents: 0,
+    efectivoCents: 0,
+    transferenciaCents: 0,
+    usdCents: 0,
+  };
+
+  const cajaCup = totals.efectivoCents + totals.transferenciaCents + totals.usdCents;
+
+  const t = analytics?.totals;
+  const avg = analytics?.averages;
+  const cmp = analytics?.comparisons;
+  const ext = analytics?.extrema?.last90Days;
+  const proj = analytics?.projection;
+  const mar = analytics?.marginFromCost;
+  const pay = analytics?.paymentMixLast30 ?? [];
+  const dev = analytics?.devicesLast30 ?? [];
+  const hrs = analytics?.hourOfDayLast30 ?? [];
+  const peakH = analytics?.peakHourLast30;
+  const dow = analytics?.seasonalityByWeekday365d ?? [];
+  const peakD = analytics?.peakWeekday365d;
+  const months = analytics?.monthlySeries ?? [];
 
   return (
     <AdminShell title="Economía">
