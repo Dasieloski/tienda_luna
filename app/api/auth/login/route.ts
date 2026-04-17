@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
+import { compare } from "bcryptjs";
 import { prisma } from "@/lib/db";
 import { sessionCookieName } from "@/lib/auth";
 import {
@@ -44,18 +45,47 @@ export async function POST(request: Request) {
 
     const { email, password } = parsed.data;
 
-    if (!matchesStaticAdmin(email, password)) {
+    // 1) Static admin (env) - compat actual
+    if (matchesStaticAdmin(email, password)) {
+      const storeId = await resolveStoreId();
+      const token = await signUserSession(STATIC_ADMIN_USER_ID, storeId, "ADMIN");
+      const res = NextResponse.json({
+        token,
+        role: "ADMIN",
+        storeId,
+        userId: STATIC_ADMIN_USER_ID,
+        mode: "static_admin",
+      });
+      res.cookies.set(sessionCookieName(), token, {
+        httpOnly: true,
+        sameSite: "lax",
+        secure: process.env.NODE_ENV === "production",
+        path: "/",
+        maxAge: 60 * 60 * 8,
+      });
+      return res;
+    }
+
+    // 2) Usuarios reales en DB
+    const user = await prisma.user.findUnique({
+      where: { email },
+      select: { id: true, passwordHash: true, role: true, storeId: true },
+    });
+    if (!user) {
+      return NextResponse.json({ error: "INVALID_CREDENTIALS" }, { status: 401 });
+    }
+    const ok = await compare(password, user.passwordHash);
+    if (!ok) {
       return NextResponse.json({ error: "INVALID_CREDENTIALS" }, { status: 401 });
     }
 
-    const storeId = await resolveStoreId();
-    const token = await signUserSession(STATIC_ADMIN_USER_ID, storeId, "ADMIN");
+    const token = await signUserSession(user.id, user.storeId, user.role);
     const res = NextResponse.json({
       token,
-      role: "ADMIN",
-      storeId,
-      userId: STATIC_ADMIN_USER_ID,
-      mode: "static_admin",
+      role: user.role,
+      storeId: user.storeId,
+      userId: user.id,
+      mode: "db_user",
     });
     res.cookies.set(sessionCookieName(), token, {
       httpOnly: true,
