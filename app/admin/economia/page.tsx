@@ -523,23 +523,23 @@ export default function EconomyPage() {
             </p>
             <p className="relative mt-1 text-sm font-medium text-tl-ink">Últimos 30 días · ventas cerradas</p>
             <p className="relative mt-1 max-w-2xl text-xs text-tl-muted">
-              Suma del PVP vendido en líneas menos el coste de proveedor registrado en cada producto (misma regla que
-              el detalle por periodo más abajo).
+              Por cada línea vendida con precio de compra en el producto: PVP de la línea menos (precio proveedor ×
+              unidades). Las líneas sin coste en catálogo no suman aquí (no se tratan como beneficio total).
             </p>
             <div className="relative mt-5 flex flex-col gap-4 sm:flex-row sm:flex-wrap sm:items-end sm:justify-between">
               <div>
-                <p className="text-xs text-tl-muted">Tu ganancia (bruta)</p>
+                <p className="text-xs text-tl-muted">Ganancia neta (PVP − proveedor)</p>
                 <div className="mt-1">
                   <CupUsdMoney cents={mar.marginCents} className="!text-2xl !font-bold sm:!text-4xl" />
                 </div>
               </div>
               <div className="flex flex-wrap gap-6 text-sm">
                 <div>
-                  <p className="text-xs text-tl-muted">Vendido (líneas)</p>
+                  <p className="text-xs text-tl-muted">Vendido (solo líneas con coste)</p>
                   <CupUsdMoney cents={mar.revenueCents} compact />
                 </div>
                 <div>
-                  <p className="text-xs text-tl-muted">A proveedor</p>
+                  <p className="text-xs text-tl-muted">Coste a proveedor</p>
                   <CupUsdMoney cents={mar.estimatedCostCents} compact />
                 </div>
                 <div>
@@ -629,8 +629,8 @@ export default function EconomyPage() {
                 Proveedor y ganancia por periodo
               </h2>
               <p className="mt-1 max-w-3xl text-sm text-tl-muted">
-                Suma de lo vendido en líneas cerradas (subtotal), el coste estimado que corresponde a proveedor según
-                el precio de compra guardado en cada producto, y la ganancia bruta (diferencia exacta en esas líneas).
+                En cada línea con precio de compra en catálogo: subtotal de venta menos coste proveedor × cantidad.
+                Solo cuentan esas líneas en el vendido y en la ganancia (las sin coste no aparecen como margen al 100 %).
                 Las fechas son días calendario en{" "}
                 <span className="font-medium text-tl-ink">UTC</span> (igual que el resto de analíticas del servidor).
               </p>
@@ -693,11 +693,14 @@ export default function EconomyPage() {
               </p>
               <div className="mt-5 grid gap-5 sm:grid-cols-2 lg:grid-cols-4">
                 <div>
-                  <p className="text-xs text-tl-muted">Lo vendido (líneas)</p>
+                  <p className="text-xs text-tl-muted">PVP vendido (líneas con coste)</p>
                   <div className="mt-1 text-xl font-bold text-tl-ink sm:text-2xl">
                     <CupUsdMoney cents={marginRange.totals.soldRevenueCents} />
                   </div>
-                  <p className="mt-1 text-[11px] text-tl-muted">Suma de subtotales de artículos en ventas cerradas.</p>
+                  <p className="mt-1 text-[11px] text-tl-muted">
+                    Subtotal solo donde el producto tiene precio de compra; el resto no entra en la ganancia de este
+                    bloque.
+                  </p>
                 </div>
                 <div>
                   <p className="text-xs text-tl-muted">Corresponde a proveedor (coste)</p>
@@ -721,13 +724,14 @@ export default function EconomyPage() {
                     {marginRange.totals.marginPct != null ? `${marginRange.totals.marginPct.toFixed(1)} %` : "—"}
                   </p>
                   <p className="mt-1 text-[11px] text-tl-muted">
-                    {marginRange.totals.salesCount.toLocaleString("es-ES")} ventas cerradas en el periodo.
+                    {marginRange.totals.salesCount.toLocaleString("es-ES")} ventas cerradas en el periodo (el margen usa
+                    solo líneas con coste).
                   </p>
                 </div>
               </div>
               <p className="mt-4 text-xs text-tl-muted">
-                Líneas de ticket con coste en catálogo: {marginRange.totals.linesWithCost.toLocaleString("es-ES")} · sin
-                coste (solo cuentan al “vendido”): {marginRange.totals.linesWithoutCost.toLocaleString("es-ES")}
+                Líneas con coste en catálogo (entran en ganancia): {marginRange.totals.linesWithCost.toLocaleString("es-ES")}{" "}
+                · sin coste (excluidas del PVP/coste anteriores): {marginRange.totals.linesWithoutCost.toLocaleString("es-ES")}
               </p>
               {marginRange.meta.note ? <p className="mt-2 text-xs text-tl-muted">{marginRange.meta.note}</p> : null}
             </div>

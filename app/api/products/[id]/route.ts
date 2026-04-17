@@ -13,6 +13,7 @@ const patchSchema = z
     unitsPerBox: z.number().int().positive().optional(),
     wholesaleCupCents: z.number().int().nonnegative().nullable().optional(),
     costCents: z.number().int().nonnegative().nullable().optional(),
+    supplierId: z.string().cuid().nullable().optional(),
     supplierName: z.string().max(120).nullable().optional(),
     stockQty: z.number().int().nonnegative().optional(),
     lowStockAt: z.number().int().nonnegative().optional(),
@@ -53,6 +54,25 @@ export async function PATCH(request: Request, ctx: RouteCtx) {
     data.supplierName = data.supplierName?.trim() || null;
   }
 
+  let supplierNameFromId: string | null | undefined;
+  if (data.supplierId !== undefined) {
+    if (data.supplierId === null) {
+      supplierNameFromId = null;
+    } else {
+      const sup = await prisma.supplier.findFirst({
+        where: { id: data.supplierId, storeId: session.storeId },
+      });
+      if (!sup) {
+        return NextResponse.json({ error: "INVALID_SUPPLIER" }, { status: 400 });
+      }
+      const sameAsCurrent = existing.supplierId === sup.id;
+      if (!sup.active && !sameAsCurrent) {
+        return NextResponse.json({ error: "INVALID_SUPPLIER" }, { status: 400 });
+      }
+      supplierNameFromId = sup.name;
+    }
+  }
+
   const restoring = data.restore === true && existing.deletedAt != null;
 
   try {
@@ -69,7 +89,12 @@ export async function PATCH(request: Request, ctx: RouteCtx) {
           ? { wholesaleCupCents: data.wholesaleCupCents }
           : {}),
         ...(data.costCents !== undefined ? { costCents: data.costCents } : {}),
-        ...(data.supplierName !== undefined ? { supplierName: data.supplierName } : {}),
+        ...(data.supplierId !== undefined
+          ? { supplierId: data.supplierId, supplierName: supplierNameFromId ?? null }
+          : {}),
+        ...(data.supplierName !== undefined && data.supplierId === undefined
+          ? { supplierName: data.supplierName }
+          : {}),
         ...(data.stockQty !== undefined ? { stockQty: data.stockQty } : {}),
         ...(data.lowStockAt !== undefined ? { lowStockAt: data.lowStockAt } : {}),
         ...(data.active !== undefined ? { active: data.active } : {}),

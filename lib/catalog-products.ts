@@ -36,6 +36,7 @@ export async function loadCatalogProducts(
 
   const hasUsd = await hasColumn(db, "priceUsdCents");
   const hasDeletedAt = await hasColumn(db, "deletedAt");
+  const hasSupplierId = await hasColumn(db, "supplierId");
 
   if (hasUsd) {
     return await db.product.findMany({
@@ -45,6 +46,9 @@ export async function loadCatalogProducts(
         ...(includeDeleted ? {} : hasDeletedAt ? { deletedAt: null } : {}),
       },
       orderBy: { name: "asc" },
+      ...(hasSupplierId
+        ? { include: { supplier: { select: { id: true, name: true } } } }
+        : {}),
     });
   }
 
@@ -94,6 +98,7 @@ export async function loadCatalogProducts(
       unitsPerBox: 1,
       wholesaleCupCents: null,
       deletedAt: null,
+      supplierId: null,
     }),
   );
 }

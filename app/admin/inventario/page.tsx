@@ -18,12 +18,33 @@ type ProductRow = {
   unitsPerBox: number;
   wholesaleCupCents: number | null;
   costCents: number | null;
+  supplierId: string | null;
   supplierName: string | null;
   stockQty: number;
   lowStockAt: number;
   active: boolean;
   deletedAt?: string | null;
 };
+
+type SupplierOption = {
+  id: string;
+  name: string;
+  active: boolean;
+  productCount: number;
+};
+
+type ApiProductJson = ProductRow & {
+  supplier?: { id: string; name: string } | null;
+};
+
+function normalizeProductRow(p: ApiProductJson): ProductRow {
+  const fromRel = p.supplier?.name ?? null;
+  return {
+    ...p,
+    supplierId: p.supplierId ?? p.supplier?.id ?? null,
+    supplierName: fromRel ?? p.supplierName ?? null,
+  };
+}
 
 function parseMoneyToCents(s: string): number | null {
   const t = s.replace(",", ".").trim();
@@ -47,7 +68,8 @@ export default function InventoryPage() {
   const [formPriceUsd, setFormPriceUsd] = useState("");
   const [formUnitsBox, setFormUnitsBox] = useState("1");
   const [formWholesaleCup, setFormWholesaleCup] = useState("");
-  const [formSupplier, setFormSupplier] = useState("");
+  const [formSupplierId, setFormSupplierId] = useState("");
+  const [suppliers, setSuppliers] = useState<SupplierOption[]>([]);
   const [formStock, setFormStock] = useState("0");
   const [formLow, setFormLow] = useState("5");
   const [formCostCup, setFormCostCup] = useState("");
@@ -65,7 +87,7 @@ export default function InventoryPage() {
   const [ePriceUsd, setEPriceUsd] = useState("");
   const [eUnitsBox, setEUnitsBox] = useState("1");
   const [eWholesaleCup, setEWholesaleCup] = useState("");
-  const [eSupplier, setESupplier] = useState("");
+  const [eSupplierId, setESupplierId] = useState("");
   const [eStock, setEStock] = useState("0");
   const [eLow, setELow] = useState("5");
   const [eCostCup, setECostCup] = useState("");
@@ -75,12 +97,23 @@ export default function InventoryPage() {
   const [deleteBusyId, setDeleteBusyId] = useState<string | null>(null);
   const [restoreDeletedId, setRestoreDeletedId] = useState<string | null>(null);
 
+  const loadSuppliers = useCallback(async () => {
+    try {
+      const res = await fetch("/api/admin/suppliers?includeInactive=1", { credentials: "include" });
+      if (!res.ok) return;
+      const json = (await res.json()) as { suppliers?: SupplierOption[] };
+      setSuppliers(json.suppliers ?? []);
+    } catch {
+      setSuppliers([]);
+    }
+  }, []);
+
   const loadProducts = useCallback(async () => {
     try {
       const res = await fetch("/api/products?includeInactive=1&includeDeleted=1", { credentials: "include" });
       if (!res.ok) return;
-      const json = (await res.json()) as { products: ProductRow[] };
-      setProducts(json.products ?? []);
+      const json = (await res.json()) as { products: ApiProductJson[] };
+      setProducts((json.products ?? []).map(normalizeProductRow));
     } finally {
       setLoading(false);
     }
@@ -173,7 +206,8 @@ export default function InventoryPage() {
 
   useEffect(() => {
     void loadProducts();
-  }, [loadProducts]);
+    void loadSuppliers();
+  }, [loadProducts, loadSuppliers]);
 
   // Sin auto-refresh: evita refrescar mientras editas formularios.
 
@@ -200,7 +234,7 @@ export default function InventoryPage() {
     setEWholesaleCup(
       p.wholesaleCupCents != null ? centsToInput(p.wholesaleCupCents) : "",
     );
-    setESupplier(p.supplierName ?? "");
+    setESupplierId(p.supplierId ?? "");
     setEStock(String(p.stockQty));
     setELow(String(p.lowStockAt));
     setECostCup(p.costCents != null ? centsToInput(p.costCents) : "");
@@ -245,6 +279,11 @@ export default function InventoryPage() {
       setFormBusy(false);
       return;
     }
+    if (!formSupplierId.trim()) {
+      setFormMsg("Selecciona un proveedor del nomenclador (Administración → Proveedores → Nomenclador).");
+      setFormBusy(false);
+      return;
+    }
 
     const res = await fetch("/api/products", {
       method: "POST",
@@ -257,7 +296,7 @@ export default function InventoryPage() {
         unitsPerBox,
         wholesaleCupCents,
         costCents: costCentsParsed,
-        supplierName: formSupplier.trim() || null,
+        supplierId: formSupplierId.trim(),
         stockQty: parseInt(formStock, 10) || 0,
         lowStockAt: parseInt(formLow, 10) || 5,
       }),
@@ -269,7 +308,9 @@ export default function InventoryPage() {
       setFormMsg(
         j.error === "INVALID_BODY"
           ? "Revisa los datos (precio de proveedor obligatorio, importes válidos)."
-          : "No se pudo crear el producto.",
+          : j.error === "INVALID_SUPPLIER"
+            ? "Proveedor no válido o inactivo. Actualiza el nomenclador en Proveedores."
+            : "No se pudo crear el producto.",
       );
       return;
     }
@@ -287,7 +328,7 @@ export default function InventoryPage() {
     setFormUnitsBox("1");
     setFormWholesaleCup("");
     setFormCostCup("");
-    setFormSupplier("");
+    setFormSupplierId("");
     setFormStock("0");
     setFormLow("5");
     void loadProducts();
@@ -341,7 +382,7 @@ export default function InventoryPage() {
         unitsPerBox,
         wholesaleCupCents,
         costCents: costCentsParsed,
-        supplierName: eSupplier.trim() || null,
+        supplierId: eSupplierId.trim() === "" ? null : eSupplierId.trim(),
         stockQty: parseInt(eStock, 10) || 0,
         lowStockAt: parseInt(eLow, 10) || 5,
         active: eActive,
@@ -350,10 +391,13 @@ export default function InventoryPage() {
 
     setEditBusy(false);
     if (!res.ok) {
+      const j = (await res.json().catch(() => ({}))) as { error?: string };
       setEditMsg(
         res.status === 409
           ? "SKU duplicado u otro conflicto."
-          : "No se pudo guardar el producto.",
+          : j.error === "INVALID_SUPPLIER"
+            ? "Proveedor no válido o inactivo."
+            : "No se pudo guardar el producto.",
       );
       return;
     }
@@ -800,14 +844,32 @@ export default function InventoryPage() {
               </div>
               <div>
                 <label className="text-xs text-tl-muted" htmlFor="np-sup">
-                  Proveedor
+                  Proveedor (nomenclador)
                 </label>
-                <input
+                <select
                   id="np-sup"
-                  value={formSupplier}
-                  onChange={(e) => setFormSupplier(e.target.value)}
+                  value={formSupplierId}
+                  onChange={(e) => setFormSupplierId(e.target.value)}
                   className="tl-input mt-1"
-                />
+                  required
+                >
+                  <option value="">— Seleccionar —</option>
+                  {suppliers
+                    .filter((s) => s.active)
+                    .map((s) => (
+                      <option key={s.id} value={s.id}>
+                        {s.name}
+                        {s.productCount > 0 ? ` (${s.productCount} prod.)` : ""}
+                      </option>
+                    ))}
+                </select>
+                <p className="mt-1 text-[11px] text-tl-muted">
+                  Alta y edición del listado en{" "}
+                  <a href="/admin/proveedores" className="text-tl-accent underline-offset-2 hover:underline">
+                    Proveedores → Nomenclador
+                  </a>
+                  .
+                </p>
               </div>
               <div className="grid gap-2 sm:grid-cols-2">
                 <div>
@@ -1030,14 +1092,22 @@ export default function InventoryPage() {
               </div>
               <div>
                 <label className="text-xs text-tl-muted" htmlFor="ed-sup">
-                  Proveedor
+                  Proveedor (nomenclador)
                 </label>
-                <input
+                <select
                   id="ed-sup"
-                  value={eSupplier}
-                  onChange={(e) => setESupplier(e.target.value)}
+                  value={eSupplierId}
+                  onChange={(e) => setESupplierId(e.target.value)}
                   className="tl-input mt-1"
-                />
+                >
+                  <option value="">— Sin proveedor —</option>
+                  {suppliers.map((s) => (
+                    <option key={s.id} value={s.id} disabled={!s.active && eSupplierId !== s.id}>
+                      {s.active ? "" : "(inactivo) "}
+                      {s.name}
+                    </option>
+                  ))}
+                </select>
               </div>
               <div className="grid gap-2 sm:grid-cols-2">
                 <div>

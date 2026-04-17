@@ -239,12 +239,17 @@ async function computeOverviewFromDb(storeId: string, now: Date) {
     where: { storeId },
     select: { id: true, costCents: true },
   });
-  const costById = new Map(productCosts.map((p) => [p.id, p.costCents ?? 0]));
+  const costById = new Map(productCosts.map((p) => [p.id, p.costCents]));
 
+  /** COGS y PVP solo en líneas con precio de compra en catálogo (misma regla que Economía). */
   let cogs = 0;
+  let revenueLinesWithCost = 0;
   for (const s of sales30d) {
     for (const l of s.lines) {
-      cogs += (costById.get(l.productId) ?? 0) * l.quantity;
+      const unitCost = costById.get(l.productId);
+      if (unitCost == null) continue;
+      cogs += unitCost * l.quantity;
+      revenueLinesWithCost += l.subtotalCents;
     }
   }
   const revenue30 = sales30d.reduce((a, s) => a + s.totalCents, 0);
@@ -265,7 +270,8 @@ async function computeOverviewFromDb(storeId: string, now: Date) {
 
   const level2 = {
     rotacionInventario30d: Number(rotacionInventario.toFixed(4)),
-    margenAprox30d: revenue30 - cogs,
+    /** PVP − proveedor en líneas con coste registrado (no es ingreso bruto de ticket completo). */
+    margenAprox30d: revenueLinesWithCost - cogs,
     ventasPorHoraHoy: ventasPorHoraHoyFull,
     rendimientoDispositivoMes: devicePerf.map((d) => ({
       deviceId: d.deviceId,

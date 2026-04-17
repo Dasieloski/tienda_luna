@@ -115,11 +115,31 @@ type ProductRow = {
   unitsPerBox: number;
   wholesaleCupCents: number | null;
   costCents: number | null;
+  supplierId: string | null;
   supplierName: string | null;
   stockQty: number;
   lowStockAt: number;
   active: boolean;
 };
+
+type SupplierOption = {
+  id: string;
+  name: string;
+  active: boolean;
+  productCount: number;
+};
+
+type ApiProductJson = ProductRow & {
+  supplier?: { id: string; name: string } | null;
+};
+
+function normalizeProductRow(p: ApiProductJson): ProductRow {
+  return {
+    ...p,
+    supplierId: p.supplierId ?? p.supplier?.id ?? null,
+    supplierName: p.supplier?.name ?? p.supplierName ?? null,
+  };
+}
 
 type AuditEvent = {
   id: string;
@@ -191,7 +211,8 @@ export function AdminDashboard() {
   const [formCostCup, setFormCostCup] = useState("");
   const [formUnitsBox, setFormUnitsBox] = useState("1");
   const [formWholesaleCup, setFormWholesaleCup] = useState("");
-  const [formSupplier, setFormSupplier] = useState("");
+  const [formSupplierId, setFormSupplierId] = useState("");
+  const [suppliers, setSuppliers] = useState<SupplierOption[]>([]);
   const [formStock, setFormStock] = useState("0");
   const [formLow, setFormLow] = useState("5");
   const [formMsg, setFormMsg] = useState<string | null>(null);
@@ -224,11 +245,18 @@ export function AdminDashboard() {
     setSalesLive(next);
   }, []);
 
+  const loadSuppliers = useCallback(async () => {
+    const res = await fetch("/api/admin/suppliers?includeInactive=1", { credentials: "include" });
+    if (!res.ok) return;
+    const json = (await res.json()) as { suppliers?: SupplierOption[] };
+    setSuppliers(json.suppliers ?? []);
+  }, []);
+
   const loadProducts = useCallback(async () => {
     const res = await fetch("/api/products", { credentials: "include" });
     if (!res.ok) return;
-    const json = (await res.json()) as { products: ProductRow[] };
-    setProducts(json.products ?? []);
+    const json = (await res.json()) as { products: ApiProductJson[] };
+    setProducts((json.products ?? []).map(normalizeProductRow));
   }, []);
 
   const loadEvents = useCallback(async () => {
@@ -242,8 +270,9 @@ export function AdminDashboard() {
     void loadOverview();
     void loadSales();
     void loadProducts();
+    void loadSuppliers();
     void loadEvents();
-  }, [loadOverview, loadSales, loadProducts, loadEvents]);
+  }, [loadOverview, loadSales, loadProducts, loadSuppliers, loadEvents]);
 
   useEffect(() => {
     const id = window.setInterval(() => {
@@ -293,6 +322,11 @@ export function AdminDashboard() {
       setFormBusy(false);
       return;
     }
+    if (!formSupplierId.trim()) {
+      setFormMsg("Selecciona un proveedor del nomenclador (Proveedores → Nomenclador).");
+      setFormBusy(false);
+      return;
+    }
     const res = await fetch("/api/products", {
       method: "POST",
       credentials: "include",
@@ -304,14 +338,19 @@ export function AdminDashboard() {
         unitsPerBox,
         wholesaleCupCents,
         costCents: costParsed,
-        supplierName: formSupplier.trim() || null,
+        supplierId: formSupplierId.trim(),
         stockQty: parseInt(formStock, 10) || 0,
         lowStockAt: parseInt(formLow, 10) || 5,
       }),
     });
     setFormBusy(false);
     if (!res.ok) {
-      setFormMsg("No se pudo crear (revisa datos y precio de proveedor).");
+      const j = (await res.json().catch(() => ({}))) as { error?: string };
+      setFormMsg(
+        j.error === "INVALID_SUPPLIER"
+          ? "Proveedor no válido. Configura el nomenclador en Proveedores."
+          : "No se pudo crear (revisa datos y precio de proveedor).",
+      );
       return;
     }
     const created = (await res.json()) as { product?: { sku?: string } };
@@ -326,7 +365,7 @@ export function AdminDashboard() {
     setFormCostCup("");
     setFormUnitsBox("1");
     setFormWholesaleCup("");
-    setFormSupplier("");
+    setFormSupplierId("");
     setFormStock("0");
     setFormLow("5");
     void loadProducts();
@@ -445,8 +484,8 @@ export function AdminDashboard() {
                 Ganancia de la tienda (~30 días)
               </p>
               <p className="relative mt-2 max-w-2xl text-xs text-zinc-400">
-                Ingresos de ventas cerradas menos coste de proveedor según el precio de compra en catálogo (PVP −
-                proveedor).
+                Suma de (PVP de línea − precio proveedor × uds) en los últimos 30 días, solo donde el producto tiene
+                precio de compra en inventario. Sin coste en ficha no cuenta como margen.
               </p>
               <div className="relative mt-4 text-3xl font-bold tracking-tight text-white sm:text-4xl">
                 <CupUsdMoney cents={data.level2.margenAprox30d} />
@@ -779,14 +818,24 @@ export function AdminDashboard() {
                 </div>
                 <div>
                   <label className="text-xs text-zinc-400" htmlFor="np-sup">
-                    Proveedor
+                    Proveedor (nomenclador)
                   </label>
-                  <input
+                  <select
                     id="np-sup"
-                    value={formSupplier}
-                    onChange={(e) => setFormSupplier(e.target.value)}
+                    value={formSupplierId}
+                    onChange={(e) => setFormSupplierId(e.target.value)}
                     className="mt-1 w-full rounded-xl border border-white/10 bg-black/30 px-3 py-2 text-sm text-white focus:border-violet-500 focus:outline-none focus:ring-2 focus:ring-violet-500/30"
-                  />
+                    required
+                  >
+                    <option value="">— Seleccionar —</option>
+                    {suppliers
+                      .filter((s) => s.active)
+                      .map((s) => (
+                        <option key={s.id} value={s.id}>
+                          {s.name}
+                        </option>
+                      ))}
+                  </select>
                 </div>
                 <div className="grid grid-cols-2 gap-2">
                   <div>

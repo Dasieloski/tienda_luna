@@ -36,12 +36,31 @@ model Store {
   /// Cambio CUP por 1 USD (ej. 520). Usado para mostrar equivalencias en UI.
   usdRateCup Int? @default(250)
 
-  users     User[]
-  devices   Device[]
-  products  Product[]
-  customers Customer[]
-  events    Event[]
-  sales     Sale[]
+  users      User[]
+  devices    Device[]
+  products   Product[]
+  customers  Customer[]
+  events     Event[]
+  sales      Sale[]
+  suppliers  Supplier[]
+}
+
+/// Nomenclador de proveedores por tienda (nombre único por tienda).
+model Supplier {
+  id        String   @id @default(cuid())
+  storeId   String
+  store     Store    @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  name      String
+  phone     String?
+  notes     String?
+  active    Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  products Product[]
+
+  @@unique([storeId, name])
+  @@index([storeId, active])
 }
 
 model User {
@@ -84,7 +103,10 @@ model Product {
   /// Precio mayorista sugerido en CUP (céntimos); referencia en panel
   wholesaleCupCents Int?
   costCents   Int?
-  /// Coste proveedor (céntimos); nombre en supplierName
+  /// Proveedor del nomenclador (preferido).
+  supplierId   String?
+  supplier     Supplier? @relation(fields: [supplierId], references: [id], onDelete: SetNull)
+  /// Copia del nombre para compatibilidad / export; sincronizar con Supplier cuando hay supplierId.
   supplierName String?
   stockQty    Int      @default(0)
   lowStockAt  Int      @default(5)
@@ -99,6 +121,7 @@ model Product {
   @@unique([storeId, sku])
   @@index([storeId])
   @@index([storeId, deletedAt])
+  @@index([supplierId])
 }
 
 model Customer {

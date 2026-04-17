@@ -109,7 +109,7 @@ export async function GET(request: Request) {
       >`
         WITH base AS (
           SELECT
-            COALESCE(p."supplierName", 'Sin proveedor') AS supplier,
+            COALESCE(su.name, p."supplierName", 'Sin proveedor') AS supplier,
             p.id AS product_id,
             p.name,
             p.sku,
@@ -120,6 +120,7 @@ export async function GET(request: Request) {
           FROM "Sale" s
           JOIN "SaleLine" sl ON sl."saleId" = s.id
           JOIN "Product" p ON p.id = sl."productId"
+          LEFT JOIN "Supplier" su ON su.id = p."supplierId"
           WHERE s."storeId" = ${session.storeId}
             AND s."completedAt" >= ${from}
             AND s."completedAt" < ${to}
@@ -153,7 +154,7 @@ export async function GET(request: Request) {
       >`
         WITH base AS (
           SELECT
-            COALESCE(p."supplierName", 'Sin proveedor') AS supplier,
+            COALESCE(su.name, p."supplierName", 'Sin proveedor') AS supplier,
             p.id AS product_id,
             p.name,
             p.sku,
@@ -162,6 +163,7 @@ export async function GET(request: Request) {
           FROM "Sale" s
           JOIN "SaleLine" sl ON sl."saleId" = s.id
           JOIN "Product" p ON p.id = sl."productId"
+          LEFT JOIN "Supplier" su ON su.id = p."supplierId"
           WHERE s."storeId" = ${session.storeId}
             AND s."completedAt" >= ${from}
             AND s."completedAt" < ${to}

@@ -60,7 +60,8 @@ const createSchema = z.object({
   wholesaleCupCents: z.number().int().nonnegative().optional().nullable(),
   /** Precio de compra al proveedor (CUP, céntimos por unidad). Obligatorio en alta. */
   costCents: z.number().int().nonnegative(),
-  supplierName: z.string().max(120).optional().nullable(),
+  /** Proveedor del nomenclador (obligatorio en alta desde panel). */
+  supplierId: z.string().cuid(),
   stockQty: z.number().int().nonnegative().default(0),
   lowStockAt: z.number().int().nonnegative().optional(),
 });
@@ -80,8 +81,21 @@ export async function POST(request: Request) {
   const skuTrim = parsed.data.sku?.trim() ?? "";
   let sku = skuTrim.length > 0 ? skuTrim : await allocateProductSku(prisma, session.storeId);
 
+  const supplier = await prisma.supplier.findFirst({
+    where: {
+      id: parsed.data.supplierId,
+      storeId: session.storeId,
+      active: true,
+    },
+  });
+  if (!supplier) {
+    return NextResponse.json({ error: "INVALID_SUPPLIER" }, { status: 400 });
+  }
+  const supplierNameResolved = supplier.name;
+
   try {
     const hasUsd = await hasProductColumn("priceUsdCents");
+    const hasSupplierIdCol = await hasProductColumn("supplierId");
     if (hasUsd) {
       const p = await prisma.product.create({
         data: {
@@ -93,7 +107,9 @@ export async function POST(request: Request) {
           unitsPerBox: parsed.data.unitsPerBox,
           wholesaleCupCents: parsed.data.wholesaleCupCents ?? null,
           costCents: parsed.data.costCents,
-          supplierName: parsed.data.supplierName?.trim() || null,
+          ...(hasSupplierIdCol
+            ? { supplierId: supplier.id, supplierName: supplierNameResolved }
+            : { supplierName: supplierNameResolved }),
           stockQty: parsed.data.stockQty,
           lowStockAt: parsed.data.lowStockAt ?? 5,
         },
@@ -103,7 +119,7 @@ export async function POST(request: Request) {
 
     // Modo legacy: BD sin columnas nuevas. Insertamos solo columnas existentes y devolvemos defaults.
     const lowStockAt = parsed.data.lowStockAt ?? 5;
-    const supplierName = parsed.data.supplierName?.trim() || null;
+    const supplierName = supplierNameResolved;
     const rows = await prisma.$queryRaw<
       {
         id: string;

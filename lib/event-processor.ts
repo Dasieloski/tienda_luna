@@ -519,12 +519,29 @@ export async function processBatch(
           const stockQty = getPayloadIntNonneg(ev.payload, "stockQty") ?? 0;
           const lowStockAt = getPayloadIntNonneg(ev.payload, "lowStockAt") ?? 5;
           const supplierRaw = getPayloadString(ev.payload, "supplierName");
-          const supplierName =
+          let supplierName =
             supplierRaw === undefined
               ? null
               : supplierRaw.trim() === ""
                 ? null
                 : supplierRaw.trim().slice(0, 120);
+
+          const supplierIdFromPayload = getPayloadString(ev.payload, "supplierId")?.trim();
+          let supplierIdResolved: string | null = null;
+          if (supplierIdFromPayload) {
+            const sup = await tx.supplier.findFirst({
+              where: {
+                id: supplierIdFromPayload,
+                storeId: params.storeId,
+                active: true,
+              },
+              select: { id: true, name: true },
+            });
+            if (sup) {
+              supplierIdResolved = sup.id;
+              supplierName = sup.name;
+            }
+          }
 
           const costCentsPayload = getPayloadIntNonneg(ev.payload, "costCents");
 
@@ -558,6 +575,16 @@ export async function processBatch(
           `;
           const hasUsdCol = hasUsdColRows.length > 0;
 
+          const hasSupplierIdColRows = await tx.$queryRaw<{ ok: number }[]>`
+            SELECT 1::int AS ok
+            FROM information_schema.columns
+            WHERE table_schema = 'public'
+              AND table_name = 'Product'
+              AND column_name = 'supplierId'
+            LIMIT 1
+          `;
+          const hasSupplierIdCol = hasSupplierIdColRows.length > 0;
+
           try {
             const created = hasUsdCol
               ? await tx.product.create({
@@ -570,7 +597,9 @@ export async function processBatch(
                     unitsPerBox,
                     wholesaleCupCents,
                     costCents: costCentsPayload ?? null,
-                    supplierName,
+                    ...(hasSupplierIdCol && supplierIdResolved
+                      ? { supplierId: supplierIdResolved, supplierName }
+                      : { supplierName }),
                     stockQty,
                     lowStockAt,
                     active: true,
@@ -635,6 +664,7 @@ export async function processBatch(
                     unitsPerBox: 1,
                     wholesaleCupCents: null,
                     deletedAt: null,
+                    supplierId: null,
                   };
                 })();
             productById.set(created.id, created);
@@ -787,6 +817,56 @@ export async function processBatch(
                 await record({
                   status: "REJECTED",
                   correctionNote: "INVALID_SUPPLIER_NAME",
+                }),
+              );
+              break;
+            }
+          }
+          if ("supplierId" in pl) {
+            if (pl.supplierId === null) {
+              data.supplier = { disconnect: true };
+              data.supplierName = null;
+            } else if (typeof pl.supplierId === "string") {
+              const sid = pl.supplierId.trim();
+              if (!sid) {
+                results.push(
+                  await record({
+                    status: "REJECTED",
+                    correctionNote: "INVALID_SUPPLIER_ID",
+                  }),
+                );
+                break;
+              }
+              const sup = await tx.supplier.findFirst({
+                where: { id: sid, storeId: params.storeId },
+                select: { id: true, name: true, active: true },
+              });
+              if (!sup) {
+                results.push(
+                  await record({
+                    status: "REJECTED",
+                    correctionNote: "INVALID_SUPPLIER",
+                  }),
+                );
+                break;
+              }
+              const sameAsCurrent = existing.supplierId === sup.id;
+              if (!sup.active && !sameAsCurrent) {
+                results.push(
+                  await record({
+                    status: "REJECTED",
+                    correctionNote: "INVALID_SUPPLIER",
+                  }),
+                );
+                break;
+              }
+              data.supplier = { connect: { id: sup.id } };
+              data.supplierName = sup.name;
+            } else {
+              results.push(
+                await record({
+                  status: "REJECTED",
+                  correctionNote: "INVALID_SUPPLIER_ID",
                 }),
               );
               break;

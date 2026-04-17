@@ -156,8 +156,8 @@ export async function GET(request: Request) {
           `,
           prisma.$queryRaw<MarginAggRow[]>`
             SELECT
-              COALESCE(SUM(sl."subtotalCents"), 0)::bigint AS revenue,
-              COALESCE(SUM(COALESCE(p."costCents", 0) * sl."quantity"), 0)::bigint AS cost,
+              COALESCE(SUM(CASE WHEN p."costCents" IS NOT NULL THEN sl."subtotalCents" ELSE 0 END), 0)::bigint AS revenue,
+              COALESCE(SUM(CASE WHEN p."costCents" IS NOT NULL THEN p."costCents" * sl."quantity" ELSE 0 END), 0)::bigint AS cost,
               COALESCE(SUM(CASE WHEN p."costCents" IS NOT NULL THEN 1 ELSE 0 END), 0)::bigint AS lines_with_cost,
               COALESCE(SUM(CASE WHEN p."costCents" IS NULL THEN 1 ELSE 0 END), 0)::bigint AS lines_without_cost
             FROM "SaleLine" sl
@@ -169,8 +169,8 @@ export async function GET(request: Request) {
           `,
           prisma.$queryRaw<MarginAggRow[]>`
             SELECT
-              COALESCE(SUM(sl."subtotalCents"), 0)::bigint AS revenue,
-              COALESCE(SUM(COALESCE(p."costCents", 0) * sl."quantity"), 0)::bigint AS cost,
+              COALESCE(SUM(CASE WHEN p."costCents" IS NOT NULL THEN sl."subtotalCents" ELSE 0 END), 0)::bigint AS revenue,
+              COALESCE(SUM(CASE WHEN p."costCents" IS NOT NULL THEN p."costCents" * sl."quantity" ELSE 0 END), 0)::bigint AS cost,
               COALESCE(SUM(CASE WHEN p."costCents" IS NOT NULL THEN 1 ELSE 0 END), 0)::bigint AS lines_with_cost,
               COALESCE(SUM(CASE WHEN p."costCents" IS NULL THEN 1 ELSE 0 END), 0)::bigint AS lines_without_cost
             FROM "SaleLine" sl
@@ -183,8 +183,8 @@ export async function GET(request: Request) {
           `,
           prisma.$queryRaw<MarginAggRow[]>`
             SELECT
-              COALESCE(SUM(sl."subtotalCents"), 0)::bigint AS revenue,
-              COALESCE(SUM(COALESCE(p."costCents", 0) * sl."quantity"), 0)::bigint AS cost,
+              COALESCE(SUM(CASE WHEN p."costCents" IS NOT NULL THEN sl."subtotalCents" ELSE 0 END), 0)::bigint AS revenue,
+              COALESCE(SUM(CASE WHEN p."costCents" IS NOT NULL THEN p."costCents" * sl."quantity" ELSE 0 END), 0)::bigint AS cost,
               COALESCE(SUM(CASE WHEN p."costCents" IS NOT NULL THEN 1 ELSE 0 END), 0)::bigint AS lines_with_cost,
               COALESCE(SUM(CASE WHEN p."costCents" IS NULL THEN 1 ELSE 0 END), 0)::bigint AS lines_without_cost
             FROM "SaleLine" sl
@@ -409,7 +409,7 @@ export async function GET(request: Request) {
             marginPct: margin30.marginPct,
             linesWithCost: margin30.linesWithCost,
             linesWithoutCost: margin30.linesWithoutCost,
-            note: "Solo se usa el costo guardado en cada producto; si falta, esa línea no suma al coste estimado.",
+            note: "Ganancia neta: solo líneas con precio de compra en catálogo; PVP de esa línea menos coste proveedor × uds. Si falta coste, la línea no entra en este cálculo (no cuenta como margen 100 %).",
           },
           marginTodayFromCost: {
             window: "todayUtcSaleLines",

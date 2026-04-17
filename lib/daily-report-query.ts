@@ -170,8 +170,8 @@ export async function queryDailyMarginProfit(
 ): Promise<DailyMarginAggRow[]> {
   return prisma.$queryRaw<DailyMarginAggRow[]>`
     SELECT
-      COALESCE(SUM(sl."subtotalCents"), 0)::bigint AS revenue,
-      COALESCE(SUM(COALESCE(p."costCents", 0) * sl."quantity"), 0)::bigint AS cost,
+      COALESCE(SUM(CASE WHEN p."costCents" IS NOT NULL THEN sl."subtotalCents" ELSE 0 END), 0)::bigint AS revenue,
+      COALESCE(SUM(CASE WHEN p."costCents" IS NOT NULL THEN p."costCents" * sl."quantity" ELSE 0 END), 0)::bigint AS cost,
       COALESCE(SUM(CASE WHEN p."costCents" IS NOT NULL THEN 1 ELSE 0 END), 0)::bigint AS lines_with_cost,
       COALESCE(SUM(CASE WHEN p."costCents" IS NULL THEN 1 ELSE 0 END), 0)::bigint AS lines_without_cost
     FROM "SaleLine" sl

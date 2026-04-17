@@ -79,8 +79,8 @@ export async function GET(request: Request) {
     const [marginRows, saleCount] = await Promise.all([
       prisma.$queryRaw<MarginAggRow[]>`
         SELECT
-          COALESCE(SUM(sl."subtotalCents"), 0)::bigint AS revenue,
-          COALESCE(SUM(COALESCE(p."costCents", 0) * sl."quantity"), 0)::bigint AS cost,
+          COALESCE(SUM(CASE WHEN p."costCents" IS NOT NULL THEN sl."subtotalCents" ELSE 0 END), 0)::bigint AS revenue,
+          COALESCE(SUM(CASE WHEN p."costCents" IS NOT NULL THEN p."costCents" * sl."quantity" ELSE 0 END), 0)::bigint AS cost,
           COALESCE(SUM(CASE WHEN p."costCents" IS NOT NULL THEN 1 ELSE 0 END), 0)::bigint AS lines_with_cost,
           COALESCE(SUM(CASE WHEN p."costCents" IS NULL THEN 1 ELSE 0 END), 0)::bigint AS lines_without_cost
         FROM "SaleLine" sl
@@ -113,7 +113,7 @@ export async function GET(request: Request) {
         fromInclusive: fromStr,
         toInclusive: toStr,
         note:
-          "Ventas con estado COMPLETED. Ingreso = suma de subtotales por línea. Coste proveedor = coste unitario del producto (si existe) × cantidad; líneas sin coste no suman al coste pero sí al ingreso.",
+          "Ventas COMPLETED. Ganancia = PVP de línea − (precio proveedor × uds) solo donde el producto tiene precio de compra en catálogo. Las líneas sin coste no entran en la ganancia ni en el ingreso de este bloque.",
       },
       totals: {
         soldRevenueCents,
