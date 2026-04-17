@@ -14,6 +14,7 @@ import {
   TrendingUp,
 } from "lucide-react";
 import { AdminShell } from "@/components/admin/admin-shell";
+import { KpiCard } from "@/components/admin/kpi-card";
 import { CupUsdMoney } from "@/components/admin/cup-usd-money";
 import { TablePriceCupCell } from "@/components/admin/table-price-cup-cell";
 import { formatCup, formatUsdFromCupCents } from "@/lib/money";
@@ -233,11 +234,23 @@ function fmtPct(n: number | null | undefined, digits = 1) {
   return `${sign}${n.toFixed(digits)} %`;
 }
 
-function InterpretBlock({ title, children }: { title: string; children: ReactNode }) {
+/** Bloque de sección con título y subtítulo breve */
+function EconomySectionHeader({
+  title,
+  subtitle,
+  icon,
+}: {
+  title: string;
+  subtitle?: string;
+  icon?: ReactNode;
+}) {
   return (
-    <div className="rounded-xl border border-tl-line-subtle bg-tl-canvas-inset/80 p-4">
-      <p className="text-xs font-semibold uppercase tracking-wider text-tl-muted">{title}</p>
-      <div className="mt-2 space-y-2 text-sm leading-relaxed text-tl-ink-secondary">{children}</div>
+    <div className="mb-4">
+      <h2 className="flex items-center gap-2 text-lg font-semibold tracking-tight text-tl-ink">
+        {icon}
+        {title}
+      </h2>
+      {subtitle ? <p className="mt-1 max-w-3xl text-sm text-tl-muted">{subtitle}</p> : null}
     </div>
   );
 }
@@ -400,12 +413,12 @@ export default function EconomyPage() {
     if (dev.length > 0) {
       const topD = dev[0]!;
       out.push(
-        `El dispositivo “${topD.deviceId}” concentra el ${topD.pctOfRevenue.toFixed(1)} % de los ingresos de los últimos 30 días entre los terminales listados.`,
+        `El terminal que más ingresa (últimos 30 días) aporta alrededor del ${topD.pctOfRevenue.toFixed(1)} % del total entre cajas registradas.`,
       );
     }
     if (marT && marT.revenueCents > 0 && marT.linesWithCost > 0 && marT.marginPct != null) {
       out.push(
-        `Hoy (UTC), el margen bruto estimado sobre líneas con coste ronda el ${marT.marginPct.toFixed(1)} % del ingreso de esas líneas.`,
+        `Hoy, el margen bruto estimado en líneas con coste en catálogo ronda el ${marT.marginPct.toFixed(1)} % de lo vendido en esas líneas.`,
       );
     }
     if (marM && marM.revenueCents > 0 && marM.linesWithCost > 0 && marM.marginPct != null) {
@@ -460,13 +473,12 @@ export default function EconomyPage() {
 
   return (
     <AdminShell title="Economía">
-      <div className="space-y-10">
+      <div className="mx-auto max-w-6xl space-y-10">
         <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
           <div>
             <h1 className="tl-welcome-header">Economía de la tienda</h1>
             <p className="mt-2 max-w-3xl text-sm text-tl-muted">
-              Resumen de ingresos por día, método de pago y tendencias. Los importes en dólares son orientativos según el cambio configurado
-              en la tienda.
+              Ingresos, caja por día y tendencias. El equivalente en USD usa el cambio configurado en la tienda.
             </p>
           </div>
           <div className="flex flex-wrap items-center gap-2">
@@ -523,8 +535,8 @@ export default function EconomyPage() {
             </p>
             <p className="relative mt-1 text-sm font-medium text-tl-ink">Últimos 30 días · ventas cerradas</p>
             <p className="relative mt-1 max-w-2xl text-xs text-tl-muted">
-              Por cada línea vendida con precio de compra en el producto: PVP de la línea menos (precio proveedor ×
-              unidades). Las líneas sin coste en catálogo no suman aquí (no se tratan como beneficio total).
+              Solo líneas con precio de compra en el producto: venta menos lo que pagas al proveedor por unidad. Lo que
+              no tiene coste en catálogo no entra en este cálculo.
             </p>
             <div className="relative mt-5 flex flex-col gap-4 sm:flex-row sm:flex-wrap sm:items-end sm:justify-between">
               <div>
@@ -554,88 +566,72 @@ export default function EconomyPage() {
         )}
 
         {/* Día seleccionado */}
-        <section className="space-y-3">
-          <h2 className="text-lg font-semibold text-tl-ink">1. Caja del día seleccionado</h2>
-          <p className="text-sm text-tl-muted">
-            Ventas cerradas en la fecha del calendario. Los totales por método se agrupan según cómo quedó registrado el pago en caja.
-          </p>
+        <section className="space-y-4">
+          <EconomySectionHeader
+            title="Caja del día"
+            subtitle="Ventas cerradas en la fecha del calendario. Abajo, cómo se reparte por forma de pago."
+            icon={<Calendar className="h-5 w-5 text-tl-accent" aria-hidden />}
+          />
           <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-            <div className="tl-glass rounded-xl p-4">
-              <p className="text-xs font-semibold uppercase tracking-wider text-tl-muted">Ventas (día)</p>
-              <p className="mt-1 text-2xl font-bold tabular-nums text-tl-ink">{totals.ventas.toLocaleString("es-ES")}</p>
-              <p className="mt-2 text-xs text-tl-muted">Número de tickets registrados ese día.</p>
-            </div>
-            <div className="tl-glass rounded-xl p-4">
-              <p className="text-xs font-semibold uppercase tracking-wider text-tl-muted">Ingreso bruto (día)</p>
-              <div className="mt-1 text-xl font-bold text-tl-ink sm:text-2xl">
-                <CupUsdMoney cents={totals.totalCents} />
-              </div>
-              <p className="mt-2 text-xs text-tl-muted">Suma de lo vendido; el equivalente en USD usa el cambio de la tienda.</p>
-            </div>
-            <div className="tl-glass rounded-xl p-4">
-              <p className="text-xs font-semibold uppercase tracking-wider text-tl-muted">Total en CUP (suma métodos)</p>
-              <p className="mt-1 text-2xl font-bold tabular-nums text-tl-ink">{formatCup(cajaCup)}</p>
-              <p className="mt-2 text-xs text-tl-muted">Suma de efectivo, transferencias y ventas marcadas como dólares (todo en CUP).</p>
-            </div>
-            <div className="tl-glass rounded-xl p-4">
-              <p className="text-xs font-semibold uppercase tracking-wider text-tl-muted">Equivalente USD (caja)</p>
-              <p className="mt-1 text-2xl font-bold text-tl-success tabular-nums">{formatUsdFromCupCents(cajaCup)}</p>
-              <p className="mt-2 text-xs text-tl-muted">Mismo total expresado en dólares al cambio actual.</p>
-            </div>
+            <KpiCard
+              variant="accent"
+              label="Ventas del día"
+              value={totals.ventas.toLocaleString("es-ES")}
+              hint="Tickets registrados"
+              icon={<ReceiptText className="h-5 w-5" aria-hidden />}
+            />
+            <KpiCard
+              variant="info"
+              label="Ingreso del día"
+              value={<CupUsdMoney cents={totals.totalCents} />}
+              hint="Todo lo vendido ese día"
+              icon={<PieChart className="h-5 w-5" aria-hidden />}
+            />
+            <KpiCard
+              variant="default"
+              label="Total en CUP (caja)"
+              value={formatCup(cajaCup)}
+              hint="Efectivo + transferencias + USD en CUP"
+              icon={<Banknote className="h-5 w-5" aria-hidden />}
+            />
+            <KpiCard
+              variant="success"
+              label="Equivalente en USD"
+              value={formatUsdFromCupCents(cajaCup)}
+              hint="Al cambio actual"
+              icon={<DollarSign className="h-5 w-5" aria-hidden />}
+            />
           </div>
 
           <div className="grid gap-4 sm:grid-cols-3">
-            <div className="tl-glass flex items-center gap-3 rounded-xl p-4">
-              <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-tl-success-subtle">
-                <Banknote className="h-5 w-5 text-tl-success" aria-hidden />
-              </div>
-              <div>
-                <p className="text-xs font-semibold uppercase tracking-wider text-tl-muted">Efectivo CUP</p>
-                <div className="text-lg font-bold text-tl-ink">
-                  <CupUsdMoney cents={totals.efectivoCents} />
-                </div>
-              </div>
-            </div>
-            <div className="tl-glass flex items-center gap-3 rounded-xl p-4">
-              <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-tl-accent-subtle">
-                <CreditCard className="h-5 w-5 text-tl-accent" aria-hidden />
-              </div>
-              <div>
-                <p className="text-xs font-semibold uppercase tracking-wider text-tl-muted">Transferencias CUP</p>
-                <div className="text-lg font-bold text-tl-ink">
-                  <CupUsdMoney cents={totals.transferenciaCents} />
-                </div>
-              </div>
-            </div>
-            <div className="tl-glass flex items-center gap-3 rounded-xl p-4">
-              <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-tl-warning-subtle">
-                <DollarSign className="h-5 w-5 text-tl-warning" aria-hidden />
-              </div>
-              <div>
-                <p className="text-xs font-semibold uppercase tracking-wider text-tl-muted">Ventas en USD (registradas)</p>
-                <div className="text-lg font-bold text-tl-ink">
-                  <CupUsdMoney cents={totals.usdCents} />
-                </div>
-              </div>
-            </div>
+            <KpiCard
+              variant="success"
+              label="Efectivo CUP"
+              value={<CupUsdMoney cents={totals.efectivoCents} />}
+              icon={<Banknote className="h-5 w-5" aria-hidden />}
+            />
+            <KpiCard
+              variant="info"
+              label="Transferencias CUP"
+              value={<CupUsdMoney cents={totals.transferenciaCents} />}
+              icon={<CreditCard className="h-5 w-5" aria-hidden />}
+            />
+            <KpiCard
+              variant="warning"
+              label="Ventas en USD"
+              value={<CupUsdMoney cents={totals.usdCents} />}
+              hint="Como quedó en caja"
+              icon={<DollarSign className="h-5 w-5" aria-hidden />}
+            />
           </div>
         </section>
 
         <section className="space-y-4 border-t border-tl-line-subtle pt-10">
-          <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
-            <div>
-              <h2 className="flex items-center gap-2 text-lg font-semibold text-tl-ink">
-                <PieChart className="h-5 w-5 text-tl-accent" aria-hidden />
-                Proveedor y ganancia por periodo
-              </h2>
-              <p className="mt-1 max-w-3xl text-sm text-tl-muted">
-                En cada línea con precio de compra en catálogo: subtotal de venta menos coste proveedor × cantidad.
-                Solo cuentan esas líneas en el vendido y en la ganancia (las sin coste no aparecen como margen al 100 %).
-                Las fechas son días calendario en{" "}
-                <span className="font-medium text-tl-ink">UTC</span> (igual que el resto de analíticas del servidor).
-              </p>
-            </div>
-          </div>
+          <EconomySectionHeader
+            title="Ganancia por rango de fechas"
+            subtitle="Solo líneas con coste de proveedor en el catálogo: lo vendido menos lo que pagas al proveedor por unidad."
+            icon={<PieChart className="h-5 w-5 text-tl-accent" aria-hidden />}
+          />
 
           <div className="flex flex-wrap gap-2">
             {RANGE_PRESETS.map((p) => (
@@ -687,53 +683,52 @@ export default function EconomyPage() {
           )}
 
           {marginRange?.meta?.dbAvailable && marginRange.totals && (
-            <div className="relative overflow-hidden rounded-2xl border-2 border-tl-success/40 bg-gradient-to-br from-tl-success-subtle/90 via-tl-canvas-inset to-tl-canvas p-6 ring-1 ring-tl-success/25 sm:p-7">
-              <p className="text-xs font-bold uppercase tracking-wider text-tl-success">
-                Resultado ({marginRange.meta.fromInclusive} → {marginRange.meta.toInclusive})
+            <div className="space-y-4">
+              <p className="text-sm font-medium text-tl-ink">
+                Periodo:{" "}
+                <span className="tabular-nums text-tl-muted">
+                  {marginRange.meta.fromInclusive} → {marginRange.meta.toInclusive}
+                </span>
               </p>
-              <div className="mt-5 grid gap-5 sm:grid-cols-2 lg:grid-cols-4">
-                <div>
-                  <p className="text-xs text-tl-muted">PVP vendido (líneas con coste)</p>
-                  <div className="mt-1 text-xl font-bold text-tl-ink sm:text-2xl">
-                    <CupUsdMoney cents={marginRange.totals.soldRevenueCents} />
-                  </div>
-                  <p className="mt-1 text-[11px] text-tl-muted">
-                    Subtotal solo donde el producto tiene precio de compra; el resto no entra en la ganancia de este
-                    bloque.
-                  </p>
-                </div>
-                <div>
-                  <p className="text-xs text-tl-muted">Corresponde a proveedor (coste)</p>
-                  <div className="mt-1 text-xl font-bold text-tl-ink sm:text-2xl">
-                    <CupUsdMoney cents={marginRange.totals.supplierCostCents} />
-                  </div>
-                  <p className="mt-1 text-[11px] text-tl-muted">
-                    Unidades × precio de compra en catálogo; líneas sin coste no suman aquí.
-                  </p>
-                </div>
-                <div className="sm:col-span-2 lg:col-span-1">
-                  <p className="text-xs font-semibold uppercase tracking-wide text-tl-success">Ganancia de la tienda</p>
-                  <div className="mt-1 text-2xl font-bold text-tl-success sm:text-3xl">
-                    <CupUsdMoney cents={marginRange.totals.marginCents} />
-                  </div>
-                  <p className="mt-1 text-[11px] text-tl-muted">Vendido − coste proveedor (líneas con coste en catálogo).</p>
-                </div>
-                <div>
-                  <p className="text-xs text-tl-muted">Margen % sobre lo vendido</p>
-                  <p className="mt-1 text-2xl font-bold tabular-nums text-tl-ink sm:text-3xl">
-                    {marginRange.totals.marginPct != null ? `${marginRange.totals.marginPct.toFixed(1)} %` : "—"}
-                  </p>
-                  <p className="mt-1 text-[11px] text-tl-muted">
-                    {marginRange.totals.salesCount.toLocaleString("es-ES")} ventas cerradas en el periodo (el margen usa
-                    solo líneas con coste).
-                  </p>
-                </div>
+              <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+                <KpiCard
+                  variant="info"
+                  label="Vendido (con coste)"
+                  value={<CupUsdMoney cents={marginRange.totals.soldRevenueCents} />}
+                  hint="Solo líneas con precio de compra"
+                  icon={<PieChart className="h-5 w-5" aria-hidden />}
+                />
+                <KpiCard
+                  variant="warning"
+                  label="Coste proveedor"
+                  value={<CupUsdMoney cents={marginRange.totals.supplierCostCents} />}
+                  hint="Unidades × compra en catálogo"
+                  icon={<Banknote className="h-5 w-5" aria-hidden />}
+                />
+                <KpiCard
+                  variant="success"
+                  label="Ganancia de la tienda"
+                  value={<CupUsdMoney cents={marginRange.totals.marginCents} />}
+                  hint="Vendido − coste"
+                  icon={<TrendingUp className="h-5 w-5" aria-hidden />}
+                />
+                <KpiCard
+                  variant="default"
+                  label="Margen sobre venta"
+                  value={marginRange.totals.marginPct != null ? `${marginRange.totals.marginPct.toFixed(1)} %` : "—"}
+                  hint={`${marginRange.totals.salesCount.toLocaleString("es-ES")} ventas en el periodo`}
+                  icon={<ReceiptText className="h-5 w-5" aria-hidden />}
+                />
               </div>
-              <p className="mt-4 text-xs text-tl-muted">
-                Líneas con coste en catálogo (entran en ganancia): {marginRange.totals.linesWithCost.toLocaleString("es-ES")}{" "}
-                · sin coste (excluidas del PVP/coste anteriores): {marginRange.totals.linesWithoutCost.toLocaleString("es-ES")}
+              <p className="text-xs text-tl-muted">
+                Líneas con coste en catálogo: {marginRange.totals.linesWithCost.toLocaleString("es-ES")} · sin coste
+                registrado: {marginRange.totals.linesWithoutCost.toLocaleString("es-ES")}
               </p>
-              {marginRange.meta.note ? <p className="mt-2 text-xs text-tl-muted">{marginRange.meta.note}</p> : null}
+              {marginRange.meta.note ? (
+                <p className="rounded-xl border border-tl-info/20 bg-tl-info/5 px-3 py-2 text-xs text-tl-ink-secondary">
+                  {marginRange.meta.note}
+                </p>
+              ) : null}
             </div>
           )}
 
@@ -747,90 +742,112 @@ export default function EconomyPage() {
 
         {/* Analítica agregada */}
         {analytics?.meta?.dbAvailable && t && avg && (
-          <section className="space-y-4">
-            <h2 className="text-lg font-semibold text-tl-ink">2. Ingresos y actividad</h2>
+          <section className="space-y-6 border-t border-tl-line-subtle pt-10">
+            <EconomySectionHeader
+              title="Ingresos y tendencias"
+              subtitle="Comparaciones y promedios sobre ventas cerradas. El bloque superior «Caja del día» usa la fecha que eliges en el calendario."
+            />
             {analytics.meta.note ? (
-              <p className="max-w-4xl text-sm text-tl-muted">{analytics.meta.note}</p>
+              <p className="rounded-lg border border-tl-line-subtle bg-tl-canvas-inset px-3 py-2 text-xs text-tl-muted">
+                {analytics.meta.note}
+              </p>
             ) : null}
 
             <div className="grid gap-4 lg:grid-cols-3">
-              <InterpretBlock title="Ingreso de hoy (servidor)">
-                <p>
-                  <CupUsdMoney cents={t.today.revenueCents} /> en {t.today.saleCount} ventas.
-                </p>
-                <p className="text-tl-muted">Puede no coincidir con el día que eliges arriba si la tienda está en otra zona horaria.</p>
-              </InterpretBlock>
-              <InterpretBlock title="Ingreso mensual total (mes calendario en curso)">
-                <p>
-                  <CupUsdMoney cents={t.currentMonth.revenueCents} /> · ticket medio{" "}
-                  <CupUsdMoney cents={t.currentMonth.ticketAvgCents} />.
-                </p>
-                <p className="text-tl-muted">Ticket medio = ingreso del mes ÷ número de ventas del mes.</p>
-              </InterpretBlock>
-              <InterpretBlock title="Ingreso mensual (mes calendario anterior)">
-                <p>
-                  <CupUsdMoney cents={t.previousMonth.revenueCents} /> en {t.previousMonth.saleCount} ventas.
-                </p>
-                <p className="text-tl-muted">Base para la variación porcentual mes a mes.</p>
-              </InterpretBlock>
+              <KpiCard
+                variant="accent"
+                label="Ingreso de hoy (en el sistema)"
+                value={<CupUsdMoney cents={t.today.revenueCents} />}
+                hint={`${t.today.saleCount.toLocaleString("es-ES")} ventas · si no cuadra con «Caja del día», revisa la fecha del calendario arriba`}
+                icon={<Calendar className="h-5 w-5" aria-hidden />}
+              />
+              <KpiCard
+                variant="info"
+                label="Mes en curso"
+                value={<CupUsdMoney cents={t.currentMonth.revenueCents} />}
+                hint="Ingreso acumulado del mes (ticket medio = ingreso ÷ ventas del mes)"
+                icon={<PieChart className="h-5 w-5" aria-hidden />}
+              />
+              <KpiCard
+                variant="default"
+                label="Mes anterior"
+                value={<CupUsdMoney cents={t.previousMonth.revenueCents} />}
+                hint={`${t.previousMonth.saleCount.toLocaleString("es-ES")} ventas`}
+                icon={<ReceiptText className="h-5 w-5" aria-hidden />}
+              />
             </div>
 
             <div className="grid gap-4 lg:grid-cols-3">
-              <InterpretBlock title="Promedio de ingreso diario (últimos 30 días)">
-                <p>
-                  <CupUsdMoney cents={avg.dailyRevenueLast30Cents} /> de media por día (últimos 30 días).
-                </p>
-              </InterpretBlock>
-              <InterpretBlock title="Promedio de ingreso diario (últimos 7 días)">
-                <p>
-                  <CupUsdMoney cents={avg.dailyRevenueLast7Cents} /> de media por día (últimos 7 días).
-                </p>
-              </InterpretBlock>
-              <InterpretBlock title="Promedio de ingreso mensual (meses con datos recientes)">
-                <p>
-                  <CupUsdMoney cents={avg.monthlyRevenueAvgRecentCents} /> sobre {avg.monthsIncluded} mes(es) con al menos una venta
-                  registrada.
-                </p>
-              </InterpretBlock>
+              <KpiCard
+                variant="default"
+                label="Promedio diario (30 días)"
+                value={<CupUsdMoney cents={avg.dailyRevenueLast30Cents} />}
+                hint="Media de ingreso por día"
+                icon={<TrendingUp className="h-5 w-5" aria-hidden />}
+              />
+              <KpiCard
+                variant="info"
+                label="Promedio diario (7 días)"
+                value={<CupUsdMoney cents={avg.dailyRevenueLast7Cents} />}
+                hint="Última semana"
+                icon={<TrendingUp className="h-5 w-5" aria-hidden />}
+              />
+              <KpiCard
+                variant="success"
+                label="Promedio mensual reciente"
+                value={<CupUsdMoney cents={avg.monthlyRevenueAvgRecentCents} />}
+                hint={`${avg.monthsIncluded} mes(es) con ventas`}
+                icon={<PieChart className="h-5 w-5" aria-hidden />}
+              />
             </div>
 
             <div className="grid gap-4 lg:grid-cols-2">
-              <InterpretBlock title="Variación porcentual entre meses (ingresos)">
-                <p className="flex items-center gap-2 text-lg font-semibold text-tl-ink">
-                  {cmp?.momRevenuePct != null && cmp.momRevenuePct >= 0 ? (
-                    <TrendingUp className="h-5 w-5 text-tl-success" aria-hidden />
+              <KpiCard
+                variant={cmp?.momRevenuePct != null && cmp.momRevenuePct >= 0 ? "success" : "warning"}
+                label="Ingresos: mes actual vs anterior"
+                value={fmtPct(cmp?.momRevenuePct)}
+                hint="Comparación de mes calendario"
+                trend={cmp?.momRevenuePct != null ? (cmp.momRevenuePct >= 0 ? "up" : "down") : undefined}
+                trendValue="Mes a mes"
+                icon={
+                  cmp?.momRevenuePct != null && cmp.momRevenuePct >= 0 ? (
+                    <TrendingUp className="h-5 w-5" aria-hidden />
                   ) : (
-                    <TrendingDown className="h-5 w-5 text-tl-warning" aria-hidden />
-                  )}
-                  {fmtPct(cmp?.momRevenuePct)}
-                </p>
-                <p className="text-tl-muted">Comparación del mes en curso frente al mes anterior.</p>
-              </InterpretBlock>
-              <InterpretBlock title="Variación en número de ventas (mes vs. mes)">
-                <p className="text-lg font-semibold text-tl-ink">{fmtPct(cmp?.momSaleCountPct)}</p>
-                <p className="text-tl-muted">Mide si el cambio de ingresos viene de más tickets o de tickets más altos.</p>
-              </InterpretBlock>
+                    <TrendingDown className="h-5 w-5" aria-hidden />
+                  )
+                }
+              />
+              <KpiCard
+                variant="info"
+                label="Cantidad de ventas: mes vs mes"
+                value={fmtPct(cmp?.momSaleCountPct)}
+                hint="Suben o bajan los tickets, no solo el ticket medio"
+                icon={<ReceiptText className="h-5 w-5" aria-hidden />}
+              />
             </div>
 
             <div className="grid gap-4 lg:grid-cols-2">
-              <InterpretBlock title="Crecimiento o disminución de ritmo (7 vs. 30 días)">
-                <p className="text-lg font-semibold text-tl-ink">{fmtPct(cmp?.trendShortVsLongPct)}</p>
-                <p className="text-tl-muted">
-                  {cmp?.shortLabel} frente a {cmp?.longLabel}. Valor positivo: la semana reciente va por encima del promedio mensual
-                  reciente.
-                </p>
-              </InterpretBlock>
-              <InterpretBlock title="Proyección simple de cierre de mes">
-                <p className="text-lg font-semibold text-tl-ink">
-                  {proj?.monthEndRevenueCents != null ? <CupUsdMoney cents={proj.monthEndRevenueCents} /> : "—"}
-                </p>
-                {proj?.method ? (
-                  <p className="text-xs text-tl-muted">Proyección simple según el ritmo de los últimos 7 días.</p>
-                ) : null}
-              </InterpretBlock>
+              <KpiCard
+                variant="default"
+                label="Ritmo reciente (7 días vs 30)"
+                value={fmtPct(cmp?.trendShortVsLongPct)}
+                hint={
+                  cmp?.shortLabel && cmp?.longLabel
+                    ? `${cmp.shortLabel} frente a ${cmp.longLabel}`
+                    : "Semana reciente frente a la media de 30 días"
+                }
+                icon={<TrendingUp className="h-5 w-5" aria-hidden />}
+              />
+              <KpiCard
+                variant="accent"
+                label="Proyección de cierre de mes"
+                value={proj?.monthEndRevenueCents != null ? <CupUsdMoney cents={proj.monthEndRevenueCents} /> : "—"}
+                hint={proj?.method ? "Estimación según el ritmo de la última semana" : "Sin datos suficientes"}
+                icon={<PieChart className="h-5 w-5" aria-hidden />}
+              />
             </div>
 
-            <div className="tl-glass overflow-x-auto rounded-xl">
+            <div className="tl-glass overflow-x-auto rounded-xl border border-tl-accent/15">
               <table className="w-full min-w-[520px] text-left text-sm">
                 <caption className="border-b border-tl-line bg-tl-canvas-inset px-4 py-2 text-left text-xs font-semibold text-tl-ink">
                   Serie mensual de ingresos (desde hace ~6 meses)
@@ -852,7 +869,7 @@ export default function EconomyPage() {
                   ) : (
                     months.map((m) => (
                       <tr key={m.month}>
-                        <td className="px-4 py-3 font-mono text-tl-ink">{m.month}</td>
+                        <td className="px-4 py-3 tabular-nums text-tl-ink">{m.month}</td>
                         <td className="px-4 py-3 text-right tabular-nums">{m.sales.toLocaleString("es-ES")}</td>
                         <td className="px-4 py-3 text-right align-top">
                           <TablePriceCupCell cupCents={m.revenueCents} compact />
@@ -865,99 +882,113 @@ export default function EconomyPage() {
             </div>
 
             <div className="grid gap-4 lg:grid-cols-2">
-              <InterpretBlock title="Ingreso mínimo y máximo por día (últimos 90 días)">
-                {ext?.minDaily && ext?.maxDaily ? (
-                  <ul className="list-inside list-disc space-y-1">
-                    <li>
-                      Mínimo: {ext.minDaily.date} — <CupUsdMoney cents={ext.minDaily.revenueCents} compact /> (
-                      {ext.minDaily.sales} ventas)
-                    </li>
-                    <li>
-                      Máximo: {ext.maxDaily.date} — <CupUsdMoney cents={ext.maxDaily.revenueCents} compact /> (
-                      {ext.maxDaily.sales} ventas)
-                    </li>
-                  </ul>
-                ) : (
-                  <p className="text-tl-muted">Datos insuficientes para calcular extremos diarios en la ventana.</p>
-                )}
-              </InterpretBlock>
-              <InterpretBlock title="Ticket medio por transacción (últimos 30 y 7 días)">
-                <ul className="list-inside list-disc space-y-1">
-                  <li>
-                    30 días: <CupUsdMoney cents={t.last30.ticketAvgCents} compact />
-                  </li>
-                  <li>
-                    7 días: <CupUsdMoney cents={t.last7.ticketAvgCents} compact />
-                  </li>
-                </ul>
-                <p className="text-tl-muted">Cada venta cuenta como una transacción.</p>
-              </InterpretBlock>
+              {ext?.minDaily && ext?.maxDaily ? (
+                <>
+                  <KpiCard
+                    variant="warning"
+                    label="Día más flojo (90 días)"
+                    value={<CupUsdMoney cents={ext.minDaily.revenueCents} compact />}
+                    hint={`${ext.minDaily.date} · ${ext.minDaily.sales} ventas`}
+                    icon={<TrendingDown className="h-5 w-5" aria-hidden />}
+                  />
+                  <KpiCard
+                    variant="success"
+                    label="Día más fuerte (90 días)"
+                    value={<CupUsdMoney cents={ext.maxDaily.revenueCents} compact />}
+                    hint={`${ext.maxDaily.date} · ${ext.maxDaily.sales} ventas`}
+                    icon={<TrendingUp className="h-5 w-5" aria-hidden />}
+                  />
+                </>
+              ) : (
+                <div className="rounded-2xl border border-tl-line-subtle bg-tl-canvas-inset p-5 text-sm text-tl-muted lg:col-span-2">
+                  Aún no hay bastantes datos para mostrar el mejor y el peor día en esta ventana.
+                </div>
+              )}
+            </div>
+
+            <div className="grid gap-4 sm:grid-cols-2">
+              <KpiCard
+                variant="default"
+                label="Ticket medio (30 días)"
+                value={<CupUsdMoney cents={t.last30.ticketAvgCents} compact />}
+                hint="Ingreso ÷ número de ventas"
+                icon={<ReceiptText className="h-5 w-5" aria-hidden />}
+              />
+              <KpiCard
+                variant="info"
+                label="Ticket medio (7 días)"
+                value={<CupUsdMoney cents={t.last7.ticketAvgCents} compact />}
+                hint="Última semana"
+                icon={<ReceiptText className="h-5 w-5" aria-hidden />}
+              />
             </div>
 
             {analytics?.meta?.dbAvailable && (mar || marToday || marMonth) && (
-              <div className="space-y-3">
-                <div>
-                  <h3 className="text-sm font-semibold text-tl-ink">Márgenes (venta − coste proveedor en catálogo)</h3>
-                  <p className="mt-1 text-xs text-tl-muted">
-                    Solo entra al coste lo que tengas guardado como precio de compra por unidad en cada producto; el
-                    resto de líneas no suma al coste estimado. Las ventas de productos inactivos o archivados siguen
-                    contando igual.
-                  </p>
-                </div>
+              <div className="space-y-4">
+                <EconomySectionHeader
+                  title="Ganancia por periodo (coste en catálogo)"
+                  subtitle="Misma regla que arriba: solo líneas con precio de compra guardado en el producto."
+                />
                 <div className="grid gap-4 lg:grid-cols-3">
-                  {[
-                    { key: "today", title: "Margen hoy (UTC)", m: marToday, hint: marToday?.note },
-                    { key: "month", title: "Margen mes en curso (UTC)", m: marMonth, hint: marMonth?.note },
-                    { key: "30d", title: "Margen últimos 30 días", m: mar, hint: mar?.note },
-                  ].map(({ key, title, m, hint }) => (
-                    <div key={key} className="tl-glass rounded-xl p-4">
-                      <p className="text-xs font-semibold uppercase tracking-wider text-tl-muted">{title}</p>
-                      {hint ? <p className="mt-1 text-[11px] leading-snug text-tl-muted">{hint}</p> : null}
-                      {!m || m.revenueCents <= 0 ? (
-                        <p className="mt-4 text-sm text-tl-muted">Sin ventas cerradas en este periodo.</p>
-                      ) : (
-                        <>
-                          <div className="mt-4 rounded-xl border border-tl-success/25 bg-tl-success-subtle/40 px-3 py-3">
-                            <p className="text-[10px] font-bold uppercase tracking-wider text-tl-success">
-                              Ganancia tienda
+                  {(
+                    [
+                      { key: "today", title: "Hoy", variant: "accent" as const, m: marToday, note: marToday?.note },
+                      { key: "month", title: "Mes en curso", variant: "info" as const, m: marMonth, note: marMonth?.note },
+                      { key: "30d", title: "Últimos 30 días", variant: "success" as const, m: mar, note: mar?.note },
+                    ] as const
+                  ).map(({ key, title, variant, m, note }) =>
+                    !m || m.revenueCents <= 0 ? (
+                      <KpiCard
+                        key={key}
+                        variant="default"
+                        label={title}
+                        value="—"
+                        hint="Sin ventas con coste en este periodo"
+                        icon={<PieChart className="h-5 w-5" aria-hidden />}
+                      />
+                    ) : (
+                      <div key={key} className="space-y-3">
+                        <KpiCard
+                          variant={variant}
+                          label={`Ganancia · ${title}`}
+                          value={<CupUsdMoney cents={m.marginCents} />}
+                          hint={`${m.linesWithCost.toLocaleString("es-ES")} líneas con coste · ${m.linesWithoutCost.toLocaleString("es-ES")} sin coste en catálogo`}
+                          icon={<TrendingUp className="h-5 w-5" aria-hidden />}
+                        />
+                        <div className="grid grid-cols-2 gap-2 rounded-xl border border-tl-line-subtle bg-tl-canvas-inset p-3 text-sm">
+                          <div>
+                            <p className="text-[10px] font-semibold uppercase text-tl-muted">Vendido</p>
+                            <CupUsdMoney cents={m.revenueCents} compact />
+                          </div>
+                          <div>
+                            <p className="text-[10px] font-semibold uppercase text-tl-muted">Proveedor</p>
+                            <CupUsdMoney cents={m.estimatedCostCents} compact />
+                          </div>
+                          <div className="col-span-2 border-t border-tl-line-subtle pt-2">
+                            <p className="text-[10px] font-semibold uppercase text-tl-muted">Margen sobre ingreso</p>
+                            <p className="text-lg font-bold tabular-nums text-tl-ink">
+                              {m.marginPct != null ? `${m.marginPct.toFixed(1)} %` : "—"}
                             </p>
-                            <div className="mt-1">
-                              <CupUsdMoney cents={m.marginCents} className="!text-xl !font-bold sm:!text-2xl" />
-                            </div>
                           </div>
-                          <div className="mt-4 grid gap-3 sm:grid-cols-2">
-                            <div>
-                              <p className="text-xs text-tl-muted">Ingreso líneas</p>
-                              <CupUsdMoney cents={m.revenueCents} />
-                            </div>
-                            <div>
-                              <p className="text-xs text-tl-muted">Proveedor (coste)</p>
-                              <CupUsdMoney cents={m.estimatedCostCents} />
-                            </div>
-                            <div>
-                              <p className="text-xs text-tl-muted">% sobre ingreso</p>
-                              <p className="text-lg font-bold text-tl-ink">
-                                {m.marginPct != null ? `${m.marginPct.toFixed(1)} %` : "—"}
-                              </p>
-                            </div>
-                          </div>
-                          <p className="mt-3 text-xs text-tl-muted">
-                            Líneas con costo: {m.linesWithCost.toLocaleString("es-ES")} · sin costo:{" "}
-                            {m.linesWithoutCost.toLocaleString("es-ES")}
-                          </p>
-                        </>
-                      )}
-                    </div>
-                  ))}
+                        </div>
+                        {note ? <p className="text-[11px] leading-snug text-tl-muted">{note}</p> : null}
+                      </div>
+                    ),
+                  )}
                 </div>
               </div>
             )}
 
+            <EconomySectionHeader
+              title="Formas de pago y terminales"
+              subtitle="Últimos 30 días: dónde se concentra el ingreso."
+            />
+
             <div className="grid gap-4 xl:grid-cols-2">
-              <div className="tl-glass overflow-x-auto rounded-xl">
+              <div className="tl-glass overflow-x-auto rounded-xl border border-tl-success/15">
                 <table className="w-full min-w-[360px] text-left text-sm">
                   <caption className="border-b border-tl-line px-4 py-2 text-left text-xs font-semibold text-tl-ink">
-                    Mezcla de métodos de pago (30 días, por ingreso)
+                    Mezcla de métodos de pago (30 días)
                   </caption>
                   <thead className="border-b border-tl-line bg-tl-canvas-inset text-xs uppercase text-tl-muted">
                     <tr>
@@ -969,7 +1000,7 @@ export default function EconomyPage() {
                   <tbody className="divide-y divide-tl-line-subtle">
                     {pay.map((p) => (
                       <tr key={p.method}>
-                        <td className="px-4 py-2 font-mono text-xs text-tl-ink">{p.method}</td>
+                        <td className="px-4 py-2 text-sm text-tl-ink">{p.method}</td>
                         <td className="px-4 py-2 text-right tabular-nums">{p.pctOfRevenue.toFixed(1)} %</td>
                         <td className="px-4 py-2 text-right align-top">
                           <TablePriceCupCell cupCents={p.revenueCents} compact />
@@ -979,10 +1010,10 @@ export default function EconomyPage() {
                   </tbody>
                 </table>
               </div>
-              <div className="tl-glass overflow-x-auto rounded-xl">
+              <div className="tl-glass overflow-x-auto rounded-xl border border-tl-info/15">
                 <table className="w-full min-w-[360px] text-left text-sm">
                   <caption className="border-b border-tl-line px-4 py-2 text-left text-xs font-semibold text-tl-ink">
-                    Ingresos por dispositivo (30 días)
+                    Ingresos por terminal o caja (30 días)
                   </caption>
                   <thead className="border-b border-tl-line bg-tl-canvas-inset text-xs uppercase text-tl-muted">
                     <tr>
@@ -994,7 +1025,7 @@ export default function EconomyPage() {
                   <tbody className="divide-y divide-tl-line-subtle">
                     {dev.map((d) => (
                       <tr key={d.deviceId}>
-                        <td className="max-w-[200px] truncate px-4 py-2 font-mono text-xs text-tl-ink" title={d.deviceId}>
+                        <td className="max-w-[220px] truncate px-4 py-2 text-sm text-tl-ink" title={d.deviceId}>
                           {d.deviceId}
                         </td>
                         <td className="px-4 py-2 text-right tabular-nums">{d.pctOfRevenue.toFixed(1)} %</td>
@@ -1008,10 +1039,15 @@ export default function EconomyPage() {
               </div>
             </div>
 
-            <div className="tl-glass overflow-x-auto rounded-xl">
+            <EconomySectionHeader
+              title="Horarios y días de la semana"
+              subtitle="Útil para turnos, aperturas y reposición."
+            />
+
+            <div className="tl-glass overflow-x-auto rounded-xl border border-tl-warning/15">
               <table className="w-full min-w-[640px] text-left text-sm">
                 <caption className="border-b border-tl-line px-4 py-2 text-left text-xs font-semibold text-tl-ink">
-                  Distribución horaria de ingresos (últimos 30 días, en CUP)
+                  Ingresos por hora (últimos 30 días, CUP)
                 </caption>
                 <thead className="border-b border-tl-line bg-tl-canvas-inset text-xs uppercase text-tl-muted">
                   <tr>
@@ -1050,10 +1086,10 @@ export default function EconomyPage() {
               )}
             </div>
 
-            <div className="tl-glass overflow-x-auto rounded-xl">
+            <div className="tl-glass overflow-x-auto rounded-xl border border-tl-accent/15">
               <table className="w-full min-w-[520px] text-left text-sm">
                 <caption className="border-b border-tl-line px-4 py-2 text-left text-xs font-semibold text-tl-ink">
-                  Estacionalidad semanal (últimos 365 días)
+                  Ingresos por día de la semana (último año)
                 </caption>
                 <thead className="border-b border-tl-line bg-tl-canvas-inset text-xs uppercase text-tl-muted">
                   <tr>
@@ -1084,11 +1120,14 @@ export default function EconomyPage() {
             </div>
 
             {conclusions.length > 0 && (
-              <div className="tl-glass rounded-xl border border-tl-line-subtle p-4">
-                <h3 className="text-sm font-semibold text-tl-ink">Conclusiones</h3>
-                <ul className="mt-3 list-inside list-disc space-y-2 text-sm text-tl-ink-secondary">
-                  {conclusions.map((c, i) => (
-                    <li key={i}>{c}</li>
+              <div className="rounded-2xl border border-tl-info/25 bg-gradient-to-br from-tl-info/10 to-tl-canvas-inset p-5">
+                <h3 className="text-sm font-semibold text-tl-ink">Ideas rápidas</h3>
+                <ul className="mt-3 space-y-2 text-sm leading-relaxed text-tl-ink-secondary">
+                  {conclusions.slice(0, 5).map((c, i) => (
+                    <li key={i} className="flex gap-2">
+                      <span className="mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full bg-tl-info" aria-hidden />
+                      <span>{c}</span>
+                    </li>
                   ))}
                 </ul>
               </div>
@@ -1097,11 +1136,12 @@ export default function EconomyPage() {
         )}
 
         {/* Detalle día: métodos exactos */}
-        <section>
-          <h2 className="text-lg font-semibold text-tl-ink">3. Detalle por método de pago (día seleccionado)</h2>
-          <p className="mt-1 max-w-3xl text-sm text-tl-muted">
-            Cada fila es el texto del método tal como lo registró la caja al cerrar la venta.
-          </p>
+        <section className="border-t border-tl-line-subtle pt-10">
+          <EconomySectionHeader
+            title="Detalle por método (día del calendario)"
+            subtitle="Cada fila es el nombre del método tal como quedó al cerrar la venta en caja."
+            icon={<CreditCard className="h-5 w-5 text-tl-accent" aria-hidden />}
+          />
 
           <div className="mt-3 overflow-x-auto tl-glass rounded-xl">
             <table className="w-full min-w-[520px] text-left text-sm">
