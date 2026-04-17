@@ -76,6 +76,9 @@ export async function processBatch(
     const products = await loadCatalogProducts(tx, params.storeId);
     const stock = new Map(products.map((p) => [p.id, p.stockQty]));
     const productById = new Map(products.map((p) => [p.id, p]));
+    const productIdBySku = new Map(
+      products.map((p) => [p.sku, p.id] as const),
+    );
 
     const pendingSales = new Map<string, DraftSale>();
 
@@ -210,10 +213,11 @@ export async function processBatch(
 
         case "PRODUCT_ADDED_TO_CART": {
           const saleId = getPayloadString(ev.payload, "saleId");
-          const productId = getPayloadString(ev.payload, "productId");
+          const productIdRaw = getPayloadString(ev.payload, "productId");
+          const skuRaw = getPayloadString(ev.payload, "sku");
           const quantity = getPayloadNumber(ev.payload, "quantity");
           const draft = saleId ? pendingSales.get(saleId) : undefined;
-          if (!saleId || !productId || quantity === undefined || quantity <= 0 || !draft) {
+          if (!saleId || !productIdRaw || quantity === undefined || quantity <= 0 || !draft) {
             results.push(
               await record({
                 status: "REJECTED",
@@ -222,7 +226,19 @@ export async function processBatch(
             );
             break;
           }
-          if (!productById.has(productId)) {
+
+          // Compat: la APK puede enviar `productId` como UUID local. Permitimos resolver por SKU.
+          // Prioridad: productId real -> sku explícito -> interpretar productId como sku.
+          let resolvedProductId: string | null = null;
+          if (productById.has(productIdRaw)) {
+            resolvedProductId = productIdRaw;
+          } else if (skuRaw && productIdBySku.has(skuRaw)) {
+            resolvedProductId = productIdBySku.get(skuRaw)!;
+          } else if (productIdBySku.has(productIdRaw)) {
+            resolvedProductId = productIdBySku.get(productIdRaw)!;
+          }
+
+          if (!resolvedProductId) {
             results.push(
               await record({
                 status: "REJECTED",
@@ -231,7 +247,7 @@ export async function processBatch(
             );
             break;
           }
-          draft.lines.push({ productId, quantity });
+          draft.lines.push({ productId: resolvedProductId, quantity });
           results.push(await record({ status: "ACCEPTED" }));
           break;
         }

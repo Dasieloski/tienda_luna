@@ -34,6 +34,8 @@ export type SaleCreatedPayload = {
 export type ProductAddedPayload = {
   saleId: string;
   productId: string;
+  /** Alternativa para compatibilidad: resolver producto por SKU. */
+  sku?: string;
   quantity: number;
   unitPriceCents?: number;
 };
