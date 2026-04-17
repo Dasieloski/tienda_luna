@@ -12,6 +12,11 @@ type RecentSale = {
   totalCents: number;
   status: string;
   completedAt: string;
+  paymentMethod: string | null;
+  paidCents: number | null;
+  changeCents: number | null;
+  /** Campo auxiliar para búsqueda local */
+  searchText?: string;
   lines: {
     id: string;
     quantity: number;
@@ -33,7 +38,16 @@ export default function SalesPage() {
       const res = await fetch("/api/admin/sales/recent?limit=30", { credentials: "include" });
       if (!res.ok) return;
       const json = (await res.json()) as { sales: RecentSale[] };
-      const next = json.sales ?? [];
+      const next = (json.sales ?? []).map((s) => ({
+        ...s,
+        searchText: [
+          s.deviceId,
+          s.paymentMethod ?? "",
+          ...s.lines.map((l) => `${l.productName} ${l.sku}`),
+        ]
+          .join(" ")
+          .toLowerCase(),
+      }));
       
       // Check if there's a new sale
       if (next[0] && topSaleRef.current && next[0].id !== topSaleRef.current) {
@@ -66,10 +80,20 @@ export default function SalesPage() {
       key: "completedAt",
       label: "Fecha",
       sortable: true,
-      width: "180px",
+      width: "130px",
       render: (row) => (
         <span className="text-xs tabular-nums text-tl-muted">
-          {new Date(row.completedAt).toLocaleString("es-ES")}
+          {new Date(row.completedAt).toLocaleDateString("es-ES")}
+        </span>
+      ),
+    },
+    {
+      key: "time",
+      label: "Hora",
+      width: "90px",
+      render: (row) => (
+        <span className="text-xs tabular-nums text-tl-muted">
+          {new Date(row.completedAt).toLocaleTimeString("es-ES", { hour: "2-digit", minute: "2-digit" })}
         </span>
       ),
     },
@@ -82,6 +106,38 @@ export default function SalesPage() {
       render: (row) => (
         <span className="font-semibold tabular-nums text-tl-ink">
           {formatCupAndUsdLabel(row.totalCents)}
+        </span>
+      ),
+    },
+    {
+      key: "paymentMethod",
+      label: "Método",
+      width: "120px",
+      render: (row) => (
+        <span className="text-xs font-semibold uppercase tracking-wide text-tl-muted">
+          {row.paymentMethod ?? "—"}
+        </span>
+      ),
+    },
+    {
+      key: "paidCents",
+      label: "Pagó con",
+      align: "right",
+      width: "120px",
+      render: (row) => (
+        <span className="text-xs tabular-nums text-tl-ink">
+          {row.paidCents != null ? formatCupAndUsdLabel(row.paidCents) : "—"}
+        </span>
+      ),
+    },
+    {
+      key: "changeCents",
+      label: "Vuelto",
+      align: "right",
+      width: "120px",
+      render: (row) => (
+        <span className="text-xs tabular-nums text-tl-ink">
+          {row.changeCents != null ? formatCupAndUsdLabel(row.changeCents) : "—"}
         </span>
       ),
     },
@@ -193,8 +249,8 @@ export default function SalesPage() {
           data={sales}
           keyExtractor={(row) => row.id}
           searchable
-          searchPlaceholder="Buscar por dispositivo o producto..."
-          searchKeys={["deviceId"]}
+          searchPlaceholder="Buscar por dispositivo, producto o método..."
+          searchKeys={["deviceId", "searchText", "paymentMethod"]}
           emptyMessage="No hay ventas recientes"
           maxHeight="calc(100vh - 400px)"
           loading={loading}
