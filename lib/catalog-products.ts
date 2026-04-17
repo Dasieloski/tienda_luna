@@ -1,5 +1,5 @@
 import type { PrismaClient, Product } from "@prisma/client";
-import type { Prisma } from "@prisma/client";
+import { Prisma } from "@prisma/client";
 
 type Db = PrismaClient | Prisma.TransactionClient;
 
@@ -16,15 +16,26 @@ async function hasColumn(db: Db, columnName: string): Promise<boolean> {
   return rows.length > 0;
 }
 
+export type LoadCatalogOptions = {
+  /** Si es true, incluye productos con active=false (solo para panel admin / informes). */
+  includeInactive?: boolean;
+};
+
 /**
- * Lista productos activos de la tienda. Si Postgres aún no tiene las columnas
- * nuevas del modelo (`priceUsdCents`, etc.), usa un SELECT compatible y rellena defaults.
+ * Lista productos de la tienda (por defecto solo activos: catálogo POS).
+ * Si Postgres aún no tiene las columnas nuevas del modelo, usa un SELECT compatible y rellena defaults.
  */
-export async function loadCatalogProducts(db: Db, storeId: string): Promise<Product[]> {
+export async function loadCatalogProducts(
+  db: Db,
+  storeId: string,
+  opts?: LoadCatalogOptions,
+): Promise<Product[]> {
+  const activeOnly = opts?.includeInactive !== true;
+
   const hasUsd = await hasColumn(db, "priceUsdCents");
   if (hasUsd) {
     return await db.product.findMany({
-      where: { storeId, active: true },
+      where: { storeId, ...(activeOnly ? { active: true } : {}) },
       orderBy: { name: "asc" },
     });
   }
@@ -60,7 +71,7 @@ export async function loadCatalogProducts(db: Db, storeId: string): Promise<Prod
       "updatedAt"
     FROM "Product"
     WHERE "storeId" = ${storeId}
-      AND active = true
+    ${activeOnly ? Prisma.sql` AND active = true` : Prisma.empty}
     ORDER BY name ASC
   `;
   return legacy.map(

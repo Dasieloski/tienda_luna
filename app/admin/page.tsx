@@ -18,7 +18,7 @@ import { ActivityFeed, type ActivityItem } from "@/components/admin/activity-fee
 import { DashboardCharts } from "@/components/admin/dashboard-charts";
 import { WeeklyProgress, TaskProgress } from "@/components/admin/crextio-widgets";
 import { cn } from "@/lib/utils";
-import { formatCupAndUsdLabel } from "@/lib/money";
+import { CupUsdMoney } from "@/components/admin/cup-usd-money";
 
 type Overview = {
   level1: {
@@ -253,14 +253,14 @@ export default function AdminOverviewPage() {
             />
             <KpiCard
               label="Ingresos hoy"
-              value={formatCupAndUsdLabel(data?.level1.ingresosHoyCents ?? 0)}
-              hint="CUP / USD"
+              value={<CupUsdMoney cents={data?.level1.ingresosHoyCents ?? 0} />}
+              hint="Total facturado hoy"
               variant="success"
               icon={<DollarSign className="h-4 w-4" />}
             />
             <KpiCard
               label="Ticket medio"
-              value={formatCupAndUsdLabel(data?.level1.ticketMedioHoyCents ?? 0)}
+              value={<CupUsdMoney cents={data?.level1.ticketMedioHoyCents ?? 0} />}
               hint="Importe medio"
               variant="info"
               icon={<TrendingUp className="h-4 w-4" />}
@@ -288,11 +288,11 @@ export default function AdminOverviewPage() {
             />
             <KpiCard
               label="Ingresos mes"
-              value={formatCupAndUsdLabel(data?.level1.ingresosMesCents ?? 0)}
+              value={<CupUsdMoney cents={data?.level1.ingresosMesCents ?? 0} />}
             />
             <KpiCard
               label="Ingresos totales"
-              value={formatCupAndUsdLabel(data?.level1.ingresosTotalesCents ?? 0)}
+              value={<CupUsdMoney cents={data?.level1.ingresosTotalesCents ?? 0} />}
             />
             <KpiCard
               label="Eventos fraude"
@@ -386,9 +386,9 @@ export default function AdminOverviewPage() {
                           </div>
                         </div>
                         <div className="text-right">
-                          <p className="font-semibold tabular-nums text-tl-ink">
-                            {formatCupAndUsdLabel(p.subtotalCents)}
-                          </p>
+                          <div className="flex justify-end font-semibold text-tl-ink">
+                            <CupUsdMoney cents={p.subtotalCents} compact />
+                          </div>
                           <p className="text-xs text-tl-muted">{p.unidades} u.</p>
                         </div>
                       </li>
@@ -464,9 +464,9 @@ export default function AdminOverviewPage() {
                   <p className="mt-2 text-xl font-bold tabular-nums text-tl-ink">
                     {d.ventas}
                   </p>
-                  <p className="text-sm text-tl-muted">
-                    {formatCupAndUsdLabel(d.ingresosCents)}
-                  </p>
+                  <div className="text-sm text-tl-muted">
+                    <CupUsdMoney cents={d.ingresosCents} compact />
+                  </div>
                 </div>
               ))}
             </div>

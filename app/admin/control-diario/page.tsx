@@ -3,7 +3,8 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Banknote, Calendar, ClipboardList, CreditCard, DollarSign, Download, FileDown, PackageSearch, RefreshCw } from "lucide-react";
 import { AdminShell } from "@/components/admin/admin-shell";
-import { formatCup, formatCupAndUsdLabel, formatUsdCents, formatUsdFromCupCents } from "@/lib/money";
+import { formatCup, formatUsdCents, formatUsdFromCupCents } from "@/lib/money";
+import { CupUsdMoney } from "@/components/admin/cup-usd-money";
 import { cn } from "@/lib/utils";
 import { KpiCard } from "@/components/admin/kpi-card";
 
@@ -211,7 +212,7 @@ export default function DailyControlPage() {
             />
             <KpiCard
               label="USD del día"
-              value={formatCupAndUsdLabel(totals.totalUsdCup)}
+              value={<CupUsdMoney cents={totals.totalUsdCup} />}
               hint="Ventas marcadas USD"
               icon={<DollarSign className="h-4 w-4" />}
               variant="warning"
@@ -337,8 +338,10 @@ export default function DailyControlPage() {
                         <td className="px-3 py-2 text-right text-xs tabular-nums text-tl-ink">
                           {formatCup(row.transferenciaCents)}
                         </td>
-                        <td className="px-3 py-2 text-right text-xs tabular-nums text-tl-ink">
-                          {formatCupAndUsdLabel(row.usdCents)}
+                        <td className="px-3 py-2 text-right text-xs text-tl-ink">
+                          <div className="flex justify-end">
+                            <CupUsdMoney cents={row.usdCents} compact />
+                          </div>
                         </td>
                         <td className="px-3 py-2 text-right text-xs tabular-nums text-tl-ink">
                           {formatCup(subtotal)}
@@ -374,8 +377,10 @@ export default function DailyControlPage() {
                         filtered.reduce((a, r) => a + r.transferenciaCents, 0),
                       )}
                     </td>
-                    <td className="px-3 py-2 text-right text-xs font-semibold tabular-nums text-tl-ink">
-                      {formatCupAndUsdLabel(filtered.reduce((a, r) => a + r.usdCents, 0))}
+                    <td className="px-3 py-2 text-right text-xs font-semibold text-tl-ink">
+                      <div className="flex justify-end">
+                        <CupUsdMoney cents={filtered.reduce((a, r) => a + r.usdCents, 0)} compact />
+                      </div>
                     </td>
                     <td className="px-3 py-2 text-right text-xs font-semibold tabular-nums text-tl-ink">
                       {formatCup(

@@ -1,5 +1,6 @@
 "use client";
 
+import type { ReactNode } from "react";
 import { ArrowDown, ArrowUp, ArrowUpRight, Minus } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -7,7 +8,7 @@ type Variant = "default" | "success" | "warning" | "danger" | "info" | "accent";
 
 interface KpiCardProps {
   label: string;
-  value: string;
+  value: ReactNode;
   hint?: string;
   variant?: Variant;
   trend?: "up" | "down" | "neutral";

@@ -1,7 +1,6 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { getSessionFromRequest, requireAdmin } from "@/lib/auth";
-import { loadCatalogProducts } from "@/lib/catalog-products";
 import { isMissingDbColumnError } from "@/lib/db-schema-errors";
 import { prisma } from "@/lib/db";
 
@@ -40,8 +39,9 @@ export async function PATCH(request: Request, ctx: RouteCtx) {
     return NextResponse.json({ error: "INVALID_BODY" }, { status: 400 });
   }
 
-  const catalog = await loadCatalogProducts(prisma, session.storeId);
-  const existing = catalog.find((p) => p.id === id);
+  const existing = await prisma.product.findFirst({
+    where: { id, storeId: session.storeId },
+  });
   if (!existing) {
     return NextResponse.json({ error: "NOT_FOUND" }, { status: 404 });
   }

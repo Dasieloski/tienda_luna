@@ -31,7 +31,15 @@ export async function GET(request: Request) {
     return NextResponse.json({ error: "FORBIDDEN" }, { status: 403 });
   }
 
-  const products = await loadCatalogProducts(prisma, session.storeId);
+  const url = new URL(request.url);
+  const wantInactive =
+    session.typ === "user" &&
+    (url.searchParams.get("includeInactive") === "1" ||
+      url.searchParams.get("includeInactive")?.toLowerCase() === "true");
+
+  const products = await loadCatalogProducts(prisma, session.storeId, {
+    includeInactive: wantInactive,
+  });
   return NextResponse.json({ products });
 }
 

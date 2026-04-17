@@ -4,7 +4,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { AdminShell } from "@/components/admin/admin-shell";
 import { DataTable, type Column } from "@/components/admin/data-table";
 import { cn } from "@/lib/utils";
-import { formatCupAndUsdLabel } from "@/lib/money";
+import { CupUsdMoney } from "@/components/admin/cup-usd-money";
 
 type RecentSale = {
   id: string;
@@ -97,9 +97,7 @@ export default function SalesPage() {
       align: "right",
       width: "120px",
       render: (row) => (
-        <span className="font-semibold tabular-nums text-tl-ink">
-          {formatCupAndUsdLabel(row.totalCents)}
-        </span>
+        <CupUsdMoney cents={row.totalCents} compact />
       ),
     },
     {
@@ -119,7 +117,7 @@ export default function SalesPage() {
       width: "120px",
       render: (row) => (
         <span className="text-xs tabular-nums text-tl-ink">
-          {row.paidCents != null ? formatCupAndUsdLabel(row.paidCents) : "—"}
+          {row.paidCents != null ? <CupUsdMoney cents={row.paidCents} compact /> : "—"}
         </span>
       ),
     },
@@ -130,7 +128,7 @@ export default function SalesPage() {
       width: "120px",
       render: (row) => (
         <span className="text-xs tabular-nums text-tl-ink">
-          {row.changeCents != null ? formatCupAndUsdLabel(row.changeCents) : "—"}
+          {row.changeCents != null ? <CupUsdMoney cents={row.changeCents} compact /> : "—"}
         </span>
       ),
     },
@@ -219,21 +217,23 @@ export default function SalesPage() {
             <p className="text-xs font-semibold uppercase tracking-wider text-tl-muted">
               Total facturado
             </p>
-            <p className="mt-1 text-2xl font-bold tabular-nums text-tl-ink">
-              {formatCupAndUsdLabel(sales.reduce((acc, s) => acc + s.totalCents, 0))}
-            </p>
+            <div className="mt-1 text-2xl font-bold text-tl-ink">
+              <CupUsdMoney cents={sales.reduce((acc, s) => acc + s.totalCents, 0)} />
+            </div>
           </div>
           <div className="tl-glass rounded-xl p-4">
             <p className="text-xs font-semibold uppercase tracking-wider text-tl-muted">
               Ticket medio
             </p>
-            <p className="mt-1 text-2xl font-bold tabular-nums text-tl-ink">
-              {sales.length > 0
-                ? formatCupAndUsdLabel(
-                    Math.round(sales.reduce((acc, s) => acc + s.totalCents, 0) / sales.length),
-                  )
-                : formatCupAndUsdLabel(0)}
-            </p>
+            <div className="mt-1 text-2xl font-bold text-tl-ink">
+              <CupUsdMoney
+                cents={
+                  sales.length > 0
+                    ? Math.round(sales.reduce((acc, s) => acc + s.totalCents, 0) / sales.length)
+                    : 0
+                }
+              />
+            </div>
           </div>
         </div>
 

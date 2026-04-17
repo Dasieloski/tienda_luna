@@ -1,11 +1,12 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
-import { Boxes, ChevronRight, Package, Pencil, X } from "lucide-react";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { ArchiveRestore, Boxes, ChevronRight, Package, Pencil, X } from "lucide-react";
 import { AdminShell } from "@/components/admin/admin-shell";
 import { DataTable, type Column } from "@/components/admin/data-table";
 import { cn } from "@/lib/utils";
-import { formatCup, formatCupAndUsdLabel, formatUsdCents, formatUsdFromCupCents } from "@/lib/money";
+import { formatCup, formatUsdCents, formatUsdFromCupCents } from "@/lib/money";
+import { CupUsdMoney } from "@/components/admin/cup-usd-money";
 
 type ProductRow = {
   id: string;
@@ -66,10 +67,11 @@ export default function InventoryPage() {
   const [eStock, setEStock] = useState("0");
   const [eLow, setELow] = useState("5");
   const [eActive, setEActive] = useState(true);
+  const [reactivateId, setReactivateId] = useState<string | null>(null);
 
   const loadProducts = useCallback(async () => {
     try {
-      const res = await fetch("/api/products", { credentials: "include" });
+      const res = await fetch("/api/products?includeInactive=1", { credentials: "include" });
       if (!res.ok) return;
       const json = (await res.json()) as { products: ProductRow[] };
       setProducts(json.products ?? []);
@@ -77,6 +79,29 @@ export default function InventoryPage() {
       setLoading(false);
     }
   }, []);
+
+  const activeProducts = useMemo(() => products.filter((p) => p.active), [products]);
+  const inactiveProducts = useMemo(() => products.filter((p) => !p.active), [products]);
+
+  async function reactivateProduct(id: string) {
+    setReactivateId(id);
+    try {
+      const res = await fetch(`/api/products/${encodeURIComponent(id)}`, {
+        method: "PATCH",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ active: true }),
+      });
+      if (!res.ok) {
+        const j = (await res.json().catch(() => ({}))) as { error?: string };
+        window.alert(j.error === "NOT_FOUND" ? "Producto no encontrado." : "No se pudo reactivar.");
+        return;
+      }
+      await loadProducts();
+    } finally {
+      setReactivateId(null);
+    }
+  }
 
   useEffect(() => {
     void loadProducts();
@@ -242,9 +267,10 @@ export default function InventoryPage() {
     void loadProducts();
   }
 
-  const totalProducts = products.length;
-  const lowStockCount = products.filter((p) => p.stockQty <= p.lowStockAt).length;
-  const totalValue = products.reduce((acc, p) => acc + p.priceCents * p.stockQty, 0);
+  const totalActive = activeProducts.length;
+  const totalInactive = inactiveProducts.length;
+  const lowStockCount = activeProducts.filter((p) => p.stockQty <= p.lowStockAt).length;
+  const totalValue = activeProducts.reduce((acc, p) => acc + p.priceCents * p.stockQty, 0);
 
   const columns: Column<ProductRow>[] = [
     {
@@ -355,6 +381,71 @@ export default function InventoryPage() {
     },
   ];
 
+  const inactiveColumns: Column<ProductRow>[] = [
+    {
+      key: "sku",
+      label: "SKU",
+      sortable: true,
+      width: "120px",
+      render: (row) => <span className="font-mono text-xs text-tl-muted">{row.sku}</span>,
+    },
+    {
+      key: "name",
+      label: "Nombre",
+      sortable: true,
+      render: (row) => <span className="font-medium text-tl-ink">{row.name}</span>,
+    },
+    {
+      key: "priceCents",
+      label: "PVP CUP",
+      align: "right",
+      width: "100px",
+      render: (row) => <span className="tabular-nums text-tl-ink">{formatCup(row.priceCents)}</span>,
+    },
+    {
+      key: "stockQty",
+      label: "Stock",
+      align: "right",
+      width: "72px",
+      render: (row) => <span className="tabular-nums text-tl-muted">{row.stockQty}</span>,
+    },
+    {
+      key: "id",
+      label: "",
+      width: "140px",
+      align: "center",
+      render: (row) => (
+        <div className="flex flex-wrap justify-center gap-1">
+          <button
+            type="button"
+            className="tl-btn tl-btn-secondary tl-interactive tl-press tl-focus !px-2 !py-1"
+            title="Editar"
+            aria-label={`Editar ${row.name}`}
+            onClick={(ev) => {
+              ev.stopPropagation();
+              openEdit(row);
+            }}
+          >
+            <Pencil className="h-3.5 w-3.5" aria-hidden />
+          </button>
+          <button
+            type="button"
+            className="tl-btn tl-btn-primary tl-interactive tl-press tl-focus !px-2 !py-1 text-xs"
+            title="Volver a catálogo activo"
+            disabled={reactivateId === row.id}
+            onClick={(ev) => {
+              ev.stopPropagation();
+              void reactivateProduct(row.id);
+            }}
+          >
+            <ArchiveRestore className="h-3.5 w-3.5" aria-hidden />
+            {reactivateId === row.id ? "…" : "Reactivar"}
+          </button>
+        </div>
+      ),
+    },
+  ];
+
   return (
     <AdminShell title="Inventario">
       <div className="space-y-6">
@@ -365,7 +456,7 @@ export default function InventoryPage() {
           </p>
         </div>
 
-        <div className="grid gap-4 sm:grid-cols-3">
+        <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
           <div className="tl-glass rounded-xl p-4">
             <div className="flex items-center gap-3">
               <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-tl-accent-subtle">
@@ -373,9 +464,22 @@ export default function InventoryPage() {
               </div>
               <div>
                 <p className="text-xs font-semibold uppercase tracking-wider text-tl-muted">
-                  Productos
+                  Activos (catálogo)
                 </p>
-                <p className="text-xl font-bold tabular-nums text-tl-ink">{totalProducts}</p>
+                <p className="text-xl font-bold tabular-nums text-tl-ink">{totalActive}</p>
+              </div>
+            </div>
+          </div>
+          <div className="tl-glass rounded-xl p-4">
+            <div className="flex items-center gap-3">
+              <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-tl-canvas-subtle ring-1 ring-tl-line">
+                <ArchiveRestore className="h-5 w-5 text-tl-muted" aria-hidden />
+              </div>
+              <div>
+                <p className="text-xs font-semibold uppercase tracking-wider text-tl-muted">
+                  Inactivos
+                </p>
+                <p className="text-xl font-bold tabular-nums text-tl-ink">{totalInactive}</p>
               </div>
             </div>
           </div>
@@ -386,7 +490,7 @@ export default function InventoryPage() {
               </div>
               <div>
                 <p className="text-xs font-semibold uppercase tracking-wider text-tl-muted">
-                  Stock bajo
+                  Stock bajo (activos)
                 </p>
                 <p className="text-xl font-bold tabular-nums text-tl-ink">{lowStockCount}</p>
               </div>
@@ -394,18 +498,18 @@ export default function InventoryPage() {
           </div>
           <div className="tl-glass rounded-xl p-4">
             <p className="text-xs font-semibold uppercase tracking-wider text-tl-muted">
-              Valor inventario
+              Valor inventario (activos)
             </p>
-            <p className="mt-1 text-xl font-bold tabular-nums text-tl-ink">
-              {formatCupAndUsdLabel(totalValue)}
-            </p>
+            <div className="mt-1 text-xl font-bold text-tl-ink">
+              <CupUsdMoney cents={totalValue} />
+            </div>
           </div>
         </div>
 
         <div className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_340px]">
           <DataTable
             columns={columns}
-            data={products}
+            data={activeProducts}
             keyExtractor={(row) => row.id}
             searchable
             searchPlaceholder="Buscar por SKU o nombre..."
@@ -560,6 +664,30 @@ export default function InventoryPage() {
             </form>
           </div>
         </div>
+
+        <section className="space-y-3 border-t border-tl-line-subtle pt-8">
+          <div className="flex flex-col gap-1 sm:flex-row sm:items-end sm:justify-between">
+            <div>
+              <h2 className="text-lg font-semibold text-tl-ink">Productos inactivos</h2>
+              <p className="mt-1 max-w-2xl text-sm text-tl-muted">
+                No aparecen en el catálogo de la APK ni en la tabla principal. Desde aquí puedes revisarlos,
+                editarlos o reactivarlos para que vuelvan a sincronizar y mostrarse en caja.
+              </p>
+            </div>
+          </div>
+          <DataTable
+            columns={inactiveColumns}
+            data={inactiveProducts}
+            keyExtractor={(row) => row.id}
+            searchable
+            searchPlaceholder="Buscar inactivos por SKU o nombre…"
+            searchKeys={["sku", "name"]}
+            emptyMessage="No hay productos inactivos"
+            maxHeight="min(420px, 50vh)"
+            loading={loading}
+            skeletonRows={6}
+          />
+        </section>
       </div>
 
       {editOpen && (

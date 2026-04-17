@@ -10,13 +10,19 @@ export function getUsdRateCup(): number {
   return Number.isFinite(r) && r > 0 ? r : 1;
 }
 
-export function formatCup(cents: number | undefined | null) {
+/** CUP como texto explícito (evita símbolos ambiguos tipo $ en algunos locales). */
+export function formatCupAmountLabel(cents: number | undefined | null) {
   const value = (cents ?? 0) / 100;
-  return new Intl.NumberFormat("es-CU", {
-    style: "currency",
-    currency: "CUP",
+  const num = new Intl.NumberFormat("es-ES", {
+    minimumFractionDigits: 2,
     maximumFractionDigits: 2,
   }).format(value);
+  return `CUP ${num}`;
+}
+
+/** Solo moneda de venta (CUP); mismo formato que en pares CUP/USD. */
+export function formatCup(cents: number | undefined | null) {
+  return formatCupAmountLabel(cents);
 }
 
 export function formatUsdFromCupCents(cents: number | undefined | null) {
@@ -40,7 +46,8 @@ export function formatUsdCents(usdCents: number | undefined | null) {
   }).format(value);
 }
 
+/** Texto plano (exportaciones, títulos). En UI preferir `<CupUsdMoney />` para resaltar USD. */
 export function formatCupAndUsdLabel(cents: number | undefined | null) {
-  return `${formatCup(cents)} · ${formatUsdFromCupCents(cents)}`;
+  return `${formatCupAmountLabel(cents)} · ${formatUsdFromCupCents(cents)}`;
 }
 

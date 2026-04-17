@@ -4,7 +4,7 @@ import { useCallback, useEffect, useState } from "react";
 import { BarChart3, TrendingUp } from "lucide-react";
 import { AdminShell } from "@/components/admin/admin-shell";
 import { KpiCard } from "@/components/admin/kpi-card";
-import { formatCupAndUsdLabel } from "@/lib/money";
+import { CupUsdMoney } from "@/components/admin/cup-usd-money";
 
 type Overview = {
   level2: {
@@ -82,7 +82,7 @@ export default function AnalyticsPage() {
             />
             <KpiCard
               label="Margen aprox. 30d"
-              value={formatCupAndUsdLabel(data?.level2.margenAprox30d ?? 0)}
+              value={<CupUsdMoney cents={data?.level2.margenAprox30d ?? 0} />}
               variant="success"
             />
             <KpiCard

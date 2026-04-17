@@ -4,7 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { Calendar, FileText, RefreshCw, Truck } from "lucide-react";
 import { AdminShell } from "@/components/admin/admin-shell";
 import { KpiCard } from "@/components/admin/kpi-card";
-import { formatCupAndUsdLabel } from "@/lib/money";
+import { CupUsdMoney } from "@/components/admin/cup-usd-money";
 import { cn } from "@/lib/utils";
 
 type SupplierRow = {
@@ -217,13 +217,13 @@ export default function SuppliersPage() {
             />
             <KpiCard
               label="Top ingresos"
-              value={topByRevenue ? formatCupAndUsdLabel(topByRevenue.revenueCents) : "—"}
+              value={topByRevenue ? <CupUsdMoney cents={topByRevenue.revenueCents} /> : "—"}
               hint={topByRevenue?.supplier}
               variant="info"
             />
             <KpiCard
               label="Top ganancia"
-              value={topByProfit ? formatCupAndUsdLabel(topByProfit.profitCents) : "—"}
+              value={topByProfit ? <CupUsdMoney cents={topByProfit.profitCents} /> : "—"}
               hint={topByProfit?.supplier}
               variant="success"
             />
@@ -291,11 +291,15 @@ export default function SuppliersPage() {
                         <td className="px-4 py-3 text-right tabular-nums text-tl-ink">
                           {s.units.toLocaleString("es-ES")}
                         </td>
-                        <td className="px-4 py-3 text-right tabular-nums text-tl-ink">
-                          {formatCupAndUsdLabel(s.revenueCents)}
+                        <td className="px-4 py-3 text-right text-tl-ink">
+                          <div className="flex justify-end">
+                            <CupUsdMoney cents={s.revenueCents} compact />
+                          </div>
                         </td>
-                        <td className="px-4 py-3 text-right tabular-nums text-tl-ink">
-                          {formatCupAndUsdLabel(s.profitCents)}
+                        <td className="px-4 py-3 text-right text-tl-ink">
+                          <div className="flex justify-end">
+                            <CupUsdMoney cents={s.profitCents} compact />
+                          </div>
                         </td>
                         <td className="px-4 py-3 text-right tabular-nums text-tl-muted">
                           {s.linesMissingCost > 0 ? s.linesMissingCost.toLocaleString("es-ES") : "0"}
@@ -316,7 +320,7 @@ export default function SuppliersPage() {
                                     ) : null}
                                   </span>
                                   <span className="shrink-0 text-xs tabular-nums text-tl-muted">
-                                    {p.units} u · {formatCupAndUsdLabel(p.revenueCents)}
+                                    {p.units} u · <CupUsdMoney cents={p.revenueCents} compact />
                                   </span>
                                 </li>
                               ))}

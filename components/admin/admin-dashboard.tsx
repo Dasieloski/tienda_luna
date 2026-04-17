@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import Link from "next/link";
 import {
   Activity,
@@ -16,7 +16,8 @@ import {
 } from "lucide-react";
 import { DashboardCharts } from "@/components/admin/dashboard-charts";
 import { cn } from "@/lib/utils";
-import { formatCup, formatCupAndUsdLabel, formatUsdCents, formatUsdFromCupCents } from "@/lib/money";
+import { formatCup, formatUsdCents, formatUsdFromCupCents } from "@/lib/money";
+import { CupUsdMoney } from "@/components/admin/cup-usd-money";
 
 const TABS = [
   { id: "vista" as const, label: "Vista general", icon: LayoutGrid },
@@ -144,8 +145,8 @@ function Kpi({
   accent,
 }: {
   label: string;
-  value: string;
-  hint?: string;
+  value: ReactNode;
+  hint?: ReactNode;
   accent?: "violet" | "cyan" | "amber" | "emerald";
 }) {
   const ring =
@@ -165,7 +166,7 @@ function Kpi({
     >
       <div className="pointer-events-none absolute -right-6 -top-6 h-24 w-24 rounded-full bg-violet-500/10 blur-2xl transition-opacity group-hover:opacity-100" />
       <p className="text-[10px] font-semibold uppercase tracking-wider text-zinc-500">{label}</p>
-      <p className="mt-2 text-2xl font-semibold tabular-nums tracking-tight text-white">{value}</p>
+      <div className="mt-2 text-2xl font-semibold tracking-tight text-white">{value}</div>
       {hint ? <p className="mt-1 text-xs text-zinc-500">{hint}</p> : null}
     </div>
   );
@@ -425,13 +426,13 @@ export function AdminDashboard() {
             <Kpi label="Ventas hoy" value={String(data.level1.ventasHoy)} accent="violet" />
             <Kpi
               label="Ingresos hoy"
-              value={formatCupAndUsdLabel(data.level1.ingresosHoyCents)}
+              value={<CupUsdMoney cents={data.level1.ingresosHoyCents} />}
               hint="CUP / USD"
               accent="emerald"
             />
             <Kpi
               label="Ticket medio hoy"
-              value={formatCupAndUsdLabel(data.level1.ticketMedioHoyCents)}
+              value={<CupUsdMoney cents={data.level1.ticketMedioHoyCents} />}
               hint="Importe medio por venta"
               accent="cyan"
             />
@@ -440,7 +441,7 @@ export function AdminDashboard() {
               value={horaPicoLabel}
               hint={
                 data.level1.horaPicoHoy.hora != null
-                  ? formatCupAndUsdLabel(data.level1.horaPicoHoy.ingresosCents)
+                  ? <CupUsdMoney cents={data.level1.horaPicoHoy.ingresosCents} />
                   : undefined
               }
               accent="amber"
@@ -449,17 +450,17 @@ export function AdminDashboard() {
 
           <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
             <Kpi label="Ventas mes" value={String(data.level1.ventasMes)} />
-            <Kpi label="Ingresos mes" value={formatCupAndUsdLabel(data.level1.ingresosMesCents)} />
+            <Kpi label="Ingresos mes" value={<CupUsdMoney cents={data.level1.ingresosMesCents} />} />
             <Kpi
               label="Ticket medio mes"
-              value={formatCupAndUsdLabel(data.level1.ticketMedioMesCents)}
+              value={<CupUsdMoney cents={data.level1.ticketMedioMesCents} />}
             />
             <Kpi
               label="Ingresos totales"
-              value={formatCupAndUsdLabel(data.level1.ingresosTotalesCents)}
+              value={<CupUsdMoney cents={data.level1.ingresosTotalesCents} />}
             />
             <Kpi label="Eventos fraude" value={String(data.level1.eventosFraudulentos)} accent="amber" />
-            <Kpi label="Margen aprox. 30d" value={formatCupAndUsdLabel(data.level2.margenAprox30d)} />
+            <Kpi label="Margen aprox. 30d" value={<CupUsdMoney cents={data.level2.margenAprox30d} />} />
             <Kpi label="Rotación inventario" value={data.level2.rotacionInventario30d.toFixed(2)} hint="Heurística 30d" />
           </div>
 
@@ -488,7 +489,7 @@ export function AdminDashboard() {
                         <span className="font-medium text-zinc-200">{p.nombre}</span>
                       </span>
                       <span className="text-right text-zinc-400">
-                        {p.unidades} u. · {formatCupAndUsdLabel(p.subtotalCents)}
+                        {p.unidades} u. · <CupUsdMoney cents={p.subtotalCents} compact />
                       </span>
                     </li>
                   ))
@@ -571,7 +572,7 @@ export function AdminDashboard() {
                         {new Date(s.completedAt).toLocaleString("es-ES")}
                       </td>
                       <td className="px-4 py-3 font-semibold tabular-nums text-white">
-                        {formatCupAndUsdLabel(s.totalCents)}
+                        <CupUsdMoney cents={s.totalCents} compact />
                       </td>
                       <td className="px-4 py-3">
                         <span className="rounded-full bg-white/10 px-2 py-0.5 text-xs">{s.status}</span>

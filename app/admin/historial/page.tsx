@@ -5,7 +5,7 @@ import { Filter, RefreshCw } from "lucide-react";
 import { AdminShell } from "@/components/admin/admin-shell";
 import { DataTable, type Column } from "@/components/admin/data-table";
 import { cn } from "@/lib/utils";
-import { formatCupAndUsdLabel } from "@/lib/money";
+import { CupUsdMoney } from "@/components/admin/cup-usd-money";
 
 type HistorySale = {
   id: string;
@@ -152,9 +152,7 @@ export default function SalesHistoryPage() {
         align: "right",
         width: "120px",
         render: (row) => (
-          <span className="font-semibold tabular-nums text-tl-ink">
-            {formatCupAndUsdLabel(row.totalCents)}
-          </span>
+          <CupUsdMoney cents={row.totalCents} compact />
         ),
       },
       {
@@ -326,9 +324,9 @@ export default function SalesHistoryPage() {
                 </div>
                 <div className="rounded-xl border border-tl-line-subtle bg-tl-canvas-inset p-3">
                   <p className="text-xs font-semibold uppercase tracking-wider text-tl-muted">Total</p>
-                <p className="mt-1 text-lg font-bold tabular-nums text-tl-ink">
-                  {formatCupAndUsdLabel(selected.totalCents)}
-                </p>
+                <div className="mt-1 text-lg font-bold text-tl-ink">
+                  <CupUsdMoney cents={selected.totalCents} />
+                </div>
                   <p className="mt-1 text-xs text-tl-muted">{selectedTotalItems} artículos</p>
                 </div>
                 <div className="rounded-xl border border-tl-line-subtle bg-tl-canvas-inset p-3">
@@ -342,11 +340,11 @@ export default function SalesHistoryPage() {
                         </div>
                         <div className="shrink-0 text-right">
                           <p className="text-xs text-tl-muted">
-                            {l.quantity} × {formatCupAndUsdLabel(l.unitPriceCents)}
+                            {l.quantity} × <CupUsdMoney cents={l.unitPriceCents} compact />
                           </p>
-                          <p className="text-sm font-semibold tabular-nums text-tl-ink">
-                            {formatCupAndUsdLabel(l.subtotalCents)}
-                          </p>
+                          <div className="text-sm font-semibold text-tl-ink">
+                            <CupUsdMoney cents={l.subtotalCents} compact />
+                          </div>
                         </div>
                       </li>
                     ))}
