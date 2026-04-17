@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { ArchiveRestore, Boxes, ChevronRight, Package, Pencil, X } from "lucide-react";
+import { ArchiveRestore, Boxes, ChevronRight, Package, Pencil, Trash2, X } from "lucide-react";
 import { AdminShell } from "@/components/admin/admin-shell";
 import { DataTable, type Column } from "@/components/admin/data-table";
 import { cn } from "@/lib/utils";
@@ -22,6 +22,7 @@ type ProductRow = {
   stockQty: number;
   lowStockAt: number;
   active: boolean;
+  deletedAt?: string | null;
 };
 
 function parseMoneyToCents(s: string): number | null {
@@ -40,8 +41,7 @@ export default function InventoryPage() {
   const [products, setProducts] = useState<ProductRow[]>([]);
   const [loading, setLoading] = useState(true);
 
-  // Alta
-  const [formSku, setFormSku] = useState("");
+  // Alta (SKU lo asigna el servidor)
   const [formName, setFormName] = useState("");
   const [formPriceCup, setFormPriceCup] = useState("");
   const [formPriceUsd, setFormPriceUsd] = useState("");
@@ -50,6 +50,7 @@ export default function InventoryPage() {
   const [formSupplier, setFormSupplier] = useState("");
   const [formStock, setFormStock] = useState("0");
   const [formLow, setFormLow] = useState("5");
+  const [formCostCup, setFormCostCup] = useState("");
   const [formMsg, setFormMsg] = useState<string | null>(null);
   const [formBusy, setFormBusy] = useState(false);
 
@@ -67,12 +68,16 @@ export default function InventoryPage() {
   const [eSupplier, setESupplier] = useState("");
   const [eStock, setEStock] = useState("0");
   const [eLow, setELow] = useState("5");
+  const [eCostCup, setECostCup] = useState("");
   const [eActive, setEActive] = useState(true);
+  const [editWasDeleted, setEditWasDeleted] = useState(false);
   const [reactivateId, setReactivateId] = useState<string | null>(null);
+  const [deleteBusyId, setDeleteBusyId] = useState<string | null>(null);
+  const [restoreDeletedId, setRestoreDeletedId] = useState<string | null>(null);
 
   const loadProducts = useCallback(async () => {
     try {
-      const res = await fetch("/api/products?includeInactive=1", { credentials: "include" });
+      const res = await fetch("/api/products?includeInactive=1&includeDeleted=1", { credentials: "include" });
       if (!res.ok) return;
       const json = (await res.json()) as { products: ProductRow[] };
       setProducts(json.products ?? []);
@@ -81,8 +86,70 @@ export default function InventoryPage() {
     }
   }, []);
 
-  const activeProducts = useMemo(() => products.filter((p) => p.active), [products]);
-  const inactiveProducts = useMemo(() => products.filter((p) => !p.active), [products]);
+  const activeProducts = useMemo(
+    () => products.filter((p) => p.active && !p.deletedAt),
+    [products],
+  );
+  const inactiveProducts = useMemo(
+    () => products.filter((p) => !p.active && !p.deletedAt),
+    [products],
+  );
+  const deletedProducts = useMemo(() => products.filter((p) => !!p.deletedAt), [products]);
+
+  const previewUnitGainCents = useMemo(() => {
+    const p = parseMoneyToCents(formPriceCup);
+    const c = parseMoneyToCents(formCostCup);
+    if (p == null || c == null) return null;
+    return p - c;
+  }, [formPriceCup, formCostCup]);
+
+  async function deleteProduct(p: ProductRow) {
+    if (
+      !window.confirm(
+        `¿Archivar "${p.name}"?\n\nLas ventas e historial se conservan. Dejará de mostrarse en caja y el SKU se archivará para poder reutilizarlo.`,
+      )
+    ) {
+      return;
+    }
+    setDeleteBusyId(p.id);
+    try {
+      const res = await fetch(`/api/products/${encodeURIComponent(p.id)}`, {
+        method: "DELETE",
+        credentials: "include",
+      });
+      if (!res.ok) {
+        const j = (await res.json().catch(() => ({}))) as { error?: string; hint?: string };
+        window.alert(
+          j.error === "DATABASE_SCHEMA_MISMATCH"
+            ? "Falta la columna de archivado en la base de datos. Ejecuta la migración (deletedAt en Product)."
+            : "No se pudo archivar el producto.",
+        );
+        return;
+      }
+      await loadProducts();
+    } finally {
+      setDeleteBusyId(null);
+    }
+  }
+
+  async function restoreDeletedProduct(id: string) {
+    setRestoreDeletedId(id);
+    try {
+      const res = await fetch(`/api/products/${encodeURIComponent(id)}`, {
+        method: "PATCH",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ restore: true }),
+      });
+      if (!res.ok) {
+        window.alert("No se pudo restaurar el producto.");
+        return;
+      }
+      await loadProducts();
+    } finally {
+      setRestoreDeletedId(null);
+    }
+  }
 
   async function reactivateProduct(id: string) {
     setReactivateId(id);
@@ -136,7 +203,9 @@ export default function InventoryPage() {
     setESupplier(p.supplierName ?? "");
     setEStock(String(p.stockQty));
     setELow(String(p.lowStockAt));
+    setECostCup(p.costCents != null ? centsToInput(p.costCents) : "");
     setEActive(p.active);
+    setEditWasDeleted(!!p.deletedAt);
     setEditMsg(null);
     setEditOpen(true);
   }
@@ -153,6 +222,8 @@ export default function InventoryPage() {
     const wholesaleCupCents =
       formWholesaleCup.trim() === "" ? null : parseMoneyToCents(formWholesaleCup);
     const unitsPerBox = Math.max(1, parseInt(formUnitsBox, 10) || 1);
+    const costCentsParsed =
+      formCostCup.trim() === "" ? null : parseMoneyToCents(formCostCup);
 
     if (priceCents == null || priceCents < 0) {
       setFormMsg("Precio en CUP no válido.");
@@ -169,18 +240,23 @@ export default function InventoryPage() {
       setFormBusy(false);
       return;
     }
+    if (formCostCup.trim() === "" || costCentsParsed == null) {
+      setFormMsg("Indica el precio de compra al proveedor (obligatorio).");
+      setFormBusy(false);
+      return;
+    }
 
     const res = await fetch("/api/products", {
       method: "POST",
       credentials: "include",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        sku: formSku.trim(),
         name: formName.trim(),
         priceCents,
         priceUsdCents,
         unitsPerBox,
         wholesaleCupCents,
+        costCents: costCentsParsed,
         supplierName: formSupplier.trim() || null,
         stockQty: parseInt(formStock, 10) || 0,
         lowStockAt: parseInt(formLow, 10) || 5,
@@ -189,17 +265,28 @@ export default function InventoryPage() {
 
     setFormBusy(false);
     if (!res.ok) {
-      setFormMsg("No se pudo crear (SKU duplicado o error de servidor).");
+      const j = (await res.json().catch(() => ({}))) as { error?: string };
+      setFormMsg(
+        j.error === "INVALID_BODY"
+          ? "Revisa los datos (precio de proveedor obligatorio, importes válidos)."
+          : "No se pudo crear el producto.",
+      );
       return;
     }
 
-    setFormMsg("Producto creado correctamente.");
-    setFormSku("");
+    const created = (await res.json()) as { product?: { sku?: string } };
+    const newSku = created.product?.sku;
+    setFormMsg(
+      newSku
+        ? `Producto creado. SKU interno asignado: ${newSku}`
+        : "Producto creado correctamente.",
+    );
     setFormName("");
     setFormPriceCup("");
     setFormPriceUsd("");
     setFormUnitsBox("1");
     setFormWholesaleCup("");
+    setFormCostCup("");
     setFormSupplier("");
     setFormStock("0");
     setFormLow("5");
@@ -219,6 +306,7 @@ export default function InventoryPage() {
     const wholesaleCupCents =
       eWholesaleCup.trim() === "" ? null : parseMoneyToCents(eWholesaleCup);
     const unitsPerBox = Math.max(1, parseInt(eUnitsBox, 10) || 1);
+    const costCentsParsed = eCostCup.trim() === "" ? null : parseMoneyToCents(eCostCup);
 
     if (priceCents == null || priceCents < 0) {
       setEditMsg("Precio en CUP no válido.");
@@ -235,6 +323,11 @@ export default function InventoryPage() {
       setEditBusy(false);
       return;
     }
+    if (eCostCup.trim() !== "" && costCentsParsed == null) {
+      setEditMsg("Precio de compra al proveedor no válido.");
+      setEditBusy(false);
+      return;
+    }
 
     const res = await fetch(`/api/products/${editId}`, {
       method: "PATCH",
@@ -247,6 +340,7 @@ export default function InventoryPage() {
         priceUsdCents,
         unitsPerBox,
         wholesaleCupCents,
+        costCents: costCentsParsed,
         supplierName: eSupplier.trim() || null,
         stockQty: parseInt(eStock, 10) || 0,
         lowStockAt: parseInt(eLow, 10) || 5,
@@ -270,6 +364,7 @@ export default function InventoryPage() {
 
   const totalActive = activeProducts.length;
   const totalInactive = inactiveProducts.length;
+  const totalDeleted = deletedProducts.length;
   const lowStockCount = activeProducts.filter((p) => p.stockQty <= p.lowStockAt).length;
   const totalValue = activeProducts.reduce((acc, p) => acc + p.priceCents * p.stockQty, 0);
 
@@ -290,6 +385,17 @@ export default function InventoryPage() {
       width: "120px",
       render: (row) => (
         <TablePriceCupCell cupCents={row.priceCents} explicitUsdCents={row.priceUsdCents} compact />
+      ),
+    },
+    {
+      key: "costCents",
+      label: "Compra",
+      align: "right",
+      width: "96px",
+      render: (row) => (
+        <span className="tabular-nums text-tl-muted">
+          {row.costCents != null ? formatCup(row.costCents) : "—"}
+        </span>
       ),
     },
     {
@@ -340,21 +446,36 @@ export default function InventoryPage() {
     {
       key: "id",
       label: "",
-      width: "52px",
+      width: "88px",
       align: "center",
       render: (row) => (
-        <button
-          type="button"
-          className="tl-btn tl-btn-secondary tl-interactive tl-press tl-focus !px-2 !py-1"
-          title="Editar producto"
-          aria-label={`Editar ${row.name}`}
-          onClick={(ev) => {
-            ev.stopPropagation();
-            openEdit(row);
-          }}
-        >
-          <Pencil className="h-3.5 w-3.5" aria-hidden />
-        </button>
+        <div className="flex justify-center gap-1">
+          <button
+            type="button"
+            className="tl-btn tl-btn-secondary tl-interactive tl-press tl-focus !px-2 !py-1"
+            title="Editar producto"
+            aria-label={`Editar ${row.name}`}
+            onClick={(ev) => {
+              ev.stopPropagation();
+              openEdit(row);
+            }}
+          >
+            <Pencil className="h-3.5 w-3.5" aria-hidden />
+          </button>
+          <button
+            type="button"
+            className="tl-btn tl-btn-secondary tl-interactive tl-press tl-focus !px-2 !py-1 text-tl-warning"
+            title="Archivar producto"
+            aria-label={`Archivar ${row.name}`}
+            disabled={deleteBusyId === row.id}
+            onClick={(ev) => {
+              ev.stopPropagation();
+              void deleteProduct(row);
+            }}
+          >
+            <Trash2 className="h-3.5 w-3.5" aria-hidden />
+          </button>
+        </div>
       ),
     },
   ];
@@ -385,7 +506,7 @@ export default function InventoryPage() {
     {
       key: "id",
       label: "",
-      width: "140px",
+      width: "168px",
       align: "center",
       render: (row) => (
         <div className="flex flex-wrap justify-center gap-1">
@@ -400,6 +521,19 @@ export default function InventoryPage() {
             }}
           >
             <Pencil className="h-3.5 w-3.5" aria-hidden />
+          </button>
+          <button
+            type="button"
+            className="tl-btn tl-btn-secondary tl-interactive tl-press tl-focus !px-2 !py-1 text-tl-warning"
+            title="Archivar"
+            aria-label={`Archivar ${row.name}`}
+            disabled={deleteBusyId === row.id}
+            onClick={(ev) => {
+              ev.stopPropagation();
+              void deleteProduct(row);
+            }}
+          >
+            <Trash2 className="h-3.5 w-3.5" aria-hidden />
           </button>
           <button
             type="button"
@@ -419,6 +553,65 @@ export default function InventoryPage() {
     },
   ];
 
+  const deletedColumns: Column<ProductRow>[] = [
+    {
+      key: "name",
+      label: "Nombre",
+      sortable: true,
+      render: (row) => <span className="font-medium text-tl-ink">{row.name}</span>,
+    },
+    {
+      key: "sku",
+      label: "SKU (archivado)",
+      render: (row) => (
+        <span className="font-mono text-xs text-tl-muted" title={row.sku}>
+          {row.sku}
+        </span>
+      ),
+    },
+    {
+      key: "stockQty",
+      label: "Stock",
+      align: "right",
+      width: "72px",
+      render: (row) => <span className="tabular-nums text-tl-muted">{row.stockQty}</span>,
+    },
+    {
+      key: "id",
+      label: "",
+      width: "120px",
+      align: "center",
+      render: (row) => (
+        <div className="flex flex-wrap justify-center gap-1">
+          <button
+            type="button"
+            className="tl-btn tl-btn-secondary tl-interactive tl-press tl-focus !px-2 !py-1"
+            title="Ver o editar"
+            onClick={(ev) => {
+              ev.stopPropagation();
+              openEdit(row);
+            }}
+          >
+            <Pencil className="h-3.5 w-3.5" aria-hidden />
+          </button>
+          <button
+            type="button"
+            className="tl-btn tl-btn-primary tl-interactive tl-press tl-focus !px-2 !py-1 text-xs"
+            title="Restaurar al catálogo (quita archivado)"
+            disabled={restoreDeletedId === row.id}
+            onClick={(ev) => {
+              ev.stopPropagation();
+              void restoreDeletedProduct(row.id);
+            }}
+          >
+            <ArchiveRestore className="h-3.5 w-3.5" aria-hidden />
+            {restoreDeletedId === row.id ? "…" : "Restaurar"}
+          </button>
+        </div>
+      ),
+    },
+  ];
+
   return (
     <AdminShell title="Inventario">
       <div className="space-y-6">
@@ -429,7 +622,7 @@ export default function InventoryPage() {
           </p>
         </div>
 
-        <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+        <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-5">
           <div className="tl-glass rounded-xl p-4">
             <div className="flex items-center gap-3">
               <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-tl-accent-subtle">
@@ -477,6 +670,19 @@ export default function InventoryPage() {
               <CupUsdMoney cents={totalValue} />
             </div>
           </div>
+          <div className="tl-glass rounded-xl p-4">
+            <div className="flex items-center gap-3">
+              <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-tl-warning/15 ring-1 ring-tl-warning/30">
+                <Trash2 className="h-5 w-5 text-tl-warning" aria-hidden />
+              </div>
+              <div>
+                <p className="text-xs font-semibold uppercase tracking-wider text-tl-muted">
+                  Archivados
+                </p>
+                <p className="text-xl font-bold tabular-nums text-tl-ink">{totalDeleted}</p>
+              </div>
+            </div>
+          </div>
         </div>
 
         <div className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_340px]">
@@ -499,18 +705,6 @@ export default function InventoryPage() {
               Nuevo producto
             </h2>
             <form onSubmit={onCreateProduct} className="mt-4 space-y-3">
-              <div>
-                <label className="text-xs text-tl-muted" htmlFor="np-sku">
-                  SKU
-                </label>
-                <input
-                  id="np-sku"
-                  value={formSku}
-                  onChange={(e) => setFormSku(e.target.value)}
-                  className="tl-input mt-1"
-                  required
-                />
-              </div>
               <div>
                 <label className="text-xs text-tl-muted" htmlFor="np-name">
                   Nombre del producto
@@ -551,6 +745,29 @@ export default function InventoryPage() {
                     className="tl-input mt-1"
                   />
                 </div>
+              </div>
+              <div>
+                <label className="text-xs text-tl-muted" htmlFor="np-cost">
+                  Precio compra al proveedor (CUP / unidad)
+                </label>
+                <input
+                  id="np-cost"
+                  inputMode="decimal"
+                  value={formCostCup}
+                  onChange={(e) => setFormCostCup(e.target.value)}
+                  placeholder="obligatorio"
+                  className="tl-input mt-1"
+                  required
+                />
+                <p className="mt-1 text-[11px] leading-snug text-tl-muted">
+                  Coste real por unidad al proveedor. La ganancia de la tienda por unidad es PVP − este importe (se
+                  refleja en Economía y en el dashboard).
+                </p>
+                {previewUnitGainCents != null ? (
+                  <p className="mt-2 text-sm font-semibold text-tl-success">
+                    Ganancia por unidad (estimada): {formatCup(previewUnitGainCents)}
+                  </p>
+                ) : null}
               </div>
               <div className="grid gap-2 sm:grid-cols-2">
                 <div>
@@ -661,6 +878,28 @@ export default function InventoryPage() {
             skeletonRows={6}
           />
         </section>
+
+        <section className="space-y-3 border-t border-tl-line-subtle pt-8">
+          <div>
+            <h2 className="text-lg font-semibold text-tl-ink">Productos archivados</h2>
+            <p className="mt-1 max-w-2xl text-sm text-tl-muted">
+              No se borran las ventas ni el historial: siguen enlazadas a esta fila. El SKU se renombra para liberar el
+              código. Desde aquí puedes restaurar el producto o seguir editándolo antes de reactivarlo.
+            </p>
+          </div>
+          <DataTable
+            columns={deletedColumns}
+            data={deletedProducts}
+            keyExtractor={(row) => row.id}
+            searchable
+            searchPlaceholder="Buscar archivados por nombre o SKU…"
+            searchKeys={["sku", "name"]}
+            emptyMessage="No hay productos archivados"
+            maxHeight="min(360px, 45vh)"
+            loading={loading}
+            skeletonRows={5}
+          />
+        </section>
       </div>
 
       {editOpen && (
@@ -689,6 +928,12 @@ export default function InventoryPage() {
               </button>
             </div>
             <form onSubmit={onSaveEdit} className="mt-4 space-y-3">
+              {editWasDeleted ? (
+                <p className="rounded-lg border border-tl-warning/25 bg-tl-warning-subtle px-3 py-2 text-xs text-tl-warning">
+                  Este producto está archivado: no aparece en caja. Las ventas pasadas se conservan. Puedes restaurarlo
+                  desde la tabla de archivados o con el botón de abajo.
+                </p>
+              ) : null}
               <div>
                 <label className="text-xs text-tl-muted" htmlFor="ed-sku">
                   SKU
@@ -740,6 +985,19 @@ export default function InventoryPage() {
                     className="tl-input mt-1"
                   />
                 </div>
+              </div>
+              <div>
+                <label className="text-xs text-tl-muted" htmlFor="ed-cost">
+                  Precio compra al proveedor (CUP / unidad)
+                </label>
+                <input
+                  id="ed-cost"
+                  inputMode="decimal"
+                  value={eCostCup}
+                  onChange={(e) => setECostCup(e.target.value)}
+                  placeholder="vacío = sin coste en márgenes"
+                  className="tl-input mt-1"
+                />
               </div>
               <div className="grid gap-2 sm:grid-cols-2">
                 <div>
@@ -823,6 +1081,32 @@ export default function InventoryPage() {
                 <button type="submit" disabled={editBusy} className="tl-btn-primary flex-1">
                   {editBusy ? "Guardando..." : "Guardar cambios"}
                 </button>
+                {editWasDeleted && editId ? (
+                  <button
+                    type="button"
+                    disabled={editBusy}
+                    className="tl-btn tl-btn-secondary flex-1"
+                    onClick={async () => {
+                      setEditBusy(true);
+                      setEditMsg(null);
+                      const res = await fetch(`/api/products/${encodeURIComponent(editId)}`, {
+                        method: "PATCH",
+                        credentials: "include",
+                        headers: { "Content-Type": "application/json" },
+                        body: JSON.stringify({ restore: true }),
+                      });
+                      setEditBusy(false);
+                      if (!res.ok) {
+                        setEditMsg("No se pudo restaurar.");
+                        return;
+                      }
+                      setEditOpen(false);
+                      void loadProducts();
+                    }}
+                  >
+                    Restaurar (quitar archivo)
+                  </button>
+                ) : null}
                 <button
                   type="button"
                   className="tl-btn tl-btn-secondary flex-1"

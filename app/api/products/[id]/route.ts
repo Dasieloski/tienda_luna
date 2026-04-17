@@ -17,6 +17,8 @@ const patchSchema = z
     stockQty: z.number().int().nonnegative().optional(),
     lowStockAt: z.number().int().nonnegative().optional(),
     active: z.boolean().optional(),
+    /** Solo para restaurar producto archivado (admin). */
+    restore: z.literal(true).optional(),
   })
   .refine((d) => Object.keys(d).length > 0, { message: "EMPTY" });
 
@@ -51,10 +53,13 @@ export async function PATCH(request: Request, ctx: RouteCtx) {
     data.supplierName = data.supplierName?.trim() || null;
   }
 
+  const restoring = data.restore === true && existing.deletedAt != null;
+
   try {
     const product = await prisma.product.update({
       where: { id },
       data: {
+        ...(restoring ? { deletedAt: null } : {}),
         ...(data.sku !== undefined ? { sku: data.sku } : {}),
         ...(data.name !== undefined ? { name: data.name } : {}),
         ...(data.priceCents !== undefined ? { priceCents: data.priceCents } : {}),
@@ -82,5 +87,53 @@ export async function PATCH(request: Request, ctx: RouteCtx) {
       );
     }
     return NextResponse.json({ error: "DUPLICATE_SKU_OR_DB" }, { status: 409 });
+  }
+}
+
+/** Borrado lógico: conserva fila y relaciones con ventas; libera SKU para nuevos productos. */
+export async function DELETE(request: Request, ctx: RouteCtx) {
+  const session = await getSessionFromRequest(request);
+  if (!session || !requireAdmin(session)) {
+    return NextResponse.json({ error: "FORBIDDEN" }, { status: 403 });
+  }
+
+  const { id } = await ctx.params;
+  if (!id) {
+    return NextResponse.json({ error: "INVALID_ID" }, { status: 400 });
+  }
+
+  const existing = await prisma.product.findFirst({
+    where: { id, storeId: session.storeId },
+  });
+  if (!existing) {
+    return NextResponse.json({ error: "NOT_FOUND" }, { status: 404 });
+  }
+  if (existing.deletedAt) {
+    return NextResponse.json({ ok: true, meta: { alreadyDeleted: true } });
+  }
+
+  const skuArchived = `__arch__${existing.id.slice(-12)}__${existing.sku}`.slice(0, 240);
+
+  try {
+    await prisma.product.update({
+      where: { id },
+      data: {
+        deletedAt: new Date(),
+        active: false,
+        sku: skuArchived,
+      },
+    });
+    return NextResponse.json({ ok: true });
+  } catch (e) {
+    if (isMissingDbColumnError(e)) {
+      return NextResponse.json(
+        {
+          error: "DATABASE_SCHEMA_MISMATCH",
+          hint: "Añade la columna deletedAt en Product (npx prisma db push).",
+        },
+        { status: 503 },
+      );
+    }
+    return NextResponse.json({ error: "DELETE_FAILED" }, { status: 500 });
   }
 }

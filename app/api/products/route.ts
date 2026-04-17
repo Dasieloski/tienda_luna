@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { getSessionFromRequest, requireAdmin } from "@/lib/auth";
 import { loadCatalogProducts } from "@/lib/catalog-products";
+import { allocateProductSku } from "@/lib/product-sku";
 import { prisma } from "@/lib/db";
 
 async function hasProductColumn(columnName: string): Promise<boolean> {
@@ -31,25 +32,34 @@ export async function GET(request: Request) {
     return NextResponse.json({ error: "FORBIDDEN" }, { status: 403 });
   }
 
+  const url = new URL(request.url);
+  const includeDeleted =
+    session.typ === "user" &&
+    session.role === "ADMIN" &&
+    (url.searchParams.get("includeDeleted") === "1" ||
+      url.searchParams.get("includeDeleted")?.toLowerCase() === "true");
+
   /**
-   * Siempre catálogo completo (activos + inactivos) con el campo `active`.
-   * Así coincide APK (JWT o token de dispositivo), Postman con Bearer de usuario y sync.
-   * En venta / POS hay que filtrar en cliente solo `active == true`.
+   * Catálogo con activos + inactivos (`active`). Los eliminados (`deletedAt`) solo en admin con ?includeDeleted=1.
+   * Dispositivos/APK: sin eliminados; en venta filtrar `active && !deletedAt` en cliente.
    */
   const products = await loadCatalogProducts(prisma, session.storeId, {
     includeInactive: true,
+    includeDeleted,
   });
   return NextResponse.json({ products });
 }
 
 const createSchema = z.object({
-  sku: z.string().min(1),
+  /** Opcional: si falta o va vacío, el servidor genera un SKU único (AUTO-…). */
+  sku: z.string().max(240).optional().nullable(),
   name: z.string().min(1),
   priceCents: z.number().int().nonnegative(),
   priceUsdCents: z.number().int().nonnegative().default(0),
   unitsPerBox: z.number().int().positive().default(1),
   wholesaleCupCents: z.number().int().nonnegative().optional().nullable(),
-  costCents: z.number().int().nonnegative().optional(),
+  /** Precio de compra al proveedor (CUP, céntimos por unidad). Obligatorio en alta. */
+  costCents: z.number().int().nonnegative(),
   supplierName: z.string().max(120).optional().nullable(),
   stockQty: z.number().int().nonnegative().default(0),
   lowStockAt: z.number().int().nonnegative().optional(),
@@ -67,13 +77,16 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "INVALID_BODY" }, { status: 400 });
   }
 
+  const skuTrim = parsed.data.sku?.trim() ?? "";
+  let sku = skuTrim.length > 0 ? skuTrim : await allocateProductSku(prisma, session.storeId);
+
   try {
     const hasUsd = await hasProductColumn("priceUsdCents");
     if (hasUsd) {
       const p = await prisma.product.create({
         data: {
           storeId: session.storeId,
-          sku: parsed.data.sku,
+          sku,
           name: parsed.data.name,
           priceCents: parsed.data.priceCents,
           priceUsdCents: parsed.data.priceUsdCents,
@@ -120,10 +133,10 @@ export async function POST(request: Request) {
       )
       VALUES (
         ${session.storeId},
-        ${parsed.data.sku},
+        ${sku},
         ${parsed.data.name},
         ${parsed.data.priceCents},
-        ${parsed.data.costCents ?? null},
+        ${parsed.data.costCents},
         ${supplierName},
         ${parsed.data.stockQty},
         ${lowStockAt},

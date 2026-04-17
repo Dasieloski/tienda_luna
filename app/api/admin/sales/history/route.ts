@@ -49,6 +49,18 @@ export async function GET(request: Request) {
           OR: [
             { deviceId: { contains: q, mode: "insensitive" as const } },
             { soldBy: { contains: q, mode: "insensitive" as const } },
+            {
+              lines: {
+                some: {
+                  product: {
+                    OR: [
+                      { name: { contains: q, mode: "insensitive" as const } },
+                      { sku: { contains: q, mode: "insensitive" as const } },
+                    ],
+                  },
+                },
+              },
+            },
           ],
         }
       : {}),

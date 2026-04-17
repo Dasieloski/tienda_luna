@@ -4,7 +4,6 @@ import { Prisma } from "@prisma/client";
 type Db = PrismaClient | Prisma.TransactionClient;
 
 async function hasColumn(db: Db, columnName: string): Promise<boolean> {
-  // Evita ejecutar queries que fallen dentro de transacciones (25P02).
   const rows = await db.$queryRaw<{ ok: number }[]>`
     SELECT 1::int AS ok
     FROM information_schema.columns
@@ -17,13 +16,15 @@ async function hasColumn(db: Db, columnName: string): Promise<boolean> {
 }
 
 export type LoadCatalogOptions = {
-  /** Si es true, incluye productos con active=false (sync APK/dispositivo o panel con ?includeInactive=1). */
+  /** Si es true, incluye productos con active=false. */
   includeInactive?: boolean;
+  /** Solo admin: incluye filas con deletedAt (papelera de inventario). */
+  includeDeleted?: boolean;
 };
 
 /**
- * Lista productos de la tienda (por defecto solo activos salvo que se pida includeInactive).
- * Si Postgres aún no tiene las columnas nuevas del modelo, usa un SELECT compatible y rellena defaults.
+ * Lista productos de la tienda.
+ * Por defecto excluye borrados lógicos (deletedAt). Sin includeInactive, solo activos (POS).
  */
 export async function loadCatalogProducts(
   db: Db,
@@ -31,11 +32,18 @@ export async function loadCatalogProducts(
   opts?: LoadCatalogOptions,
 ): Promise<Product[]> {
   const activeOnly = opts?.includeInactive !== true;
+  const includeDeleted = opts?.includeDeleted === true;
 
   const hasUsd = await hasColumn(db, "priceUsdCents");
+  const hasDeletedAt = await hasColumn(db, "deletedAt");
+
   if (hasUsd) {
     return await db.product.findMany({
-      where: { storeId, ...(activeOnly ? { active: true } : {}) },
+      where: {
+        storeId,
+        ...(activeOnly ? { active: true } : {}),
+        ...(includeDeleted ? {} : hasDeletedAt ? { deletedAt: null } : {}),
+      },
       orderBy: { name: "asc" },
     });
   }
@@ -72,6 +80,11 @@ export async function loadCatalogProducts(
     FROM "Product"
     WHERE "storeId" = ${storeId}
     ${activeOnly ? Prisma.sql` AND active = true` : Prisma.empty}
+    ${
+      !includeDeleted && hasDeletedAt
+        ? Prisma.sql` AND "deletedAt" IS NULL`
+        : Prisma.empty
+    }
     ORDER BY name ASC
   `;
   return legacy.map(
@@ -80,6 +93,7 @@ export async function loadCatalogProducts(
       priceUsdCents: 0,
       unitsPerBox: 1,
       wholesaleCupCents: null,
+      deletedAt: null,
     }),
   );
 }

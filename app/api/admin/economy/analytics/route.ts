@@ -27,6 +27,28 @@ function pctChange(cur: number, prev: number): number | null {
   return ((cur - prev) / prev) * 100;
 }
 
+type MarginAggRow = {
+  revenue: bigint;
+  cost: bigint;
+  lines_with_cost: bigint;
+  lines_without_cost: bigint;
+};
+
+function marginSliceFromRow(row: MarginAggRow | undefined) {
+  const revenueCents = Number(row?.revenue ?? 0);
+  const estimatedCostCents = Number(row?.cost ?? 0);
+  const marginCents = revenueCents - estimatedCostCents;
+  const marginPct = revenueCents > 0 ? (marginCents / revenueCents) * 100 : null;
+  return {
+    revenueCents,
+    estimatedCostCents,
+    marginCents,
+    marginPct,
+    linesWithCost: Number(row?.lines_with_cost ?? 0),
+    linesWithoutCost: Number(row?.lines_without_cost ?? 0),
+  };
+}
+
 const DOW_ES = ["Lun", "Mar", "Mié", "Jue", "Vie", "Sáb", "Dom"];
 
 export async function GET(request: Request) {
@@ -75,6 +97,8 @@ export async function GET(request: Request) {
           sumPrevMonth,
           dailyAgg,
           marginRow,
+          marginTodayRow,
+          marginMonthRow,
           paymentMix,
           topDevices,
           hourAgg,
@@ -130,9 +154,7 @@ export async function GET(request: Request) {
             GROUP BY 1
             ORDER BY 1 ASC
           `,
-          prisma.$queryRaw<
-            { revenue: bigint; cost: bigint; lines_with_cost: bigint; lines_without_cost: bigint }[]
-          >`
+          prisma.$queryRaw<MarginAggRow[]>`
             SELECT
               COALESCE(SUM(sl."subtotalCents"), 0)::bigint AS revenue,
               COALESCE(SUM(COALESCE(p."costCents", 0) * sl."quantity"), 0)::bigint AS cost,
@@ -144,6 +166,34 @@ export async function GET(request: Request) {
             WHERE s."storeId" = ${storeId}
               AND s."status" = 'COMPLETED'
               AND s."completedAt" >= ${from30}
+          `,
+          prisma.$queryRaw<MarginAggRow[]>`
+            SELECT
+              COALESCE(SUM(sl."subtotalCents"), 0)::bigint AS revenue,
+              COALESCE(SUM(COALESCE(p."costCents", 0) * sl."quantity"), 0)::bigint AS cost,
+              COALESCE(SUM(CASE WHEN p."costCents" IS NOT NULL THEN 1 ELSE 0 END), 0)::bigint AS lines_with_cost,
+              COALESCE(SUM(CASE WHEN p."costCents" IS NULL THEN 1 ELSE 0 END), 0)::bigint AS lines_without_cost
+            FROM "SaleLine" sl
+            INNER JOIN "Sale" s ON s."id" = sl."saleId"
+            INNER JOIN "Product" p ON p."id" = sl."productId"
+            WHERE s."storeId" = ${storeId}
+              AND s."status" = 'COMPLETED'
+              AND s."completedAt" >= ${todayStart}
+              AND s."completedAt" < ${todayEnd}
+          `,
+          prisma.$queryRaw<MarginAggRow[]>`
+            SELECT
+              COALESCE(SUM(sl."subtotalCents"), 0)::bigint AS revenue,
+              COALESCE(SUM(COALESCE(p."costCents", 0) * sl."quantity"), 0)::bigint AS cost,
+              COALESCE(SUM(CASE WHEN p."costCents" IS NOT NULL THEN 1 ELSE 0 END), 0)::bigint AS lines_with_cost,
+              COALESCE(SUM(CASE WHEN p."costCents" IS NULL THEN 1 ELSE 0 END), 0)::bigint AS lines_without_cost
+            FROM "SaleLine" sl
+            INNER JOIN "Sale" s ON s."id" = sl."saleId"
+            INNER JOIN "Product" p ON p."id" = sl."productId"
+            WHERE s."storeId" = ${storeId}
+              AND s."status" = 'COMPLETED'
+              AND s."completedAt" >= ${curMonthStart}
+              AND s."completedAt" <= ${curMonthEnd}
           `,
           prisma.$queryRaw<{ method: string; revenue: bigint; cnt: bigint }[]>`
             SELECT COALESCE(NULLIF(trim(e.payload->>'paymentMethod'), ''), '(sin método)') AS method,
@@ -256,10 +306,9 @@ export async function GET(request: Request) {
         const trendShortVsLongPct = pctChange(avgDaily7, avgDaily30);
 
         const mRow = marginRow[0];
-        const marginRevenue = Number(mRow?.revenue ?? 0);
-        const marginCost = Number(mRow?.cost ?? 0);
-        const marginCents = marginRevenue - marginCost;
-        const marginPct = marginRevenue > 0 ? (marginCents / marginRevenue) * 100 : null;
+        const margin30 = marginSliceFromRow(mRow);
+        const marginToday = marginSliceFromRow(marginTodayRow[0]);
+        const marginMonth = marginSliceFromRow(marginMonthRow[0]);
 
         const totalPayMix = paymentMix.reduce((a, r) => a + Number(r.revenue), 0);
         const paymentMixPct = paymentMix.map((r) => {
@@ -354,13 +403,23 @@ export async function GET(request: Request) {
           },
           marginFromCost: {
             window: "last30DaysSaleLines",
-            revenueCents: marginRevenue,
-            estimatedCostCents: marginCost,
-            marginCents,
-            marginPct,
-            linesWithCost: Number(mRow?.lines_with_cost ?? 0),
-            linesWithoutCost: Number(mRow?.lines_without_cost ?? 0),
+            revenueCents: margin30.revenueCents,
+            estimatedCostCents: margin30.estimatedCostCents,
+            marginCents: margin30.marginCents,
+            marginPct: margin30.marginPct,
+            linesWithCost: margin30.linesWithCost,
+            linesWithoutCost: margin30.linesWithoutCost,
             note: "Solo se usa el costo guardado en cada producto; si falta, esa línea no suma al coste estimado.",
+          },
+          marginTodayFromCost: {
+            window: "todayUtcSaleLines",
+            ...marginToday,
+            note: "Día calendario en UTC del servidor (misma convención que el resto de analytics).",
+          },
+          marginMonthFromCost: {
+            window: "currentCalendarMonthUtcSaleLines",
+            ...marginMonth,
+            note: "Mes calendario en curso (UTC), mismas reglas de coste que el margen a 30 días.",
           },
           paymentMixLast30: paymentMixPct,
           devicesLast30: devicesRanked,

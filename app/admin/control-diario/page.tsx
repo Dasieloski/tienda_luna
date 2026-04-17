@@ -1,7 +1,18 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { Banknote, Calendar, ClipboardList, CreditCard, DollarSign, Download, FileDown, PackageSearch, RefreshCw } from "lucide-react";
+import {
+  Banknote,
+  Calendar,
+  ClipboardList,
+  CreditCard,
+  DollarSign,
+  Download,
+  FileDown,
+  PackageSearch,
+  RefreshCw,
+  TrendingUp,
+} from "lucide-react";
 import { AdminShell } from "@/components/admin/admin-shell";
 import { formatCup } from "@/lib/money";
 import { CupUsdMoney } from "@/components/admin/cup-usd-money";
@@ -21,6 +32,16 @@ type DailyRow = {
   usdCents: number;
 };
 
+type ProfitDay = {
+  soldRevenueCents: number;
+  supplierCostCents: number;
+  marginCents: number;
+  marginPct: number | null;
+  salesCount: number;
+  linesWithCost: number;
+  linesWithoutCost: number;
+};
+
 type DailyReportResponse = {
   meta: {
     dbAvailable: boolean;
@@ -28,6 +49,7 @@ type DailyReportResponse = {
   };
   date: string | null;
   rows: DailyRow[];
+  profitDay?: ProfitDay | null;
 };
 
 function toInputDate(date: Date) {
@@ -156,6 +178,7 @@ function DailyControlSalesTable({
 export default function DailyControlPage() {
   const [date, setDate] = useState(() => toInputDate(new Date()));
   const [rows, setRows] = useState<DailyRow[]>([]);
+  const [profitDay, setProfitDay] = useState<ProfitDay | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [q, setQ] = useState("");
@@ -165,6 +188,7 @@ export default function DailyControlPage() {
   const load = useCallback(async () => {
     setLoading(true);
     setError(null);
+    setProfitDay(null);
     try {
       const params = new URLSearchParams();
       params.set("date", date);
@@ -178,6 +202,7 @@ export default function DailyControlPage() {
         return;
       }
       setRows(json.rows ?? []);
+      setProfitDay(json.profitDay ?? null);
     } catch (e) {
       setError(e instanceof Error ? e.message : "Error al cargar el control diario.");
     } finally {
@@ -298,6 +323,12 @@ export default function DailyControlPage() {
             Control diario · {new Date(date).toLocaleDateString("es-ES")}
           </p>
           <p className="mt-1 text-sm text-tl-muted">Tabla de ventas por producto y forma de pago.</p>
+          {profitDay && !loading ? (
+            <p className="mt-2 text-sm font-semibold text-tl-ink">
+              Ganancia neta del día (ventas cerradas, PVP − proveedor): {formatCup(profitDay.marginCents)} ·{" "}
+              {profitDay.salesCount} tickets
+            </p>
+          ) : null}
         </div>
 
         {error && (
@@ -308,6 +339,59 @@ export default function DailyControlPage() {
 
         {/* Cards / KPIs */}
         <section className="tl-no-print">
+          {profitDay && !error ? (
+            <div className="relative mb-6 overflow-hidden rounded-2xl border-2 border-tl-success/45 bg-gradient-to-br from-tl-success-subtle via-tl-canvas-inset to-tl-canvas p-6 shadow-lg ring-1 ring-tl-success/30 sm:p-7">
+              <div
+                className="pointer-events-none absolute -right-16 -top-20 h-48 w-48 rounded-full bg-tl-success/20 blur-3xl"
+                aria-hidden
+              />
+              <div className="relative flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+                <div className="flex items-start gap-3">
+                  <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-tl-success/25 text-tl-success">
+                    <TrendingUp className="h-6 w-6" aria-hidden />
+                  </div>
+                  <div>
+                    <p className="text-xs font-bold uppercase tracking-[0.18em] text-tl-success">
+                      Ganancia neta del día
+                    </p>
+                    <p className="mt-1 text-sm text-tl-muted">
+                      Ventas cerradas en la fecha del control. Lo vendido en líneas menos el coste de proveedor
+                      registrado en catálogo (misma regla que Economía).
+                    </p>
+                    <div className="mt-3">
+                      <CupUsdMoney cents={profitDay.marginCents} className="!text-2xl !font-bold sm:!text-4xl" />
+                    </div>
+                  </div>
+                </div>
+                <div className="grid min-w-0 gap-3 text-sm sm:grid-cols-2 sm:text-right">
+                  <div className="rounded-xl border border-tl-line-subtle bg-tl-canvas/80 px-3 py-2 sm:text-left">
+                    <p className="text-[10px] font-semibold uppercase tracking-wide text-tl-muted">Vendido (líneas)</p>
+                    <CupUsdMoney cents={profitDay.soldRevenueCents} compact />
+                  </div>
+                  <div className="rounded-xl border border-tl-line-subtle bg-tl-canvas/80 px-3 py-2 sm:text-left">
+                    <p className="text-[10px] font-semibold uppercase tracking-wide text-tl-muted">A proveedor</p>
+                    <CupUsdMoney cents={profitDay.supplierCostCents} compact />
+                  </div>
+                  <div className="rounded-xl border border-tl-line-subtle bg-tl-canvas/80 px-3 py-2 sm:col-span-2 sm:text-left">
+                    <p className="text-[10px] font-semibold uppercase tracking-wide text-tl-muted">
+                      Margen sobre venta · tickets
+                    </p>
+                    <p className="text-base font-bold tabular-nums text-tl-ink">
+                      {profitDay.marginPct != null ? `${profitDay.marginPct.toFixed(1)} %` : "—"} ·{" "}
+                      <span className="font-medium text-tl-muted">
+                        {profitDay.salesCount.toLocaleString("es-ES")} ventas
+                      </span>
+                    </p>
+                    <p className="mt-1 text-[11px] text-tl-muted">
+                      Líneas con coste: {profitDay.linesWithCost.toLocaleString("es-ES")} · sin coste en catálogo:{" "}
+                      {profitDay.linesWithoutCost.toLocaleString("es-ES")}
+                    </p>
+                  </div>
+                </div>
+              </div>
+            </div>
+          ) : null}
+
           <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
             <KpiCard
               label="Caja CUP (total)"

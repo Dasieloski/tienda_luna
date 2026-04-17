@@ -89,6 +89,8 @@ model Product {
   stockQty    Int      @default(0)
   lowStockAt  Int      @default(5)
   active      Boolean  @default(true)
+  /// Borrado lógico: el registro se conserva para historial y líneas de venta.
+  deletedAt   DateTime?
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
@@ -96,6 +98,7 @@ model Product {
 
   @@unique([storeId, sku])
   @@index([storeId])
+  @@index([storeId, deletedAt])
 }
 
 model Customer {

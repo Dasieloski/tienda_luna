@@ -185,10 +185,10 @@ export function AdminDashboard() {
   const topSaleRef = useRef<string | null>(null);
   const [highlightSale, setHighlightSale] = useState(false);
 
-  const [formSku, setFormSku] = useState("");
   const [formName, setFormName] = useState("");
   const [formPriceCup, setFormPriceCup] = useState("");
   const [formPriceUsd, setFormPriceUsd] = useState("");
+  const [formCostCup, setFormCostCup] = useState("");
   const [formUnitsBox, setFormUnitsBox] = useState("1");
   const [formWholesaleCup, setFormWholesaleCup] = useState("");
   const [formSupplier, setFormSupplier] = useState("");
@@ -276,6 +276,8 @@ export function AdminDashboard() {
       wholesaleCupCents = w;
     }
     const unitsPerBox = Math.max(1, parseInt(formUnitsBox, 10) || 1);
+    const costParsed =
+      formCostCup.trim() === "" ? NaN : Math.round(parseFloat(formCostCup.replace(",", ".")) * 100);
     if (Number.isNaN(priceCents) || priceCents < 0) {
       setFormMsg("Precio en CUP no válido.");
       setFormBusy(false);
@@ -286,17 +288,22 @@ export function AdminDashboard() {
       setFormBusy(false);
       return;
     }
+    if (formCostCup.trim() === "" || Number.isNaN(costParsed) || costParsed < 0) {
+      setFormMsg("Precio de compra al proveedor obligatorio (CUP / unidad).");
+      setFormBusy(false);
+      return;
+    }
     const res = await fetch("/api/products", {
       method: "POST",
       credentials: "include",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        sku: formSku.trim(),
         name: formName.trim(),
         priceCents,
         priceUsdCents: usdParsed,
         unitsPerBox,
         wholesaleCupCents,
+        costCents: costParsed,
         supplierName: formSupplier.trim() || null,
         stockQty: parseInt(formStock, 10) || 0,
         lowStockAt: parseInt(formLow, 10) || 5,
@@ -304,14 +311,19 @@ export function AdminDashboard() {
     });
     setFormBusy(false);
     if (!res.ok) {
-      setFormMsg("No se pudo crear (SKU duplicado o error de servidor).");
+      setFormMsg("No se pudo crear (revisa datos y precio de proveedor).");
       return;
     }
-    setFormMsg("Producto creado correctamente.");
-    setFormSku("");
+    const created = (await res.json()) as { product?: { sku?: string } };
+    setFormMsg(
+      created.product?.sku
+        ? `Producto creado. SKU: ${created.product.sku}`
+        : "Producto creado correctamente.",
+    );
     setFormName("");
     setFormPriceCup("");
     setFormPriceUsd("");
+    setFormCostCup("");
     setFormUnitsBox("1");
     setFormWholesaleCup("");
     setFormSupplier("");
@@ -423,6 +435,32 @@ export function AdminDashboard() {
             </div>
           </div>
 
+          {dbOk ? (
+            <div className="relative overflow-hidden rounded-2xl border-2 border-emerald-400/45 bg-gradient-to-br from-emerald-500/15 via-zinc-900/90 to-zinc-950 p-6 ring-1 ring-emerald-400/25 sm:p-8">
+              <div
+                className="pointer-events-none absolute -right-24 -top-28 h-64 w-64 rounded-full bg-emerald-500/20 blur-3xl"
+                aria-hidden
+              />
+              <p className="relative text-[11px] font-bold uppercase tracking-[0.2em] text-emerald-200/90">
+                Ganancia de la tienda (~30 días)
+              </p>
+              <p className="relative mt-2 max-w-2xl text-xs text-zinc-400">
+                Ingresos de ventas cerradas menos coste de proveedor según el precio de compra en catálogo (PVP −
+                proveedor).
+              </p>
+              <div className="relative mt-4 text-3xl font-bold tracking-tight text-white sm:text-4xl">
+                <CupUsdMoney cents={data.level2.margenAprox30d} />
+              </div>
+              <Link
+                href="/admin/economia"
+                className="relative mt-4 inline-flex items-center gap-1 text-sm font-medium text-emerald-300 underline-offset-4 hover:text-emerald-200 hover:underline"
+              >
+                Ver desglose en Economía
+                <ChevronRight className="h-4 w-4" aria-hidden />
+              </Link>
+            </div>
+          ) : null}
+
           <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
             <Kpi label="Ventas hoy" value={String(data.level1.ventasHoy)} accent="violet" />
             <Kpi
@@ -461,7 +499,6 @@ export function AdminDashboard() {
               value={<CupUsdMoney cents={data.level1.ingresosTotalesCents} />}
             />
             <Kpi label="Eventos fraude" value={String(data.level1.eventosFraudulentos)} accent="amber" />
-            <Kpi label="Margen aprox. 30d" value={<CupUsdMoney cents={data.level2.margenAprox30d} />} />
             <Kpi label="Rotación inventario" value={data.level2.rotacionInventario30d.toFixed(2)} />
           </div>
 
@@ -653,18 +690,10 @@ export function AdminDashboard() {
                 Nuevo producto
               </h2>
               <form onSubmit={onCreateProduct} className="mt-4 space-y-3">
-                <div>
-                  <label className="text-xs text-zinc-400" htmlFor="np-sku">
-                    SKU
-                  </label>
-                  <input
-                    id="np-sku"
-                    value={formSku}
-                    onChange={(e) => setFormSku(e.target.value)}
-                    className="mt-1 w-full rounded-xl border border-white/10 bg-black/30 px-3 py-2 text-sm text-white focus:border-violet-500 focus:outline-none focus:ring-2 focus:ring-violet-500/30"
-                    required
-                  />
-                </div>
+                <p className="text-[11px] leading-snug text-zinc-500">
+                  El SKU se genera solo al guardar. Debes indicar el precio de compra al proveedor para registrar la
+                  ganancia de la tienda en Economía.
+                </p>
                 <div>
                   <label className="text-xs text-zinc-400" htmlFor="np-name">
                     Nombre
@@ -705,6 +734,20 @@ export function AdminDashboard() {
                       className="mt-1 w-full rounded-xl border border-white/10 bg-black/30 px-3 py-2 text-sm text-white focus:border-violet-500 focus:outline-none focus:ring-2 focus:ring-violet-500/30"
                     />
                   </div>
+                </div>
+                <div>
+                  <label className="text-xs text-zinc-400" htmlFor="np-cost">
+                    Precio compra proveedor (CUP / unidad)
+                  </label>
+                  <input
+                    id="np-cost"
+                    inputMode="decimal"
+                    value={formCostCup}
+                    onChange={(e) => setFormCostCup(e.target.value)}
+                    placeholder="obligatorio"
+                    className="mt-1 w-full rounded-xl border border-white/10 bg-black/30 px-3 py-2 text-sm text-white focus:border-emerald-500 focus:outline-none focus:ring-2 focus:ring-emerald-500/30"
+                    required
+                  />
                 </div>
                 <div className="grid grid-cols-2 gap-2">
                   <div>

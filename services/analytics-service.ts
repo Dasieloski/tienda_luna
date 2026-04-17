@@ -247,8 +247,7 @@ async function computeOverviewFromDb(storeId: string, now: Date) {
       cogs += (costById.get(l.productId) ?? 0) * l.quantity;
     }
   }
-  const revenue30 =
-    sales30d.reduce((a, s) => a + s.totalCents, 0) || 1;
+  const revenue30 = sales30d.reduce((a, s) => a + s.totalCents, 0);
   const inventoryValue = stockRows.reduce(
     (a, p) => a + p.stockQty * (p.costCents ?? p.priceCents),
     0,

@@ -150,3 +150,36 @@ export async function queryDailyReportRows(
     return queryDailyReportLegacy(prisma, storeId, from, to);
   }
 }
+
+export type DailyMarginAggRow = {
+  revenue: bigint;
+  cost: bigint;
+  lines_with_cost: bigint;
+  lines_without_cost: bigint;
+};
+
+/**
+ * Ganancia del día (PVP en líneas − coste proveedor en catálogo), misma ventana temporal que el informe diario.
+ * Solo ventas COMPLETED (cifra “limpia” alineada con Economía).
+ */
+export async function queryDailyMarginProfit(
+  prisma: PrismaClient,
+  storeId: string,
+  from: Date,
+  to: Date,
+): Promise<DailyMarginAggRow[]> {
+  return prisma.$queryRaw<DailyMarginAggRow[]>`
+    SELECT
+      COALESCE(SUM(sl."subtotalCents"), 0)::bigint AS revenue,
+      COALESCE(SUM(COALESCE(p."costCents", 0) * sl."quantity"), 0)::bigint AS cost,
+      COALESCE(SUM(CASE WHEN p."costCents" IS NOT NULL THEN 1 ELSE 0 END), 0)::bigint AS lines_with_cost,
+      COALESCE(SUM(CASE WHEN p."costCents" IS NULL THEN 1 ELSE 0 END), 0)::bigint AS lines_without_cost
+    FROM "SaleLine" sl
+    INNER JOIN "Sale" s ON s."id" = sl."saleId"
+    INNER JOIN "Product" p ON p."id" = sl."productId"
+    WHERE s."storeId" = ${storeId}
+      AND s."status" = 'COMPLETED'
+      AND s."completedAt" >= ${from}
+      AND s."completedAt" < ${to}
+  `;
+}

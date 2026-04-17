@@ -3,7 +3,7 @@ import { z } from "zod";
 import { getSessionFromRequest, requireAdmin } from "@/lib/auth";
 import { prisma } from "@/lib/db";
 import { LOCAL_ADMIN_STORE_ID } from "@/lib/static-admin-auth";
-import { queryDailyReportRows } from "@/lib/daily-report-query";
+import { queryDailyMarginProfit, queryDailyReportRows } from "@/lib/daily-report-query";
 import { cacheGetOrSet } from "@/lib/ttl-cache";
 
 const querySchema = z.object({
@@ -56,6 +56,7 @@ export async function GET(request: Request) {
       meta: { dbAvailable: false },
       date: null,
       rows: [] as Row[],
+      profitDay: null,
     });
   }
 
@@ -83,13 +84,42 @@ export async function GET(request: Request) {
   const { from, to } = utcRangeForLocalDate(dateStr, offset);
 
   try {
-    const rows = await cacheGetOrSet(
-      `daily-report:${session.storeId}:${from.toISOString()}`,
+    const pack = await cacheGetOrSet(
+      `daily-report:${session.storeId}:${from.toISOString()}:v2`,
       30_000,
-      () => queryDailyReportRows(prisma, session.storeId, from, to),
+      async () => {
+        const [rows, marginRows, salesCount] = await Promise.all([
+          queryDailyReportRows(prisma, session.storeId, from, to),
+          queryDailyMarginProfit(prisma, session.storeId, from, to),
+          prisma.sale.count({
+            where: {
+              storeId: session.storeId,
+              status: "COMPLETED",
+              completedAt: { gte: from, lt: to },
+            },
+          }),
+        ]);
+        const mr = marginRows[0];
+        const soldRevenueCents = Number(mr?.revenue ?? 0);
+        const supplierCostCents = Number(mr?.cost ?? 0);
+        const marginCents = soldRevenueCents - supplierCostCents;
+        const marginPct = soldRevenueCents > 0 ? (marginCents / soldRevenueCents) * 100 : null;
+        return {
+          rows,
+          profitDay: {
+            soldRevenueCents,
+            supplierCostCents,
+            marginCents,
+            marginPct,
+            salesCount,
+            linesWithCost: Number(mr?.lines_with_cost ?? 0),
+            linesWithoutCost: Number(mr?.lines_without_cost ?? 0),
+          },
+        };
+      },
     );
 
-    const mapped: Row[] = rows.map((r) => ({
+    const mapped: Row[] = pack.rows.map((r) => ({
       productId: r.product_id,
       name: r.name,
       sku: r.sku,
@@ -105,6 +135,7 @@ export async function GET(request: Request) {
       meta: { dbAvailable: true as const },
       date: from.toISOString(),
       rows: mapped,
+      profitDay: pack.profitDay,
     });
   } catch (err) {
     console.error("[api/admin/daily-report]", err);
@@ -119,6 +150,7 @@ export async function GET(request: Request) {
         },
         date: from.toISOString(),
         rows: [] as Row[],
+        profitDay: null,
       },
       { status: 200 },
     );

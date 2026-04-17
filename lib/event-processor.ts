@@ -11,6 +11,7 @@ import {
 import { payloadHash } from "@/lib/hash";
 import { fulfillableQuantity } from "@/lib/stock-engine";
 import { loadCatalogProducts } from "@/lib/catalog-products";
+import { allocateProductSku } from "@/lib/product-sku";
 import { unitPriceCupCentsForSale } from "@/lib/pricing";
 import type { ClientSyncEvent } from "@/types/events";
 
@@ -488,9 +489,8 @@ export async function processBatch(
         }
 
         case "PRODUCT_CREATED": {
-          const sku = getPayloadString(ev.payload, "sku")?.trim();
           const name = getPayloadString(ev.payload, "name")?.trim();
-          if (!sku || !name) {
+          if (!name) {
             results.push(
               await record({
                 status: "REJECTED",
@@ -498,6 +498,10 @@ export async function processBatch(
               }),
             );
             break;
+          }
+          let sku = getPayloadString(ev.payload, "sku")?.trim() ?? "";
+          if (!sku) {
+            sku = await allocateProductSku(tx, params.storeId);
           }
           const priceCents = getPayloadIntNonneg(ev.payload, "priceCents");
           if (priceCents === undefined) {
@@ -521,6 +525,8 @@ export async function processBatch(
               : supplierRaw.trim() === ""
                 ? null
                 : supplierRaw.trim().slice(0, 120);
+
+          const costCentsPayload = getPayloadIntNonneg(ev.payload, "costCents");
 
           let wholesaleCupCents: number | null = null;
           if (Object.prototype.hasOwnProperty.call(ev.payload, "wholesaleCupCents")) {
@@ -563,6 +569,7 @@ export async function processBatch(
                     priceUsdCents,
                     unitsPerBox,
                     wholesaleCupCents,
+                    costCents: costCentsPayload ?? null,
                     supplierName,
                     stockQty,
                     lowStockAt,
@@ -627,6 +634,7 @@ export async function processBatch(
                     priceUsdCents: 0,
                     unitsPerBox: 1,
                     wholesaleCupCents: null,
+                    deletedAt: null,
                   };
                 })();
             productById.set(created.id, created);
