@@ -335,7 +335,6 @@ export default function SalesHistoryPage() {
                       <li key={l.id} className="flex items-start justify-between gap-3">
                         <div className="min-w-0">
                           <p className="truncate text-sm font-medium text-tl-ink">{l.productName}</p>
-                          <p className="text-xs font-mono text-tl-muted">{l.sku}</p>
                         </div>
                         <div className="shrink-0 text-right">
                           <p className="text-xs text-tl-muted">
