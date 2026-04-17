@@ -13,6 +13,7 @@ interface AdminShellProps {
 export function AdminShell({ children, title = "Dashboard" }: AdminShellProps) {
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
+  const [usdRateCup, setUsdRateCup] = useState<number | null>(null);
 
   useEffect(() => {
     const stored = localStorage.getItem("tl-sidebar-collapsed");
@@ -29,6 +30,29 @@ export function AdminShell({ children, title = "Dashboard" }: AdminShellProps) {
       window.dispatchEvent(new CustomEvent("tl-refresh"));
     }, 5000);
     return () => clearInterval(interval);
+  }, []);
+
+  // Load exchange rate once (and refresh on tl-refresh if missing)
+  useEffect(() => {
+    let cancelled = false;
+    async function loadRate() {
+      try {
+        const res = await fetch("/api/admin/exchange-rate", { credentials: "include" });
+        if (!res.ok) return;
+        const json = (await res.json()) as { usdRateCup?: number };
+        const r = Number(json.usdRateCup);
+        if (!Number.isFinite(r) || r <= 0) return;
+        if (cancelled) return;
+        setUsdRateCup(r);
+        (globalThis as unknown as { __TL_USD_RATE_CUP__?: number }).__TL_USD_RATE_CUP__ = r;
+      } catch {
+        // ignore
+      }
+    }
+    void loadRate();
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   return (
@@ -48,6 +72,12 @@ export function AdminShell({ children, title = "Dashboard" }: AdminShellProps) {
         <Topbar
           title={title}
           onMenuClick={() => setMobileSidebarOpen((prev) => !prev)}
+          usdRateCup={usdRateCup}
+          onUsdRateCupChange={(next) => {
+            setUsdRateCup(next);
+            (globalThis as unknown as { __TL_USD_RATE_CUP__?: number }).__TL_USD_RATE_CUP__ = next;
+            window.dispatchEvent(new CustomEvent("tl-refresh"));
+          }}
         />
         <main
           id="admin-main"

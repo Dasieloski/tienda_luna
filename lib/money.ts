@@ -1,4 +1,14 @@
-export const USD_RATE_CUP = Number(process.env.NEXT_PUBLIC_USD_RATE_CUP ?? "250");
+declare global {
+  // eslint-disable-next-line no-var
+  var __TL_USD_RATE_CUP__: number | undefined;
+}
+
+export function getUsdRateCup(): number {
+  const runtime = typeof globalThis !== "undefined" ? globalThis.__TL_USD_RATE_CUP__ : undefined;
+  const env = Number(process.env.NEXT_PUBLIC_USD_RATE_CUP ?? "250");
+  const r = runtime ?? env;
+  return Number.isFinite(r) && r > 0 ? r : 1;
+}
 
 export function formatCup(cents: number | undefined | null) {
   const value = (cents ?? 0) / 100;
@@ -11,7 +21,7 @@ export function formatCup(cents: number | undefined | null) {
 
 export function formatUsdFromCupCents(cents: number | undefined | null) {
   const cup = (cents ?? 0) / 100;
-  const rate = USD_RATE_CUP > 0 ? USD_RATE_CUP : 1;
+  const rate = getUsdRateCup();
   const usd = cup / rate;
   return new Intl.NumberFormat("en-US", {
     style: "currency",

@@ -33,6 +33,9 @@ model Store {
   /// Preferencias de widgets del dashboard (nivel 3)
   dashboardLayout Json?
 
+  /// Cambio CUP por 1 USD (ej. 520). Usado para mostrar equivalencias en UI.
+  usdRateCup Int? @default(250)
+
   users     User[]
   devices   Device[]
   products  Product[]
