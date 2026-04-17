@@ -31,17 +31,13 @@ export async function GET(request: Request) {
     return NextResponse.json({ error: "FORBIDDEN" }, { status: 403 });
   }
 
-  const url = new URL(request.url);
-  const includeInactiveParam =
-    url.searchParams.get("includeInactive") === "1" ||
-    url.searchParams.get("includeInactive")?.toLowerCase() === "true";
-  /** Dispositivos (APK) necesitan el catálogo completo con `active` para sincronizar y reactivar; el POS filtra en cliente. */
-  const wantInactive =
-    session.typ === "device" ||
-    (session.typ === "user" && includeInactiveParam);
-
+  /**
+   * Siempre catálogo completo (activos + inactivos) con el campo `active`.
+   * Así coincide APK (JWT o token de dispositivo), Postman con Bearer de usuario y sync.
+   * En venta / POS hay que filtrar en cliente solo `active == true`.
+   */
   const products = await loadCatalogProducts(prisma, session.storeId, {
-    includeInactive: wantInactive,
+    includeInactive: true,
   });
   return NextResponse.json({ products });
 }
