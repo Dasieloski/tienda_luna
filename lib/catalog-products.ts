@@ -17,12 +17,12 @@ async function hasColumn(db: Db, columnName: string): Promise<boolean> {
 }
 
 export type LoadCatalogOptions = {
-  /** Si es true, incluye productos con active=false (solo para panel admin / informes). */
+  /** Si es true, incluye productos con active=false (sync APK/dispositivo o panel con ?includeInactive=1). */
   includeInactive?: boolean;
 };
 
 /**
- * Lista productos de la tienda (por defecto solo activos: catálogo POS).
+ * Lista productos de la tienda (por defecto solo activos salvo que se pida includeInactive).
  * Si Postgres aún no tiene las columnas nuevas del modelo, usa un SELECT compatible y rellena defaults.
  */
 export async function loadCatalogProducts(

@@ -126,7 +126,10 @@ export function DataTable<T extends Record<string, unknown>>({
         </div>
       )}
 
-      <div className="hidden overflow-auto md:block" style={maxHeight ? { maxHeight } : undefined}>
+      <div
+        className="tl-table-desktop-wrap hidden overflow-auto md:block"
+        style={maxHeight ? { maxHeight } : undefined}
+      >
         <table className="tl-table min-w-[720px] w-full">
           <thead className={stickyHeader ? "sticky top-0 z-10" : undefined}>
             <tr>
@@ -214,7 +217,7 @@ export function DataTable<T extends Record<string, unknown>>({
         </table>
       </div>
 
-      <div className="divide-y divide-tl-line-subtle md:hidden">
+      <div className="tl-table-mobile-wrap divide-y divide-tl-line-subtle md:hidden">
         {loading ? (
           Array.from({ length: rows }).map((_, r) => (
             <div key={`mobile-sk-${r}`} className="space-y-3 px-4 py-4">

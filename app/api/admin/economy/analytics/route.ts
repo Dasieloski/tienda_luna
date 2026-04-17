@@ -319,8 +319,7 @@ export async function GET(request: Request) {
             dbAvailable: true as const,
             generatedAt: now.toISOString(),
             windowDays,
-            note:
-              "Agregados sobre la tabla Sale (status=COMPLETED) y, donde aplica, join con Event SALE_COMPLETED y Product.costCents. Zona horaria: timestamps tal como están almacenados (típicamente UTC).",
+            note: "Cifras basadas en ventas cerradas. Las fechas siguen el reloj del servidor.",
           },
           totals: {
             lastWindow: { revenueCents: revWin, saleCount: cntWin, days: windowDays },
@@ -351,8 +350,7 @@ export async function GET(request: Request) {
           },
           projection: {
             monthEndRevenueCents: projectionMonthEndCents,
-            method:
-              "Ingresos del mes en curso + (ingresos últimos 7 días / 7) × días restantes del mes (UTC). Extrapolación simple, no modelo predictivo.",
+            method: "Tendencia del mes según los últimos 7 días (orientativo).",
           },
           marginFromCost: {
             window: "last30DaysSaleLines",
@@ -362,8 +360,7 @@ export async function GET(request: Request) {
             marginPct,
             linesWithCost: Number(mRow?.lines_with_cost ?? 0),
             linesWithoutCost: Number(mRow?.lines_without_cost ?? 0),
-            note:
-              "Coste = costCents × quantity por línea cuando existe costCents en Product; si es null se trata como 0 en el coste estimado (el contador linesWithoutCost lista líneas sin costo).",
+            note: "Solo se usa el costo guardado en cada producto; si falta, esa línea no suma al coste estimado.",
           },
           paymentMixLast30: paymentMixPct,
           devicesLast30: devicesRanked,

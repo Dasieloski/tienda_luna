@@ -5,6 +5,7 @@ import { AdminShell } from "@/components/admin/admin-shell";
 import { DataTable, type Column } from "@/components/admin/data-table";
 import { cn } from "@/lib/utils";
 import { CupUsdMoney } from "@/components/admin/cup-usd-money";
+import { TablePriceCupCell } from "@/components/admin/table-price-cup-cell";
 
 type RecentSale = {
   id: string;
@@ -96,9 +97,7 @@ export default function SalesPage() {
       sortable: true,
       align: "right",
       width: "120px",
-      render: (row) => (
-        <CupUsdMoney cents={row.totalCents} compact />
-      ),
+      render: (row) => <TablePriceCupCell cupCents={row.totalCents} compact />,
     },
     {
       key: "paymentMethod",
@@ -117,7 +116,7 @@ export default function SalesPage() {
       width: "120px",
       render: (row) => (
         <span className="text-xs tabular-nums text-tl-ink">
-          {row.paidCents != null ? <CupUsdMoney cents={row.paidCents} compact /> : "—"}
+          {row.paidCents != null ? <TablePriceCupCell cupCents={row.paidCents} compact /> : "—"}
         </span>
       ),
     },
@@ -128,7 +127,7 @@ export default function SalesPage() {
       width: "120px",
       render: (row) => (
         <span className="text-xs tabular-nums text-tl-ink">
-          {row.changeCents != null ? <CupUsdMoney cents={row.changeCents} compact /> : "—"}
+          {row.changeCents != null ? <TablePriceCupCell cupCents={row.changeCents} compact /> : "—"}
         </span>
       ),
     },

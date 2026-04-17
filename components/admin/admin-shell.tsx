@@ -59,7 +59,7 @@ export function AdminShell({ children, title = "Dashboard" }: AdminShellProps) {
       />
       <div
         className={cn(
-          "flex min-w-0 flex-1 flex-col transition-all duration-300",
+          "tl-admin-main-column flex min-w-0 flex-1 flex-col transition-all duration-300",
           sidebarCollapsed ? "lg:ml-[72px]" : "lg:ml-[260px]",
         )}
       >

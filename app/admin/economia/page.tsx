@@ -14,6 +14,7 @@ import {
 } from "lucide-react";
 import { AdminShell } from "@/components/admin/admin-shell";
 import { CupUsdMoney } from "@/components/admin/cup-usd-money";
+import { TablePriceCupCell } from "@/components/admin/table-price-cup-cell";
 import { formatCup, formatUsdFromCupCents } from "@/lib/money";
 import { cn } from "@/lib/utils";
 
@@ -190,7 +191,7 @@ export default function EconomyPage() {
     const mar = analytics.marginFromCost;
     if (cmp?.momRevenuePct != null) {
       out.push(
-        `Mes en curso vs. mes anterior: ingresos ${cmp.momRevenuePct >= 0 ? "superiores" : "inferiores"} en ${Math.abs(cmp.momRevenuePct).toFixed(1)} % (solo ventas COMPLETED en base).`,
+        `Mes en curso vs. mes anterior: ingresos ${cmp.momRevenuePct >= 0 ? "superiores" : "inferiores"} en ${Math.abs(cmp.momRevenuePct).toFixed(1)} % (solo ventas cerradas).`,
       );
     }
     if (cmp?.trendShortVsLongPct != null && avg) {
@@ -200,16 +201,16 @@ export default function EconomyPage() {
     }
     if (peakH && peakH.revenueCents > 0) {
       out.push(
-        `En los últimos 30 días el mayor volumen de ingresos se concentra alrededor de las ${String(peakH.hour).padStart(2, "0")}:00 (hora del timestamp almacenado).`,
+        `En los últimos 30 días el mayor volumen de ingresos se concentra alrededor de las ${String(peakH.hour).padStart(2, "0")}:00.`,
       );
     }
     if (peakD && peakD.revenueCents > 0) {
-      out.push(`En el último año, el día ISO ${peakD.isoDow} (${peakD.label}) acumula más ingresos que el resto de la semana.`);
+      out.push(`En el último año, el ${peakD.label} acumula más ingresos que el resto de la semana.`);
     }
     if (pay.length > 0) {
       const top = pay[0]!;
       out.push(
-        `La forma de pago con mayor peso en ingresos (30 días) es “${top.method}” (${top.pctOfRevenue.toFixed(1)} % del total atribuible vía eventos SALE_COMPLETED).`,
+        `La forma de pago con mayor peso en ingresos (30 días) es “${top.method}” (${top.pctOfRevenue.toFixed(1)} % del total).`,
       );
     }
     if (dev.length > 0) {
@@ -268,10 +269,8 @@ export default function EconomyPage() {
           <div>
             <h1 className="tl-welcome-header">Economía de la tienda</h1>
             <p className="mt-2 max-w-3xl text-sm text-tl-muted">
-              Panel técnico basado en <strong className="text-tl-ink">Sale</strong> (ventas completadas),
-              enlaces a <strong className="text-tl-ink">Event</strong> tipo <code className="font-mono text-xs">SALE_COMPLETED</code> para
-              método de pago, y <strong className="text-tl-ink">Product.costCents</strong> para márgenes estimados. No se modelan gastos
-              operativos ni impuestos: cualquier indicador que no derive de esas tablas no aparece aquí.
+              Resumen de ingresos por día, método de pago y tendencias. Los importes en dólares son orientativos según el cambio configurado
+              en la tienda.
             </p>
           </div>
           <div className="flex flex-wrap items-center gap-2">
@@ -320,32 +319,30 @@ export default function EconomyPage() {
         <section className="space-y-3">
           <h2 className="text-lg font-semibold text-tl-ink">1. Caja del día seleccionado</h2>
           <p className="text-sm text-tl-muted">
-            Corresponde a ventas con <code className="font-mono text-xs">completedAt</code> dentro del día calendario elegido. Los importes
-            vienen de <code className="font-mono text-xs">Sale.totalCents</code> agrupados por método inferido del texto de pago en el evento
-            de cierre.
+            Ventas cerradas en la fecha del calendario. Los totales por método se agrupan según cómo quedó registrado el pago en caja.
           </p>
           <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
             <div className="tl-glass rounded-xl p-4">
               <p className="text-xs font-semibold uppercase tracking-wider text-tl-muted">Ventas (día)</p>
               <p className="mt-1 text-2xl font-bold tabular-nums text-tl-ink">{totals.ventas.toLocaleString("es-ES")}</p>
-              <p className="mt-2 text-xs text-tl-muted">Número de tickets con evento de cierre válido ese día.</p>
+              <p className="mt-2 text-xs text-tl-muted">Número de tickets registrados ese día.</p>
             </div>
             <div className="tl-glass rounded-xl p-4">
               <p className="text-xs font-semibold uppercase tracking-wider text-tl-muted">Ingreso bruto (día)</p>
               <div className="mt-1 text-xl font-bold text-tl-ink sm:text-2xl">
                 <CupUsdMoney cents={totals.totalCents} />
               </div>
-              <p className="mt-2 text-xs text-tl-muted">Suma de totales de venta; el USD en verde usa el cambio configurado en tienda.</p>
+              <p className="mt-2 text-xs text-tl-muted">Suma de lo vendido; el equivalente en USD usa el cambio de la tienda.</p>
             </div>
             <div className="tl-glass rounded-xl p-4">
               <p className="text-xs font-semibold uppercase tracking-wider text-tl-muted">Total en CUP (suma métodos)</p>
               <p className="mt-1 text-2xl font-bold tabular-nums text-tl-ink">{formatCup(cajaCup)}</p>
-              <p className="mt-2 text-xs text-tl-muted">Suma de buckets efectivo + transferencia + USD (cada uno en céntimos CUP almacenados).</p>
+              <p className="mt-2 text-xs text-tl-muted">Suma de efectivo, transferencias y ventas marcadas como dólares (todo en CUP).</p>
             </div>
             <div className="tl-glass rounded-xl p-4">
               <p className="text-xs font-semibold uppercase tracking-wider text-tl-muted">Equivalente USD (caja)</p>
               <p className="mt-1 text-2xl font-bold text-tl-success tabular-nums">{formatUsdFromCupCents(cajaCup)}</p>
-              <p className="mt-2 text-xs text-tl-muted">Mismo total anterior expresado en USD al cambio actual.</p>
+              <p className="mt-2 text-xs text-tl-muted">Mismo total expresado en dólares al cambio actual.</p>
             </div>
           </div>
 
@@ -377,7 +374,7 @@ export default function EconomyPage() {
                 <DollarSign className="h-5 w-5 text-tl-warning" aria-hidden />
               </div>
               <div>
-                <p className="text-xs font-semibold uppercase tracking-wider text-tl-muted">Ventas en USD (texto método)</p>
+                <p className="text-xs font-semibold uppercase tracking-wider text-tl-muted">Ventas en USD (registradas)</p>
                 <div className="text-lg font-bold text-tl-ink">
                   <CupUsdMoney cents={totals.usdCents} />
                 </div>
@@ -389,17 +386,17 @@ export default function EconomyPage() {
         {/* Analítica agregada */}
         {analytics?.meta?.dbAvailable && t && avg && (
           <section className="space-y-4">
-            <h2 className="text-lg font-semibold text-tl-ink">2. Ingresos y actividad (histórico en base de datos)</h2>
-            <p className="max-w-4xl text-sm text-tl-muted">{analytics.meta.note}</p>
+            <h2 className="text-lg font-semibold text-tl-ink">2. Ingresos y actividad</h2>
+            {analytics.meta.note ? (
+              <p className="max-w-4xl text-sm text-tl-muted">{analytics.meta.note}</p>
+            ) : null}
 
             <div className="grid gap-4 lg:grid-cols-3">
-              <InterpretBlock title="Ingreso diario total (hoy, UTC calendario servidor)">
+              <InterpretBlock title="Ingreso de hoy (servidor)">
                 <p>
                   <CupUsdMoney cents={t.today.revenueCents} /> en {t.today.saleCount} ventas.
                 </p>
-                <p className="text-tl-muted">
-                  Sirve para contrastar con el día elegido en la sección 1 (puede diferir si operas en otra zona horaria).
-                </p>
+                <p className="text-tl-muted">Puede no coincidir con el día que eliges arriba si la tienda está en otra zona horaria.</p>
               </InterpretBlock>
               <InterpretBlock title="Ingreso mensual total (mes calendario en curso)">
                 <p>
@@ -419,12 +416,12 @@ export default function EconomyPage() {
             <div className="grid gap-4 lg:grid-cols-3">
               <InterpretBlock title="Promedio de ingreso diario (últimos 30 días)">
                 <p>
-                  <CupUsdMoney cents={avg.dailyRevenueLast30Cents} /> por día calendario (ingreso total 30d ÷ 30).
+                  <CupUsdMoney cents={avg.dailyRevenueLast30Cents} /> de media por día (últimos 30 días).
                 </p>
               </InterpretBlock>
               <InterpretBlock title="Promedio de ingreso diario (últimos 7 días)">
                 <p>
-                  <CupUsdMoney cents={avg.dailyRevenueLast7Cents} /> por día (ingreso 7d ÷ 7).
+                  <CupUsdMoney cents={avg.dailyRevenueLast7Cents} /> de media por día (últimos 7 días).
                 </p>
               </InterpretBlock>
               <InterpretBlock title="Promedio de ingreso mensual (meses con datos recientes)">
@@ -445,7 +442,7 @@ export default function EconomyPage() {
                   )}
                   {fmtPct(cmp?.momRevenuePct)}
                 </p>
-                <p className="text-tl-muted">Comparación estricta mes en curso vs. mes anterior (misma fuente Sale).</p>
+                <p className="text-tl-muted">Comparación del mes en curso frente al mes anterior.</p>
               </InterpretBlock>
               <InterpretBlock title="Variación en número de ventas (mes vs. mes)">
                 <p className="text-lg font-semibold text-tl-ink">{fmtPct(cmp?.momSaleCountPct)}</p>
@@ -465,7 +462,9 @@ export default function EconomyPage() {
                 <p className="text-lg font-semibold text-tl-ink">
                   {proj?.monthEndRevenueCents != null ? <CupUsdMoney cents={proj.monthEndRevenueCents} /> : "—"}
                 </p>
-                <p className="text-xs text-tl-muted">{proj?.method}</p>
+                {proj?.method ? (
+                  <p className="text-xs text-tl-muted">Proyección simple según el ritmo de los últimos 7 días.</p>
+                ) : null}
               </InterpretBlock>
             </div>
 
@@ -493,8 +492,8 @@ export default function EconomyPage() {
                       <tr key={m.month}>
                         <td className="px-4 py-3 font-mono text-tl-ink">{m.month}</td>
                         <td className="px-4 py-3 text-right tabular-nums">{m.sales.toLocaleString("es-ES")}</td>
-                        <td className="px-4 py-3 text-right">
-                          <CupUsdMoney cents={m.revenueCents} compact />
+                        <td className="px-4 py-3 text-right align-top">
+                          <TablePriceCupCell cupCents={m.revenueCents} compact />
                         </td>
                       </tr>
                     ))
@@ -529,16 +528,18 @@ export default function EconomyPage() {
                     7 días: <CupUsdMoney cents={t.last7.ticketAvgCents} compact />
                   </li>
                 </ul>
-                <p className="text-tl-muted">
-                  Cada venta en base cuenta como una transacción; no hay identidad de cliente en el modelo actual.
-                </p>
+                <p className="text-tl-muted">Cada venta cuenta como una transacción.</p>
               </InterpretBlock>
             </div>
 
             {mar && mar.revenueCents > 0 && (
               <div className="tl-glass rounded-xl p-4">
-                <h3 className="text-sm font-semibold text-tl-ink">Margen bruto estimado (líneas de venta con costo en catálogo)</h3>
-                <p className="mt-1 text-xs text-tl-muted">{mar.note}</p>
+                <h3 className="text-sm font-semibold text-tl-ink">Margen bruto estimado</h3>
+                {mar.note ? (
+                  <p className="mt-1 text-xs text-tl-muted">
+                    Solo líneas con costo registrado en el producto; el resto no entra en el coste estimado.
+                  </p>
+                ) : null}
                 <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
                   <div>
                     <p className="text-xs text-tl-muted">Ingreso atribuible (30d)</p>
@@ -582,8 +583,8 @@ export default function EconomyPage() {
                       <tr key={p.method}>
                         <td className="px-4 py-2 font-mono text-xs text-tl-ink">{p.method}</td>
                         <td className="px-4 py-2 text-right tabular-nums">{p.pctOfRevenue.toFixed(1)} %</td>
-                        <td className="px-4 py-2 text-right">
-                          <CupUsdMoney cents={p.revenueCents} compact />
+                        <td className="px-4 py-2 text-right align-top">
+                          <TablePriceCupCell cupCents={p.revenueCents} compact />
                         </td>
                       </tr>
                     ))}
@@ -609,8 +610,8 @@ export default function EconomyPage() {
                           {d.deviceId}
                         </td>
                         <td className="px-4 py-2 text-right tabular-nums">{d.pctOfRevenue.toFixed(1)} %</td>
-                        <td className="px-4 py-2 text-right">
-                          <CupUsdMoney cents={d.revenueCents} compact />
+                        <td className="px-4 py-2 text-right align-top">
+                          <TablePriceCupCell cupCents={d.revenueCents} compact />
                         </td>
                       </tr>
                     ))}
@@ -622,7 +623,7 @@ export default function EconomyPage() {
             <div className="tl-glass overflow-x-auto rounded-xl">
               <table className="w-full min-w-[640px] text-left text-sm">
                 <caption className="border-b border-tl-line px-4 py-2 text-left text-xs font-semibold text-tl-ink">
-                  Distribución horaria de ingresos (últimos 30 días; importe en CUP por celda)
+                  Distribución horaria de ingresos (últimos 30 días, en CUP)
                 </caption>
                 <thead className="border-b border-tl-line bg-tl-canvas-inset text-xs uppercase text-tl-muted">
                   <tr>
@@ -655,8 +656,8 @@ export default function EconomyPage() {
               </table>
               {peakH && (
                 <p className="border-t border-tl-line px-4 py-2 text-xs text-tl-muted">
-                  Pico en la tabla: hora {String(peakH.hour).padStart(2, "0")}:00 con{" "}
-                  <CupUsdMoney cents={peakH.revenueCents} compact /> y {peakH.sales} ventas.
+                  Pico en la tabla: hora {String(peakH.hour).padStart(2, "0")}:00 con {formatCup(peakH.revenueCents)} (
+                  {formatUsdFromCupCents(peakH.revenueCents)}) y {peakH.sales} ventas.
                 </p>
               )}
             </div>
@@ -664,7 +665,7 @@ export default function EconomyPage() {
             <div className="tl-glass overflow-x-auto rounded-xl">
               <table className="w-full min-w-[520px] text-left text-sm">
                 <caption className="border-b border-tl-line px-4 py-2 text-left text-xs font-semibold text-tl-ink">
-                  Estacionalidad semanal (últimos 365 días, ISO día 1 = lunes)
+                  Estacionalidad semanal (últimos 365 días)
                 </caption>
                 <thead className="border-b border-tl-line bg-tl-canvas-inset text-xs uppercase text-tl-muted">
                   <tr>
@@ -685,8 +686,8 @@ export default function EconomyPage() {
                         ) : null}
                       </td>
                       <td className="px-4 py-2 text-right tabular-nums">{d.sales.toLocaleString("es-ES")}</td>
-                      <td className="px-4 py-2 text-right">
-                        <CupUsdMoney cents={d.revenueCents} compact />
+                      <td className="px-4 py-2 text-right align-top">
+                        <TablePriceCupCell cupCents={d.revenueCents} compact />
                       </td>
                     </tr>
                   ))}
@@ -696,7 +697,7 @@ export default function EconomyPage() {
 
             {conclusions.length > 0 && (
               <div className="tl-glass rounded-xl border border-tl-line-subtle p-4">
-                <h3 className="text-sm font-semibold text-tl-ink">Conclusiones automatizadas (solo hechos observados)</h3>
+                <h3 className="text-sm font-semibold text-tl-ink">Conclusiones</h3>
                 <ul className="mt-3 list-inside list-disc space-y-2 text-sm text-tl-ink-secondary">
                   {conclusions.map((c, i) => (
                     <li key={i}>{c}</li>
@@ -709,10 +710,9 @@ export default function EconomyPage() {
 
         {/* Detalle día: métodos exactos */}
         <section>
-          <h2 className="text-lg font-semibold text-tl-ink">3. Detalle por método exacto (día seleccionado)</h2>
+          <h2 className="text-lg font-semibold text-tl-ink">3. Detalle por método de pago (día seleccionado)</h2>
           <p className="mt-1 max-w-3xl text-sm text-tl-muted">
-            Cada fila es el literal de <code className="font-mono text-xs">paymentMethod</code> en el evento de cierre. Agrupa ingresos
-            reales sin reinterpretar el significado comercial del string.
+            Cada fila es el texto del método tal como lo registró la caja al cerrar la venta.
           </p>
 
           <div className="mt-3 overflow-x-auto tl-glass rounded-xl">
@@ -736,8 +736,8 @@ export default function EconomyPage() {
                     <tr key={b.method}>
                       <td className="px-4 py-3 text-sm text-tl-ink">{b.method || "Sin especificar"}</td>
                       <td className="px-4 py-3 text-sm tabular-nums text-tl-ink">{b.ventas.toLocaleString("es-ES")}</td>
-                      <td className="px-4 py-3 text-sm text-tl-ink">
-                        <CupUsdMoney cents={b.totalCents} compact />
+                      <td className="px-4 py-3 text-sm text-tl-ink align-top">
+                        <TablePriceCupCell cupCents={b.totalCents} compact />
                       </td>
                     </tr>
                   ))
@@ -752,13 +752,12 @@ export default function EconomyPage() {
             <ReceiptText className="mt-0.5 h-5 w-5 text-tl-muted" aria-hidden />
             <div className="text-xs leading-relaxed text-tl-muted">
               <p>
-                Límites del modelo de datos: no existen tablas de gastos, nómina ni impuestos; “flujo de caja” y “beneficio neto” en sentido
-                contable no se calculan aquí. La proyección de fin de mes es una extrapolación lineal del ritmo de 7 días y no sustituye un
-                pronóstico financiero.
+                Aquí no se incluyen gastos fijos, nómina ni impuestos: es una vista de ingresos por ventas. La proyección de fin de mes es
+                orientativa.
               </p>
               <p className="mt-2">
-                El equivalente USD usa el cambio almacenado en la tienda (panel Cambio). Si el método de pago no refleja la moneda física
-                cobrada, la agrupación efectivo / transferencia / USD puede desviarse de la caja real.
+                El equivalente en dólares usa el cambio configurado en la tienda. Si el método de pago no coincide con lo cobrado en
+                efectivo, los totales por canal pueden diferir un poco de la caja física.
               </p>
             </div>
           </div>

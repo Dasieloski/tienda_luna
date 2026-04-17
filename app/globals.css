@@ -1044,6 +1044,28 @@
   html,
   body {
     background: #ffffff !important;
+    height: auto !important;
+    min-height: 0 !important;
+    overflow: visible !important;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+
+  /* El layout admin limita altura en pantalla; en papel debe fluir todo */
+  .tl-admin-root {
+    min-height: 0 !important;
+    overflow: visible !important;
+  }
+
+  #admin-main,
+  .tl-admin-main-column {
+    overflow: visible !important;
+    max-height: none !important;
+    height: auto !important;
+  }
+
+  #admin-main {
+    padding: 0 !important;
   }
 
   /* Ocultar todo por defecto */
@@ -1057,12 +1079,19 @@
     visibility: visible;
   }
 
+  /*
+   * Nunca position:absolute en el bloque imprimible: el motor de impresión
+   * suele recortar a una “ventana” y pierdes páginas siguientes.
+   */
   .tl-print-area {
-    position: absolute;
-    left: 0;
-    top: 0;
-    width: 100%;
-    padding: 20px;
+    position: relative !important;
+    left: auto !important;
+    top: auto !important;
+    width: 100% !important;
+    max-width: 100% !important;
+    padding: 8px 12px !important;
+    overflow: visible !important;
+    page: tl-print-landscape;
   }
 
   .tl-no-print {
@@ -1078,12 +1107,32 @@
     background: transparent !important;
     border: none !important;
     backdrop-filter: none !important;
+    overflow: visible !important;
+  }
+
+  /* Contenedores con scroll horizontal: en papel mostrar todo */
+  .tl-print-table-wrap,
+  .tl-print-table-wrap.tl-glass {
+    overflow: visible !important;
+    max-width: none !important;
+  }
+
+  /* DataTable: quitar viewport scroll y altura máxima al imprimir */
+  .tl-table-desktop-wrap {
+    display: block !important;
+    max-height: none !important;
+    overflow: visible !important;
+  }
+
+  .tl-table-mobile-wrap {
+    display: none !important;
   }
 
   .tl-table,
   table {
     border-collapse: collapse;
     width: 100%;
+    break-inside: auto;
   }
 
   .tl-table th,
@@ -1099,14 +1148,43 @@
     border-bottom: 1px solid #f1f5f9 !important;
   }
 
-  /* Evita cortar filas */
+  thead {
+    display: table-header-group;
+  }
+
+  tfoot {
+    display: table-footer-group;
+  }
+
+  /* Tablas anchas (control diario): caben mejor en horizontal + tipo más compacto */
+  .tl-print-wide {
+    font-size: 8pt;
+  }
+
+  .tl-print-wide table {
+    min-width: 0 !important;
+    width: 100%;
+  }
+
+  .tl-print-wide th,
+  .tl-print-wide td {
+    padding: 3px 5px !important;
+    white-space: normal !important;
+    word-break: break-word;
+  }
+
+  /* Evita partir una fila entre dos páginas cuando sea posible */
   tr {
     break-inside: avoid;
     page-break-inside: avoid;
   }
 
-  /* Márgenes del navegador */
   @page {
     margin: 12mm;
+  }
+
+  @page tl-print-landscape {
+    size: landscape;
+    margin: 8mm;
   }
 }

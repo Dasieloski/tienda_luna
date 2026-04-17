@@ -76,7 +76,6 @@ export default function AnalyticsPage() {
             <KpiCard
               label="Rotación inventario"
               value={(data?.level2.rotacionInventario30d ?? 0).toFixed(2)}
-              hint="Heurística 30d"
               variant="info"
               icon={<TrendingUp className="h-4 w-4" />}
             />

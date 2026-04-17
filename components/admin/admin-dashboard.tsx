@@ -16,8 +16,9 @@ import {
 } from "lucide-react";
 import { DashboardCharts } from "@/components/admin/dashboard-charts";
 import { cn } from "@/lib/utils";
-import { formatCup, formatUsdCents, formatUsdFromCupCents } from "@/lib/money";
+import { formatCup } from "@/lib/money";
 import { CupUsdMoney } from "@/components/admin/cup-usd-money";
+import { TablePriceCupCell } from "@/components/admin/table-price-cup-cell";
 
 const TABS = [
   { id: "vista" as const, label: "Vista general", icon: LayoutGrid },
@@ -461,7 +462,7 @@ export function AdminDashboard() {
             />
             <Kpi label="Eventos fraude" value={String(data.level1.eventosFraudulentos)} accent="amber" />
             <Kpi label="Margen aprox. 30d" value={<CupUsdMoney cents={data.level2.margenAprox30d} />} />
-            <Kpi label="Rotación inventario" value={data.level2.rotacionInventario30d.toFixed(2)} hint="Heurística 30d" />
+            <Kpi label="Rotación inventario" value={data.level2.rotacionInventario30d.toFixed(2)} />
           </div>
 
           <DashboardCharts
@@ -489,7 +490,10 @@ export function AdminDashboard() {
                         <span className="font-medium text-zinc-200">{p.nombre}</span>
                       </span>
                       <span className="text-right text-zinc-400">
-                        {p.unidades} u. · <CupUsdMoney cents={p.subtotalCents} compact />
+                        {p.unidades} u. ·{" "}
+                        <span className="inline-flex justify-end">
+                          <TablePriceCupCell cupCents={p.subtotalCents} compact inverse />
+                        </span>
                       </span>
                     </li>
                   ))
@@ -571,8 +575,8 @@ export function AdminDashboard() {
                       <td className="whitespace-nowrap px-4 py-3 text-xs text-zinc-400">
                         {new Date(s.completedAt).toLocaleString("es-ES")}
                       </td>
-                      <td className="px-4 py-3 font-semibold tabular-nums text-white">
-                        <CupUsdMoney cents={s.totalCents} compact />
+                      <td className="px-4 py-3 text-right align-top font-semibold text-white">
+                        <TablePriceCupCell cupCents={s.totalCents} compact inverse />
                       </td>
                       <td className="px-4 py-3">
                         <span className="rounded-full bg-white/10 px-2 py-0.5 text-xs">{s.status}</span>
@@ -599,20 +603,16 @@ export function AdminDashboard() {
         <div className="space-y-10">
           <div>
             <h1 className="text-2xl font-bold tracking-tight text-white">Catálogo</h1>
-            <p className="mt-1 text-sm text-zinc-500">
-              Alta con PVP en CUP y USD, unidades por caja, mayorista y proveedor
-            </p>
+            <p className="mt-1 text-sm text-zinc-500">Listado de productos y altas rápidas.</p>
           </div>
 
           <div className="grid gap-8 lg:grid-cols-[minmax(0,1fr)_320px]">
             <div className="overflow-x-auto rounded-2xl border border-white/10 ring-1 ring-white/5">
-              <table className="w-full min-w-[960px] text-left text-sm">
+              <table className="w-full min-w-[820px] text-left text-sm">
                 <thead className="border-b border-white/10 bg-white/[0.04] text-[11px] uppercase tracking-wider text-zinc-500">
                   <tr>
-                    <th className="px-4 py-3">SKU</th>
                     <th className="px-4 py-3">Nombre</th>
-                    <th className="px-4 py-3">PVP CUP</th>
-                    <th className="px-4 py-3">PVP USD</th>
+                    <th className="px-4 py-3 text-right">PVP</th>
                     <th className="px-4 py-3">Ud/caja</th>
                     <th className="px-4 py-3">Proveedor</th>
                     <th className="px-4 py-3">Mayorista</th>
@@ -623,15 +623,14 @@ export function AdminDashboard() {
                 <tbody className="divide-y divide-white/5">
                   {products.map((p) => (
                     <tr key={p.id} className="hover:bg-white/[0.03]">
-                      <td className="px-4 py-2.5 font-mono text-xs text-violet-300">{p.sku}</td>
                       <td className="px-4 py-2.5 font-medium text-zinc-200">{p.name}</td>
-                      <td className="px-4 py-2.5 tabular-nums text-zinc-300">
-                        {formatCup(p.priceCents)}
-                      </td>
-                      <td className="px-4 py-2.5 tabular-nums text-zinc-300">
-                        {p.priceUsdCents > 0
-                          ? formatUsdCents(p.priceUsdCents)
-                          : formatUsdFromCupCents(p.priceCents)}
+                      <td className="px-4 py-2.5 text-right align-top">
+                        <TablePriceCupCell
+                          cupCents={p.priceCents}
+                          explicitUsdCents={p.priceUsdCents}
+                          compact
+                          inverse
+                        />
                       </td>
                       <td className="px-4 py-2.5 tabular-nums text-zinc-400">
                         {p.unitsPerBox ?? 1}

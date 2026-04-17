@@ -3,8 +3,9 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Banknote, Calendar, ClipboardList, CreditCard, DollarSign, Download, FileDown, PackageSearch, RefreshCw } from "lucide-react";
 import { AdminShell } from "@/components/admin/admin-shell";
-import { formatCup, formatUsdCents, formatUsdFromCupCents } from "@/lib/money";
+import { formatCup } from "@/lib/money";
 import { CupUsdMoney } from "@/components/admin/cup-usd-money";
+import { TablePriceCupCell } from "@/components/admin/table-price-cup-cell";
 import { cn } from "@/lib/utils";
 import { KpiCard } from "@/components/admin/kpi-card";
 
@@ -34,6 +35,122 @@ function toInputDate(date: Date) {
   const m = String(date.getMonth() + 1).padStart(2, "0");
   const d = String(date.getDate()).padStart(2, "0");
   return `${y}-${m}-${d}`;
+}
+
+function DailyControlSalesTable({
+  rows,
+  firstRowNumber,
+  loading,
+  footerSource,
+}: {
+  rows: DailyRow[];
+  firstRowNumber: number;
+  loading: boolean;
+  footerSource: DailyRow[];
+}) {
+  return (
+    <table className="w-full min-w-[820px] text-left text-sm">
+      <thead className="border-b border-tl-line bg-tl-canvas-subtle text-xs uppercase tracking-wide text-tl-muted">
+        <tr>
+          <th className="px-3 py-2 text-center">No.</th>
+          <th className="px-3 py-2">Producto</th>
+          <th className="px-3 py-2 text-right">PVP (CUP)</th>
+          <th className="px-3 py-2 text-center">Cant.</th>
+          <th className="px-3 py-2 text-right">CUP efectivo</th>
+          <th className="px-3 py-2 text-right">CUP transf.</th>
+          <th className="px-3 py-2 text-right">Canal USD (CUP)</th>
+          <th className="px-3 py-2 text-right">Subtotal</th>
+          <th className="px-3 py-2 text-center">OK</th>
+        </tr>
+      </thead>
+      <tbody>
+        {loading ? (
+          Array.from({ length: 10 }).map((_, i) => (
+            <tr key={i}>
+              {Array.from({ length: 9 }).map((__, j) => (
+                <td key={j} className="px-3 py-2">
+                  <div className="tl-skeleton h-3 rounded-md" />
+                </td>
+              ))}
+            </tr>
+          ))
+        ) : rows.length === 0 ? (
+          <tr>
+            <td colSpan={9} className="px-4 py-8 text-center text-sm text-tl-muted">
+              No hay filas para el filtro seleccionado.
+            </td>
+          </tr>
+        ) : (
+          rows.map((row, idx) => {
+            const subtotal = row.efectivoCents + row.transferenciaCents + row.usdCents;
+            return (
+              <tr key={row.productId}>
+                <td className="px-3 py-2 text-center text-xs text-tl-muted">{firstRowNumber + idx}</td>
+                <td className="px-3 py-2">
+                  <div className="flex flex-col">
+                    <span className="font-medium text-tl-ink">{row.name}</span>
+                    {row.sku && (
+                      <span className="text-xs font-mono text-tl-muted">{row.sku}</span>
+                    )}
+                  </div>
+                </td>
+                <td className="px-3 py-2 text-right align-top">
+                  <TablePriceCupCell
+                    cupCents={row.priceCents}
+                    explicitUsdCents={row.priceUsdCents}
+                    compact
+                  />
+                </td>
+                <td className="px-3 py-2 text-center text-sm tabular-nums text-tl-ink">{row.qty}</td>
+                <td className="px-3 py-2 text-right text-xs tabular-nums text-tl-ink">
+                  {formatCup(row.efectivoCents)}
+                </td>
+                <td className="px-3 py-2 text-right text-xs tabular-nums text-tl-ink">
+                  {formatCup(row.transferenciaCents)}
+                </td>
+                <td className="px-3 py-2 text-right align-top">
+                  <TablePriceCupCell cupCents={row.usdCents} compact />
+                </td>
+                <td className="px-3 py-2 text-right align-top">
+                  <TablePriceCupCell cupCents={subtotal} compact />
+                </td>
+                <td className="px-3 py-2 text-center text-xs text-tl-muted">—</td>
+              </tr>
+            );
+          })
+        )}
+      </tbody>
+      {footerSource.length > 0 && !loading && (
+        <tfoot>
+          <tr className="border-t border-tl-line-subtle bg-tl-canvas-subtle">
+            <td className="px-3 py-2 text-center text-xs font-semibold text-tl-muted">#</td>
+            <td className="px-3 py-2 text-sm font-semibold text-tl-ink">TOTAL</td>
+            <td className="px-3 py-2" />
+            <td className="px-3 py-2" />
+            <td className="px-3 py-2 text-right text-xs font-semibold tabular-nums text-tl-ink">
+              {formatCup(footerSource.reduce((a, r) => a + r.efectivoCents, 0))}
+            </td>
+            <td className="px-3 py-2 text-right text-xs font-semibold tabular-nums text-tl-ink">
+              {formatCup(footerSource.reduce((a, r) => a + r.transferenciaCents, 0))}
+            </td>
+            <td className="px-3 py-2 text-right align-top">
+              <TablePriceCupCell cupCents={footerSource.reduce((a, r) => a + r.usdCents, 0)} compact />
+            </td>
+            <td className="px-3 py-2 text-right align-top">
+              <TablePriceCupCell
+                cupCents={footerSource.reduce(
+                  (a, r) => a + r.efectivoCents + r.transferenciaCents + r.usdCents,
+                  0,
+                )}
+                compact
+              />
+            </td>
+            <td className="px-3 py-2" />
+          </tr>
+        </tfoot>
+      )}
+    </table>
+  );
 }
 
 export default function DailyControlPage() {
@@ -266,135 +383,24 @@ export default function DailyControlPage() {
             </div>
           </div>
 
-          <div className="overflow-x-auto tl-glass rounded-xl">
-            <table className="w-full min-w-[920px] text-left text-sm">
-              <thead className="border-b border-tl-line bg-tl-canvas-subtle text-xs uppercase tracking-wide text-tl-muted">
-                <tr>
-                  <th className="px-3 py-2 text-center">No.</th>
-                  <th className="px-3 py-2">Producto</th>
-                  <th className="px-3 py-2 text-right">Precio USD</th>
-                  <th className="px-3 py-2 text-right">Precio CUP</th>
-                  <th className="px-3 py-2 text-center">Cant.</th>
-                  <th className="px-3 py-2 text-right">CUP efectivo</th>
-                  <th className="px-3 py-2 text-right">CUP transf.</th>
-                  <th className="px-3 py-2 text-right">USD</th>
-                  <th className="px-3 py-2 text-right">Subtotal (CUP)</th>
-                  <th className="px-3 py-2 text-center">OK</th>
-                </tr>
-              </thead>
-              <tbody>
-                {loading ? (
-                  Array.from({ length: 10 }).map((_, i) => (
-                    <tr key={i}>
-                      {Array.from({ length: 10 }).map((__, j) => (
-                        <td key={j} className="px-3 py-2">
-                          <div className="tl-skeleton h-3 rounded-md" />
-                        </td>
-                      ))}
-                    </tr>
-                  ))
-                ) : paged.length === 0 ? (
-                  <tr>
-                    <td
-                      colSpan={10}
-                      className="px-4 py-8 text-center text-sm text-tl-muted"
-                    >
-                      No hay filas para el filtro seleccionado.
-                    </td>
-                  </tr>
-                ) : (
-                  paged.map((row, idx) => {
-                    const subtotal =
-                      row.efectivoCents + row.transferenciaCents + row.usdCents;
-                    return (
-                      <tr key={row.productId}>
-                        <td className="px-3 py-2 text-center text-xs text-tl-muted">
-                          {(pageSafe - 1) * limit + idx + 1}
-                        </td>
-                        <td className="px-3 py-2">
-                          <div className="flex flex-col">
-                            <span className="font-medium text-tl-ink">{row.name}</span>
-                            {row.sku && (
-                              <span className="text-xs font-mono text-tl-muted">
-                                {row.sku}
-                              </span>
-                            )}
-                          </div>
-                        </td>
-                        <td className="px-3 py-2 text-right text-xs text-tl-ink-secondary">
-                          {row.priceUsdCents > 0
-                            ? formatUsdCents(row.priceUsdCents)
-                            : formatUsdFromCupCents(row.priceCents)}
-                        </td>
-                        <td className="px-3 py-2 text-right text-xs text-tl-ink-secondary">
-                          {formatCup(row.priceCents)}
-                        </td>
-                        <td className="px-3 py-2 text-center text-sm tabular-nums text-tl-ink">
-                          {row.qty}
-                        </td>
-                        <td className="px-3 py-2 text-right text-xs tabular-nums text-tl-ink">
-                          {formatCup(row.efectivoCents)}
-                        </td>
-                        <td className="px-3 py-2 text-right text-xs tabular-nums text-tl-ink">
-                          {formatCup(row.transferenciaCents)}
-                        </td>
-                        <td className="px-3 py-2 text-right text-xs text-tl-ink">
-                          <div className="flex justify-end">
-                            <CupUsdMoney cents={row.usdCents} compact />
-                          </div>
-                        </td>
-                        <td className="px-3 py-2 text-right text-xs tabular-nums text-tl-ink">
-                          {formatCup(subtotal)}
-                        </td>
-                        <td className="px-3 py-2 text-center text-xs text-tl-muted">
-                          {/* Campo reservado para futura conciliación manual */}
-                          —
-                        </td>
-                      </tr>
-                    );
-                  })
-                )}
-              </tbody>
-              {filtered.length > 0 && !loading && (
-                <tfoot>
-                  <tr className="border-t border-tl-line-subtle bg-tl-canvas-subtle">
-                    <td className="px-3 py-2 text-center text-xs font-semibold text-tl-muted">
-                      #
-                    </td>
-                    <td className="px-3 py-2 text-sm font-semibold text-tl-ink">
-                      TOTAL
-                    </td>
-                    <td className="px-3 py-2" />
-                    <td className="px-3 py-2" />
-                    <td className="px-3 py-2" />
-                    <td className="px-3 py-2 text-right text-xs font-semibold tabular-nums text-tl-ink">
-                      {formatCup(
-                        filtered.reduce((a, r) => a + r.efectivoCents, 0),
-                      )}
-                    </td>
-                    <td className="px-3 py-2 text-right text-xs font-semibold tabular-nums text-tl-ink">
-                      {formatCup(
-                        filtered.reduce((a, r) => a + r.transferenciaCents, 0),
-                      )}
-                    </td>
-                    <td className="px-3 py-2 text-right text-xs font-semibold text-tl-ink">
-                      <div className="flex justify-end">
-                        <CupUsdMoney cents={filtered.reduce((a, r) => a + r.usdCents, 0)} compact />
-                      </div>
-                    </td>
-                    <td className="px-3 py-2 text-right text-xs font-semibold tabular-nums text-tl-ink">
-                      {formatCup(
-                        filtered.reduce(
-                          (a, r) => a + r.efectivoCents + r.transferenciaCents + r.usdCents,
-                          0,
-                        ),
-                      )}
-                    </td>
-                    <td className="px-3 py-2" />
-                  </tr>
-                </tfoot>
-              )}
-            </table>
+          <div className="tl-no-print overflow-x-auto tl-glass rounded-xl">
+            <DailyControlSalesTable
+              rows={paged}
+              firstRowNumber={(pageSafe - 1) * limit + 1}
+              loading={loading}
+              footerSource={filtered}
+            />
+          </div>
+
+          <div className="tl-print-only tl-print-table-wrap tl-print-wide tl-glass rounded-xl">
+            {!loading && (
+              <DailyControlSalesTable
+                rows={filtered}
+                firstRowNumber={1}
+                loading={false}
+                footerSource={filtered}
+              />
+            )}
           </div>
 
           {/* Pagination (50 estándar) */}
@@ -425,11 +431,12 @@ export default function DailyControlPage() {
           )}
         </section>
 
-        <section className="text-xs text-tl-muted">
+        <section className="tl-no-print text-xs text-tl-muted">
           <p>
             Esta vista resume los datos a partir de las ventas registradas en el sistema para la
-            fecha seleccionada. Si quieres un formato idéntico a la hoja física, puedes imprimir
-            esta página en horizontal desde el navegador.
+            fecha seleccionada. <strong className="text-tl-ink">Imprimir / PDF</strong> incluye{" "}
+            <strong className="text-tl-ink">todas las filas</strong> del filtro actual (no solo la
+            página en pantalla) y usa orientación horizontal automática en el diálogo de impresión.
           </p>
         </section>
       </div>

@@ -6,6 +6,7 @@ import { AdminShell } from "@/components/admin/admin-shell";
 import { DataTable, type Column } from "@/components/admin/data-table";
 import { cn } from "@/lib/utils";
 import { CupUsdMoney } from "@/components/admin/cup-usd-money";
+import { TablePriceCupCell } from "@/components/admin/table-price-cup-cell";
 
 type HistorySale = {
   id: string;
@@ -151,9 +152,7 @@ export default function SalesHistoryPage() {
         sortable: true,
         align: "right",
         width: "120px",
-        render: (row) => (
-          <CupUsdMoney cents={row.totalCents} compact />
-        ),
+        render: (row) => <TablePriceCupCell cupCents={row.totalCents} compact />,
       },
       {
         key: "lines",

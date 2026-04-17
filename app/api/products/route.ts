@@ -32,10 +32,13 @@ export async function GET(request: Request) {
   }
 
   const url = new URL(request.url);
+  const includeInactiveParam =
+    url.searchParams.get("includeInactive") === "1" ||
+    url.searchParams.get("includeInactive")?.toLowerCase() === "true";
+  /** Dispositivos (APK) necesitan el catálogo completo con `active` para sincronizar y reactivar; el POS filtra en cliente. */
   const wantInactive =
-    session.typ === "user" &&
-    (url.searchParams.get("includeInactive") === "1" ||
-      url.searchParams.get("includeInactive")?.toLowerCase() === "true");
+    session.typ === "device" ||
+    (session.typ === "user" && includeInactiveParam);
 
   const products = await loadCatalogProducts(prisma, session.storeId, {
     includeInactive: wantInactive,

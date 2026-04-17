@@ -5,6 +5,7 @@ import { Calendar, FileText, RefreshCw, Truck } from "lucide-react";
 import { AdminShell } from "@/components/admin/admin-shell";
 import { KpiCard } from "@/components/admin/kpi-card";
 import { CupUsdMoney } from "@/components/admin/cup-usd-money";
+import { TablePriceCupCell } from "@/components/admin/table-price-cup-cell";
 import { cn } from "@/lib/utils";
 
 type SupplierRow = {
@@ -291,15 +292,11 @@ export default function SuppliersPage() {
                         <td className="px-4 py-3 text-right tabular-nums text-tl-ink">
                           {s.units.toLocaleString("es-ES")}
                         </td>
-                        <td className="px-4 py-3 text-right text-tl-ink">
-                          <div className="flex justify-end">
-                            <CupUsdMoney cents={s.revenueCents} compact />
-                          </div>
+                        <td className="px-4 py-3 text-right text-tl-ink align-top">
+                          <TablePriceCupCell cupCents={s.revenueCents} compact />
                         </td>
-                        <td className="px-4 py-3 text-right text-tl-ink">
-                          <div className="flex justify-end">
-                            <CupUsdMoney cents={s.profitCents} compact />
-                          </div>
+                        <td className="px-4 py-3 text-right text-tl-ink align-top">
+                          <TablePriceCupCell cupCents={s.profitCents} compact />
                         </td>
                         <td className="px-4 py-3 text-right tabular-nums text-tl-muted">
                           {s.linesMissingCost > 0 ? s.linesMissingCost.toLocaleString("es-ES") : "0"}
@@ -320,7 +317,7 @@ export default function SuppliersPage() {
                                     ) : null}
                                   </span>
                                   <span className="shrink-0 text-xs tabular-nums text-tl-muted">
-                                    {p.units} u · <CupUsdMoney cents={p.revenueCents} compact />
+                                    {p.units} u · <TablePriceCupCell cupCents={p.revenueCents} compact />
                                   </span>
                                 </li>
                               ))}
@@ -336,8 +333,8 @@ export default function SuppliersPage() {
           </div>
 
           <div className="mt-4 text-xs text-tl-muted">
-            La ganancia es estimada: \(\sum (precio\_venta - costo) \times cantidad\). Si un producto no
-            tiene costo (`costCents`), esa línea se cuenta en “Costos faltantes” y no aporta ganancia.
+            La ganancia mostrada es estimada (precio de venta menos costo del producto, por unidad). Si falta
+            el costo en ficha de producto, esa venta cuenta en “Costos faltantes” y no suma a la ganancia.
           </div>
         </section>
       </div>

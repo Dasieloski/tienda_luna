@@ -7,6 +7,7 @@ import { DataTable, type Column } from "@/components/admin/data-table";
 import { cn } from "@/lib/utils";
 import { formatCup, formatUsdCents, formatUsdFromCupCents } from "@/lib/money";
 import { CupUsdMoney } from "@/components/admin/cup-usd-money";
+import { TablePriceCupCell } from "@/components/admin/table-price-cup-cell";
 
 type ProductRow = {
   id: string;
@@ -274,15 +275,6 @@ export default function InventoryPage() {
 
   const columns: Column<ProductRow>[] = [
     {
-      key: "sku",
-      label: "SKU",
-      sortable: true,
-      width: "120px",
-      render: (row) => (
-        <span className="font-mono text-xs text-tl-accent">{row.sku}</span>
-      ),
-    },
-    {
       key: "name",
       label: "Nombre",
       sortable: true,
@@ -291,27 +283,13 @@ export default function InventoryPage() {
       ),
     },
     {
-      key: "priceUsdCents",
-      label: "PVP USD",
-      sortable: true,
-      align: "right",
-      width: "100px",
-      render: (row) => (
-        <span className="tabular-nums text-tl-ink">
-          {row.priceUsdCents > 0
-            ? formatUsdCents(row.priceUsdCents)
-            : formatUsdFromCupCents(row.priceCents)}
-        </span>
-      ),
-    },
-    {
       key: "priceCents",
-      label: "PVP CUP",
+      label: "PVP",
       sortable: true,
       align: "right",
-      width: "100px",
+      width: "120px",
       render: (row) => (
-        <span className="tabular-nums text-tl-ink">{formatCup(row.priceCents)}</span>
+        <TablePriceCupCell cupCents={row.priceCents} explicitUsdCents={row.priceUsdCents} compact />
       ),
     },
     {
@@ -383,13 +361,6 @@ export default function InventoryPage() {
 
   const inactiveColumns: Column<ProductRow>[] = [
     {
-      key: "sku",
-      label: "SKU",
-      sortable: true,
-      width: "120px",
-      render: (row) => <span className="font-mono text-xs text-tl-muted">{row.sku}</span>,
-    },
-    {
       key: "name",
       label: "Nombre",
       sortable: true,
@@ -397,10 +368,12 @@ export default function InventoryPage() {
     },
     {
       key: "priceCents",
-      label: "PVP CUP",
+      label: "PVP",
       align: "right",
-      width: "100px",
-      render: (row) => <span className="tabular-nums text-tl-ink">{formatCup(row.priceCents)}</span>,
+      width: "120px",
+      render: (row) => (
+        <TablePriceCupCell cupCents={row.priceCents} explicitUsdCents={row.priceUsdCents} compact />
+      ),
     },
     {
       key: "stockQty",
