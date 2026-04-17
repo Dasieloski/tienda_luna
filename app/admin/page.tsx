@@ -116,14 +116,7 @@ export default function AdminOverviewPage() {
     void loadOverview();
   }, [loadOverview]);
 
-  // Listen for refresh events from shell
-  useEffect(() => {
-    function handleRefresh() {
-      void loadOverview();
-    }
-    window.addEventListener("tl-refresh", handleRefresh);
-    return () => window.removeEventListener("tl-refresh", handleRefresh);
-  }, [loadOverview]);
+  // Sin auto-refresh: solo carga inicial y acciones manuales del usuario.
 
   // Build activity items from anomalies
   const activityItems = useMemo<ActivityItem[]>(() => {

@@ -45,7 +45,12 @@ export function Topbar({
   >([]);
 
   const [userOpen, setUserOpen] = useState(false);
-  const [session, setSession] = useState<{ typ: "user" | "device"; role?: string; userId?: string } | null>(null);
+  const [session, setSession] = useState<{
+    typ: "user" | "device";
+    storeId?: string;
+    role?: string;
+    userId?: string;
+  } | null>(null);
 
   const [pwdOpen, setPwdOpen] = useState(false);
   const [pwdCurrent, setPwdCurrent] = useState("");
@@ -108,9 +113,17 @@ export function Topbar({
         const json = (await res.json()) as any;
         if (cancelled) return;
         if (json?.typ === "user") {
-          setSession({ typ: "user", role: json.role ?? undefined, userId: json.userId ?? undefined });
+          setSession({
+            typ: "user",
+            storeId: typeof json.storeId === "string" ? json.storeId : undefined,
+            role: json.role ?? undefined,
+            userId: json.userId ?? undefined,
+          });
         } else if (json?.typ === "device") {
-          setSession({ typ: "device" });
+          setSession({
+            typ: "device",
+            storeId: typeof json.storeId === "string" ? json.storeId : undefined,
+          });
         }
       } catch {
         // ignore
@@ -122,15 +135,65 @@ export function Topbar({
     };
   }, []);
 
+  function readDismissedNotificationIds(storeKey: string): Set<string> {
+    try {
+      const raw = localStorage.getItem(`tl-dismissed-notifications:${storeKey}`);
+      const arr = raw ? (JSON.parse(raw) as unknown) : [];
+      if (!Array.isArray(arr)) return new Set();
+      return new Set(arr.filter((x): x is string => typeof x === "string"));
+    } catch {
+      return new Set();
+    }
+  }
+
+  function appendDismissedNotificationIds(storeKey: string, ids: string[]) {
+    if (ids.length === 0) return;
+    const prev = readDismissedNotificationIds(storeKey);
+    for (const id of ids) prev.add(id);
+    const next = [...prev];
+    const capped = next.length > 800 ? next.slice(next.length - 800) : next;
+    try {
+      localStorage.setItem(`tl-dismissed-notifications:${storeKey}`, JSON.stringify(capped));
+    } catch {
+      // ignore quota / private mode
+    }
+  }
+
+  async function resolveStoreKeyForNotifications(): Promise<string> {
+    if (session?.storeId) return session.storeId;
+    try {
+      const res = await fetch("/api/session/me", { credentials: "include" });
+      if (!res.ok) return "_";
+      const json = (await res.json()) as { storeId?: string };
+      return typeof json.storeId === "string" ? json.storeId : "_";
+    } catch {
+      return "_";
+    }
+  }
+
   async function loadNotifications() {
     setNotifLoading(true);
     try {
+      const storeKey = await resolveStoreKeyForNotifications();
       const res = await fetch("/api/admin/notifications", { credentials: "include" });
       const json = (await res.json()) as any;
-      if (res.ok) setNotifications(json.notifications ?? []);
+      if (!res.ok) return;
+      const dismissed = readDismissedNotificationIds(storeKey);
+      const list = (json.notifications ?? []) as { id: string; kind: string; title: string; body: string; ts: string }[];
+      setNotifications(list.filter((n) => !dismissed.has(n.id)));
     } finally {
       setNotifLoading(false);
     }
+  }
+
+  async function clearAllNotifications() {
+    if (notifications.length === 0) return;
+    const storeKey = await resolveStoreKeyForNotifications();
+    appendDismissedNotificationIds(
+      storeKey,
+      notifications.map((n) => n.id),
+    );
+    setNotifications([]);
   }
 
   async function logout() {
@@ -268,12 +331,11 @@ export function Topbar({
               setError(null);
               setOpen((v) => !v);
             }}
-            className="flex items-center gap-2 rounded-full border border-tl-line bg-tl-canvas-inset px-3 py-2 text-sm font-semibold text-tl-ink tl-interactive tl-hover-lift tl-press tl-focus hover:bg-tl-canvas-subtle"
+            className="flex min-w-0 max-w-[min(100%,11rem)] items-center gap-1.5 rounded-full border border-tl-line bg-tl-canvas-inset px-2.5 py-2 text-tl-ink tl-interactive tl-hover-lift tl-press tl-focus hover:bg-tl-canvas-subtle sm:max-w-none sm:gap-2 sm:px-3"
             title="Cambiar tasa CUP/USD"
           >
-            <RefreshCw className="h-4 w-4 text-tl-muted" aria-hidden />
-            <span className="hidden sm:inline">{label}</span>
-            <span className="sm:hidden">Cambio</span>
+            <RefreshCw className="h-4 w-4 shrink-0 text-tl-muted" aria-hidden />
+            <span className="truncate text-xs font-semibold tabular-nums sm:text-sm">{label}</span>
           </button>
 
           {open && (
@@ -359,15 +421,28 @@ export function Topbar({
 
           {notifOpen && (
             <div className="absolute right-0 top-12 z-50 w-[360px] max-w-[92vw] overflow-hidden rounded-2xl border border-tl-line bg-tl-canvas shadow-lg">
-              <div className="flex items-center justify-between gap-3 border-b border-tl-line px-4 py-3">
+              <div className="flex items-center justify-between gap-2 border-b border-tl-line px-4 py-3">
                 <p className="text-sm font-semibold text-tl-ink">Notificaciones</p>
-                <button
-                  type="button"
-                  onClick={() => setNotifOpen(false)}
-                  className="rounded-lg px-2 py-1 text-xs font-semibold text-tl-muted hover:bg-tl-canvas-subtle"
-                >
-                  Cerrar
-                </button>
+                <div className="flex shrink-0 items-center gap-1">
+                  {notifications.length > 0 && !notifLoading && (
+                    <button
+                      type="button"
+                      onClick={() => void clearAllNotifications()}
+                      className="flex items-center gap-1 rounded-lg px-2 py-1 text-xs font-semibold text-tl-danger hover:bg-tl-danger-subtle/40"
+                      title="Ocultar todas hasta que haya alertas nuevas"
+                    >
+                      <Trash2 className="h-3.5 w-3.5" aria-hidden />
+                      Eliminar todas
+                    </button>
+                  )}
+                  <button
+                    type="button"
+                    onClick={() => setNotifOpen(false)}
+                    className="rounded-lg px-2 py-1 text-xs font-semibold text-tl-muted hover:bg-tl-canvas-subtle"
+                  >
+                    Cerrar
+                  </button>
+                </div>
               </div>
               <div className="max-h-[60vh] overflow-auto">
                 {notifLoading ? (

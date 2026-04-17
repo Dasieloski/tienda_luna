@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useLayoutEffect, useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import {
@@ -70,6 +70,18 @@ export function Sidebar({
 }: SidebarProps) {
   const pathname = usePathname();
   const [devicesOpen, setDevicesOpen] = useState(false);
+  /** En móvil/tablet el drawer debe mostrar siempre icono + texto; `collapsed` solo aplica desde breakpoint lg. */
+  const [isLgUp, setIsLgUp] = useState(false);
+
+  useLayoutEffect(() => {
+    const mq = window.matchMedia("(min-width: 1024px)");
+    const sync = () => setIsLgUp(mq.matches);
+    sync();
+    mq.addEventListener("change", sync);
+    return () => mq.removeEventListener("change", sync);
+  }, []);
+
+  const effectiveCollapsed = collapsed && isLgUp;
 
   useEffect(() => {
     function handleKeyDown(e: KeyboardEvent) {
@@ -127,7 +139,7 @@ export function Sidebar({
           <span
             className={cn(
               "min-w-0 overflow-hidden text-lg font-bold text-tl-ink transition-[opacity,transform,max-width] duration-300",
-              collapsed ? "max-w-0 translate-x-1 opacity-0" : "max-w-[200px] translate-x-0 opacity-100"
+              effectiveCollapsed ? "max-w-0 translate-x-1 opacity-0" : "max-w-[200px] translate-x-0 opacity-100"
             )}
             style={{ transitionTimingFunction: sidebarEase }}
           >
@@ -143,7 +155,7 @@ export function Sidebar({
             <div
               className={cn(
                 "mb-2 overflow-hidden transition-[max-height,opacity] duration-300",
-                collapsed ? "max-h-0 opacity-0" : "max-h-8 opacity-100"
+                effectiveCollapsed ? "max-h-0 opacity-0" : "max-h-8 opacity-100"
               )}
               style={{ transitionTimingFunction: sidebarEase }}
             >
@@ -166,9 +178,9 @@ export function Sidebar({
                         "group tl-nav-item tl-interactive ring-1 ring-transparent transition-[box-shadow,transform,background-color,color] duration-200",
                         "hover:shadow-sm hover:ring-tl-accent/12",
                         isActive && "active shadow-sm",
-                        collapsed && "!px-2 justify-center"
+                        effectiveCollapsed && "!px-2 justify-center"
                       )}
-                      title={collapsed ? item.label : undefined}
+                      title={effectiveCollapsed ? item.label : undefined}
                     >
                       <Icon
                         className="h-5 w-5 shrink-0 transition-transform duration-200 ease-out group-hover:scale-105"
@@ -177,7 +189,7 @@ export function Sidebar({
                       <span
                         className={cn(
                           "min-w-0 truncate transition-[opacity,max-width,transform] duration-300",
-                          collapsed ? "max-w-0 translate-x-1 opacity-0" : "max-w-[200px] translate-x-0 opacity-100"
+                          effectiveCollapsed ? "max-w-0 translate-x-1 opacity-0" : "max-w-[200px] translate-x-0 opacity-100"
                         )}
                         style={{ transitionTimingFunction: sidebarEase }}
                       >
@@ -196,10 +208,10 @@ export function Sidebar({
       <div
         className={cn(
           "shrink-0 overflow-hidden border-t border-tl-line transition-[max-height,opacity,padding,border-color] duration-300",
-          collapsed ? "pointer-events-none max-h-0 border-t-transparent opacity-0" : "max-h-[320px] opacity-100"
+          effectiveCollapsed ? "pointer-events-none max-h-0 border-t-transparent opacity-0" : "max-h-[320px] opacity-100"
         )}
         style={{ transitionTimingFunction: sidebarEase }}
-        aria-hidden={collapsed}
+        aria-hidden={effectiveCollapsed}
       >
         <div className="px-3 py-3">
           <button type="button" onClick={() => setDevicesOpen(!devicesOpen)} className="tl-collapse-trigger w-full">
@@ -240,7 +252,7 @@ export function Sidebar({
       </div>
 
       {/* Collapse toggle */}
-      <div className="shrink-0 border-t border-tl-line p-3">
+      <div className="shrink-0 border-t border-tl-line p-3 max-lg:hidden">
         <button
           type="button"
           onClick={() => onCollapsedChange(!collapsed)}

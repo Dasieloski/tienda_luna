@@ -24,13 +24,7 @@ export function AdminShell({ children, title = "Dashboard" }: AdminShellProps) {
     localStorage.setItem("tl-sidebar-collapsed", String(sidebarCollapsed));
   }, [sidebarCollapsed]);
 
-  // Auto-refresh every 5 seconds
-  useEffect(() => {
-    const interval = setInterval(() => {
-      window.dispatchEvent(new CustomEvent("tl-refresh"));
-    }, 5000);
-    return () => clearInterval(interval);
-  }, []);
+  // Nota: quitamos auto-refresh global para evitar recargas mientras el usuario interactúa.
 
   // Load exchange rate once (and refresh on tl-refresh if missing)
   useEffect(() => {
@@ -76,7 +70,6 @@ export function AdminShell({ children, title = "Dashboard" }: AdminShellProps) {
           onUsdRateCupChange={(next) => {
             setUsdRateCup(next);
             (globalThis as unknown as { __TL_USD_RATE_CUP__?: number }).__TL_USD_RATE_CUP__ = next;
-            window.dispatchEvent(new CustomEvent("tl-refresh"));
           }}
         />
         <main

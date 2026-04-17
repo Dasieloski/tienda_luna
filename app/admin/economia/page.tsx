@@ -86,13 +86,7 @@ export default function EconomyPage() {
     void load();
   }, [load]);
 
-  useEffect(() => {
-    function handleRefresh() {
-      void load({ silent: true });
-    }
-    window.addEventListener("tl-refresh", handleRefresh);
-    return () => window.removeEventListener("tl-refresh", handleRefresh);
-  }, [load]);
+  // Sin auto-refresh: evita recargas mientras el usuario interactúa.
 
   useEffect(() => {
     return () => abortRef.current?.abort();

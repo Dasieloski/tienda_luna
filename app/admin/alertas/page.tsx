@@ -68,13 +68,7 @@ export default function AlertsPage() {
     void loadData();
   }, [loadData]);
 
-  useEffect(() => {
-    function handleRefresh() {
-      void loadData();
-    }
-    window.addEventListener("tl-refresh", handleRefresh);
-    return () => window.removeEventListener("tl-refresh", handleRefresh);
-  }, [loadData]);
+  // Sin auto-refresh: solo carga inicial.
 
   const fraudEvents = events.filter((e) => e.isFraud);
   const normalEvents = events.filter((e) => !e.isFraud);

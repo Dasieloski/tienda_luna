@@ -66,14 +66,7 @@ export default function SalesPage() {
     void loadSales();
   }, [loadSales]);
 
-  // Listen for refresh events
-  useEffect(() => {
-    function handleRefresh() {
-      void loadSales();
-    }
-    window.addEventListener("tl-refresh", handleRefresh);
-    return () => window.removeEventListener("tl-refresh", handleRefresh);
-  }, [loadSales]);
+  // Sin auto-refresh: solo carga inicial (y el usuario puede recargar manualmente si lo desea).
 
   const columns: Column<RecentSale>[] = [
     {

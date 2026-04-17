@@ -68,13 +68,7 @@ export default function SettingsPage() {
     void loadData();
   }, [loadData]);
 
-  useEffect(() => {
-    function handleRefresh() {
-      void loadData();
-    }
-    window.addEventListener("tl-refresh", handleRefresh);
-    return () => window.removeEventListener("tl-refresh", handleRefresh);
-  }, [loadData]);
+  // Sin auto-refresh: solo carga inicial.
 
   const dbOk = data?.meta?.dbAvailable !== false;
 

@@ -114,14 +114,7 @@ export default function SalesHistoryPage() {
     void load();
   }, [load]);
 
-  // Listen for refresh events from AdminShell
-  useEffect(() => {
-    function handleRefresh() {
-      void load();
-    }
-    window.addEventListener("tl-refresh", handleRefresh);
-    return () => window.removeEventListener("tl-refresh", handleRefresh);
-  }, [load]);
+  // Sin auto-refresh: evita recargar mientras filtras o revisas detalle.
 
   const columns: Column<HistorySale>[] = useMemo(
     () => [

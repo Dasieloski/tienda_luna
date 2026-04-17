@@ -82,13 +82,7 @@ export default function InventoryPage() {
     void loadProducts();
   }, [loadProducts]);
 
-  useEffect(() => {
-    function handleRefresh() {
-      void loadProducts();
-    }
-    window.addEventListener("tl-refresh", handleRefresh);
-    return () => window.removeEventListener("tl-refresh", handleRefresh);
-  }, [loadProducts]);
+  // Sin auto-refresh: evita refrescar mientras editas formularios.
 
   useEffect(() => {
     if (!editOpen) return;
@@ -184,7 +178,6 @@ export default function InventoryPage() {
     setFormStock("0");
     setFormLow("5");
     void loadProducts();
-    window.dispatchEvent(new Event("tl-refresh"));
   }
 
   async function onSaveEdit(e: React.FormEvent) {
@@ -247,7 +240,6 @@ export default function InventoryPage() {
 
     setEditOpen(false);
     void loadProducts();
-    window.dispatchEvent(new Event("tl-refresh"));
   }
 
   const totalProducts = products.length;

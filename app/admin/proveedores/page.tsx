@@ -82,13 +82,7 @@ export default function SuppliersPage() {
     void load();
   }, [load]);
 
-  useEffect(() => {
-    function handleRefresh() {
-      void load();
-    }
-    window.addEventListener("tl-refresh", handleRefresh);
-    return () => window.removeEventListener("tl-refresh", handleRefresh);
-  }, [load]);
+  // Sin auto-refresh: solo carga inicial y botón Actualizar.
 
   const suppliersFiltered = useMemo(() => {
     const list = data?.suppliers ?? [];
