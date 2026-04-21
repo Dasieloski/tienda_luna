@@ -291,8 +291,8 @@ export function DataTable<T extends Record<string, unknown>>({
       )}
     >
       {(searchable || filterableColumns.length > 0) && (
-        <div className="border-b border-tl-line p-4">
-          <div className="flex flex-col gap-3">
+        <div className="border-b border-tl-line px-4 py-3">
+          <div className="flex flex-col gap-2">
             {searchable && (
               <div className="relative max-w-sm">
                 <label htmlFor={searchId} className="sr-only">
@@ -308,15 +308,15 @@ export function DataTable<T extends Record<string, unknown>>({
                   placeholder={searchPlaceholder}
                   value={search}
                   onChange={(e) => setSearch(e.target.value)}
-                  className="tl-input pl-10"
+                  className="tl-input h-9 pl-10 text-sm"
                   disabled={loading}
                 />
               </div>
             )}
 
             {filterableColumns.length > 0 && (
-              <div className="flex flex-col gap-3">
-                <div className="flex flex-wrap items-end gap-3">
+              <div className="flex flex-col gap-2">
+                <div className="flex flex-wrap items-end gap-2">
                   {filterableColumns.map((col) => {
                     const f = col.filter!;
                     const k = String(col.key);
@@ -325,10 +325,8 @@ export function DataTable<T extends Record<string, unknown>>({
                     if (f.kind === "text") {
                       const curText = cur?.kind === "text" ? cur.value : "";
                       return (
-                        <div key={k} className="min-w-0 flex-1 sm:min-w-[200px]">
-                          <label className="mb-1 block text-[11px] font-semibold uppercase tracking-wider text-tl-muted">
-                            {col.label}
-                          </label>
+                        <div key={k} className="min-w-0 flex-1 sm:min-w-[190px]">
+                          <label className="sr-only">{col.label}</label>
                           <input
                             value={curText}
                             onChange={(e) =>
@@ -337,8 +335,8 @@ export function DataTable<T extends Record<string, unknown>>({
                                 [k]: { kind: "text", value: e.target.value },
                               })
                             }
-                            className="tl-input"
-                            placeholder={f.placeholder ?? `Filtrar ${col.label.toLowerCase()}…`}
+                            className="tl-input h-9 text-sm"
+                            placeholder={f.placeholder ?? col.label}
                             disabled={loading}
                           />
                         </div>
@@ -349,10 +347,8 @@ export function DataTable<T extends Record<string, unknown>>({
                       const curSel = cur?.kind === "select" ? cur.value : "";
                       const options = f.options?.length ? f.options : derivedSelectOptions[k] ?? [];
                       return (
-                        <div key={k} className="sm:min-w-[180px]">
-                          <label className="mb-1 block text-[11px] font-semibold uppercase tracking-wider text-tl-muted">
-                            {col.label}
-                          </label>
+                        <div key={k} className="sm:min-w-[170px]">
+                          <label className="sr-only">{col.label}</label>
                           <select
                             value={curSel}
                             onChange={(e) =>
@@ -361,10 +357,10 @@ export function DataTable<T extends Record<string, unknown>>({
                                 [k]: { kind: "select", value: e.target.value },
                               })
                             }
-                            className="tl-input"
+                            className="tl-input h-9 text-sm"
                             disabled={loading}
                           >
-                            <option value="">{f.placeholder ?? "Todos"}</option>
+                            <option value="">{f.placeholder ?? col.label}</option>
                             {options.map((o) => (
                               <option key={o.value} value={o.value}>
                                 {o.label}
@@ -380,11 +376,9 @@ export function DataTable<T extends Record<string, unknown>>({
                       const minVal = curRange?.min ?? "";
                       const maxVal = curRange?.max ?? "";
                       return (
-                        <div key={k} className="sm:min-w-[220px]">
-                          <label className="mb-1 block text-[11px] font-semibold uppercase tracking-wider text-tl-muted">
-                            {col.label}
-                          </label>
-                          <div className="flex items-center gap-2">
+                        <div key={k} className="sm:min-w-[210px]">
+                          <label className="sr-only">{col.label}</label>
+                          <div className="flex items-center gap-1.5">
                             <input
                               inputMode="decimal"
                               value={String(minVal)}
@@ -400,8 +394,8 @@ export function DataTable<T extends Record<string, unknown>>({
                                   },
                                 });
                               }}
-                              className="tl-input"
-                              placeholder={f.placeholderMin ?? "Min"}
+                              className="tl-input h-9 text-sm"
+                              placeholder={f.placeholderMin ?? `${col.label} min`}
                               disabled={loading}
                             />
                             <input
@@ -419,8 +413,8 @@ export function DataTable<T extends Record<string, unknown>>({
                                   },
                                 });
                               }}
-                              className="tl-input"
-                              placeholder={f.placeholderMax ?? "Max"}
+                              className="tl-input h-9 text-sm"
+                              placeholder={f.placeholderMax ?? `${col.label} max`}
                               disabled={loading}
                             />
                           </div>
@@ -434,7 +428,7 @@ export function DataTable<T extends Record<string, unknown>>({
                   <div className="flex items-center gap-2">
                     <button
                       type="button"
-                      className="tl-btn tl-btn-secondary tl-interactive tl-hover-lift tl-press tl-focus !px-4 !py-2"
+                      className="tl-btn tl-btn-secondary tl-interactive tl-hover-lift tl-press tl-focus !h-9 !px-3 !py-0 text-xs"
                       onClick={() => setNextFilters({})}
                       disabled={loading || activeFilterChips.length === 0}
                       title="Limpiar filtros"
@@ -451,7 +445,7 @@ export function DataTable<T extends Record<string, unknown>>({
                       <button
                         key={c.key}
                         type="button"
-                        className="inline-flex items-center gap-2 rounded-full border border-tl-line bg-tl-canvas-inset px-3 py-1 text-xs text-tl-ink-secondary transition-colors hover:bg-tl-canvas"
+                        className="inline-flex items-center gap-2 rounded-full border border-tl-line bg-tl-canvas-inset px-2.5 py-1 text-[11px] text-tl-ink-secondary transition-colors hover:bg-tl-canvas"
                         onClick={() => {
                           const next = { ...activeFilters };
                           delete next[c.key];

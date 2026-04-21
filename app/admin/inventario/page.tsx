@@ -528,24 +528,6 @@ export default function InventoryPage() {
       ),
     },
     {
-      key: "wholesaleCupCents",
-      label: "Mayorista",
-      sortable: true,
-      align: "right",
-      width: "100px",
-      filter: {
-        kind: "numberRange",
-        placeholderMin: "CUP min",
-        placeholderMax: "CUP max",
-        getValue: (row) => (row.wholesaleCupCents == null ? null : row.wholesaleCupCents / 100),
-      },
-      render: (row) => (
-        <span className="tabular-nums text-tl-muted">
-          {row.wholesaleCupCents != null ? formatCup(row.wholesaleCupCents) : "—"}
-        </span>
-      ),
-    },
-    {
       key: "supplierName",
       label: "Proveedor",
       sortable: true,
