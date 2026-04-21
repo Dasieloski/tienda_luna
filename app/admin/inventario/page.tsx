@@ -463,6 +463,17 @@ export default function InventoryPage() {
   const lowStockCount = activeProducts.filter((p) => p.stockQty <= p.lowStockAt).length;
   const totalValue = activeProducts.reduce((acc, p) => acc + p.priceCents * p.stockQty, 0);
 
+  const supplierFilterOptions = useMemo(() => {
+    const base = suppliers
+      .slice()
+      .sort((a, b) => a.name.localeCompare(b.name))
+      .map((s) => ({
+        label: `${s.active ? "" : "(inactivo) "}${s.name}`,
+        value: s.id,
+      }));
+    return [{ label: "(Sin proveedor)", value: "__none__" }, ...base];
+  }, [suppliers]);
+
   const columns: Column<ProductRow>[] = [
     {
       key: "name",
@@ -478,6 +489,12 @@ export default function InventoryPage() {
       sortable: true,
       align: "right",
       width: "120px",
+      filter: {
+        kind: "numberRange",
+        placeholderMin: "CUP min",
+        placeholderMax: "CUP max",
+        getValue: (row) => row.priceCents / 100,
+      },
       render: (row) => (
         <TablePriceCupCell cupCents={row.priceCents} explicitUsdCents={row.priceUsdCents} compact />
       ),
@@ -485,8 +502,15 @@ export default function InventoryPage() {
     {
       key: "costCents",
       label: "Compra",
+      sortable: true,
       align: "right",
       width: "96px",
+      filter: {
+        kind: "numberRange",
+        placeholderMin: "CUP min",
+        placeholderMax: "CUP max",
+        getValue: (row) => (row.costCents == null ? null : row.costCents / 100),
+      },
       render: (row) => (
         <span className="tabular-nums text-tl-muted">
           {row.costCents != null ? formatCup(row.costCents) : "—"}
@@ -496,6 +520,7 @@ export default function InventoryPage() {
     {
       key: "unitsPerBox",
       label: "Ud/caja",
+      sortable: true,
       align: "right",
       width: "72px",
       render: (row) => (
@@ -505,8 +530,15 @@ export default function InventoryPage() {
     {
       key: "wholesaleCupCents",
       label: "Mayorista",
+      sortable: true,
       align: "right",
       width: "100px",
+      filter: {
+        kind: "numberRange",
+        placeholderMin: "CUP min",
+        placeholderMax: "CUP max",
+        getValue: (row) => (row.wholesaleCupCents == null ? null : row.wholesaleCupCents / 100),
+      },
       render: (row) => (
         <span className="tabular-nums text-tl-muted">
           {row.wholesaleCupCents != null ? formatCup(row.wholesaleCupCents) : "—"}
@@ -516,7 +548,15 @@ export default function InventoryPage() {
     {
       key: "supplierName",
       label: "Proveedor",
+      sortable: true,
       width: "140px",
+      filter: {
+        kind: "select",
+        placeholder: "Todos",
+        options: supplierFilterOptions,
+        getValue: (row) => row.supplierId ?? "__none__",
+      },
+      sortValue: (row) => (row.supplierName ?? "").toLowerCase(),
       render: (row) => (
         <span className="text-tl-muted">{row.supplierName ?? "—"}</span>
       ),
@@ -527,6 +567,15 @@ export default function InventoryPage() {
       sortable: true,
       align: "right",
       width: "72px",
+      filter: {
+        kind: "select",
+        placeholder: "Todos",
+        options: [
+          { label: "Stock bajo", value: "low" },
+          { label: "Suficiente", value: "ok" },
+        ],
+        getValue: (row) => (row.stockQty <= row.lowStockAt ? "low" : "ok"),
+      },
       render: (row) => (
         <span
           className={cn(
@@ -585,6 +634,7 @@ export default function InventoryPage() {
     {
       key: "priceCents",
       label: "PVP",
+      sortable: true,
       align: "right",
       width: "120px",
       render: (row) => (
@@ -592,8 +642,17 @@ export default function InventoryPage() {
       ),
     },
     {
+      key: "supplierName",
+      label: "Proveedor",
+      sortable: true,
+      width: "140px",
+      sortValue: (row) => (row.supplierName ?? "").toLowerCase(),
+      render: (row) => <span className="text-tl-muted">{row.supplierName ?? "—"}</span>,
+    },
+    {
       key: "stockQty",
       label: "Stock",
+      sortable: true,
       align: "right",
       width: "72px",
       render: (row) => <span className="tabular-nums text-tl-muted">{row.stockQty}</span>,
@@ -658,6 +717,7 @@ export default function InventoryPage() {
     {
       key: "sku",
       label: "SKU (archivado)",
+      sortable: true,
       render: (row) => (
         <span className="font-mono text-xs text-tl-muted" title={row.sku}>
           {row.sku}
@@ -665,8 +725,17 @@ export default function InventoryPage() {
       ),
     },
     {
+      key: "supplierName",
+      label: "Proveedor",
+      sortable: true,
+      width: "140px",
+      sortValue: (row) => (row.supplierName ?? "").toLowerCase(),
+      render: (row) => <span className="text-tl-muted">{row.supplierName ?? "—"}</span>,
+    },
+    {
       key: "stockQty",
       label: "Stock",
+      sortable: true,
       align: "right",
       width: "72px",
       render: (row) => <span className="tabular-nums text-tl-muted">{row.stockQty}</span>,

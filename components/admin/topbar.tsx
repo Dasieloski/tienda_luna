@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   Bell,
   Clock,
@@ -13,6 +13,7 @@ import {
   Package,
   RefreshCw,
   Rows3,
+  Search,
   Settings,
   ShoppingCart,
   Trash2,
@@ -20,6 +21,7 @@ import {
   Users,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { useRouter } from "next/navigation";
 
 interface TopbarProps {
   title?: string;
@@ -28,12 +30,17 @@ interface TopbarProps {
   onUsdRateCupChange?: (next: number) => void;
 }
 
+type GlobalSearchHit =
+  | { kind: "product"; id: string; title: string; subtitle: string }
+  | { kind: "supplier"; id: string; title: string; subtitle: string };
+
 export function Topbar({
   title = "Dashboard",
   onMenuClick,
   usdRateCup,
   onUsdRateCupChange,
 }: TopbarProps) {
+  const router = useRouter();
   const [open, setOpen] = useState(false);
   const [value, setValue] = useState(() => (usdRateCup ?? 250).toString());
   const [saving, setSaving] = useState(false);
@@ -67,6 +74,15 @@ export function Topbar({
   const [newRole, setNewRole] = useState<"ADMIN" | "CASHIER">("ADMIN");
   const [usersMsg, setUsersMsg] = useState<string | null>(null);
 
+  // Buscador global
+  const [searchQ, setSearchQ] = useState("");
+  const [searchOpen, setSearchOpen] = useState(false);
+  const [searchLoading, setSearchLoading] = useState(false);
+  const [searchHits, setSearchHits] = useState<GlobalSearchHit[]>([]);
+  const [searchActiveIndex, setSearchActiveIndex] = useState(0);
+  const searchWrapRef = useRef<HTMLDivElement | null>(null);
+  const searchAbortRef = useRef<AbortController | null>(null);
+
   const [density, setDensity] = useState<"comfortable" | "compact">("comfortable");
   useEffect(() => {
     try {
@@ -83,6 +99,78 @@ export function Topbar({
     const r = usdRateCup ?? 250;
     return `Cambio: ${r}`;
   }, [usdRateCup]);
+
+  useEffect(() => {
+    const q = searchQ.trim();
+    if (!q) {
+      setSearchHits([]);
+      setSearchLoading(false);
+      setSearchActiveIndex(0);
+      return;
+    }
+
+    const t = window.setTimeout(async () => {
+      searchAbortRef.current?.abort();
+      const ac = new AbortController();
+      searchAbortRef.current = ac;
+      setSearchLoading(true);
+      try {
+        const res = await fetch(`/api/admin/search?q=${encodeURIComponent(q)}&limit=10`, {
+          credentials: "include",
+          signal: ac.signal,
+        });
+        const json = (await res.json().catch(() => null)) as any;
+        const prods = (json?.products ?? []) as any[];
+        const sups = (json?.suppliers ?? []) as any[];
+
+        const hits: GlobalSearchHit[] = [
+          ...prods.slice(0, 7).map((p) => ({
+            kind: "product" as const,
+            id: String(p.id),
+            title: String(p.name ?? "Producto"),
+            subtitle: `SKU: ${String(p.sku ?? "—")} · ${p.supplierName ? String(p.supplierName) : "—"}`,
+          })),
+          ...sups.slice(0, 5).map((s) => ({
+            kind: "supplier" as const,
+            id: String(s.id),
+            title: String(s.name ?? "Proveedor"),
+            subtitle: s.phone ? String(s.phone) : "—",
+          })),
+        ].slice(0, 10);
+
+        setSearchHits(hits);
+        setSearchActiveIndex(0);
+      } catch (e) {
+        if ((e as any)?.name !== "AbortError") {
+          setSearchHits([]);
+        }
+      } finally {
+        setSearchLoading(false);
+      }
+    }, 220);
+
+    return () => window.clearTimeout(t);
+  }, [searchQ]);
+
+  useEffect(() => {
+    function onDocDown(e: MouseEvent) {
+      const root = searchWrapRef.current;
+      if (!root) return;
+      if (!searchOpen) return;
+      if (!root.contains(e.target as Node)) {
+        setSearchOpen(false);
+      }
+    }
+    document.addEventListener("mousedown", onDocDown);
+    return () => document.removeEventListener("mousedown", onDocDown);
+  }, [searchOpen]);
+
+  function goToResults(q: string) {
+    const t = q.trim();
+    if (!t) return;
+    setSearchOpen(false);
+    router.push(`/admin/busqueda?q=${encodeURIComponent(t)}`);
+  }
 
   async function save() {
     const n = Number(value);
@@ -331,6 +419,90 @@ export function Topbar({
             <Settings className="h-4 w-4" aria-hidden />
           </TopIconLink>
         </nav>
+      </div>
+
+      {/* Center: Global search */}
+      <div className="hidden min-w-0 flex-1 justify-center lg:flex">
+        <div ref={searchWrapRef} className="relative w-full max-w-xl">
+          <label htmlFor="tl-global-search" className="sr-only">
+            Buscar global
+          </label>
+          <div className="relative">
+            <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-tl-muted" aria-hidden />
+            <input
+              id="tl-global-search"
+              type="search"
+              value={searchQ}
+              onChange={(e) => setSearchQ(e.target.value)}
+              onFocus={() => setSearchOpen(true)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") {
+                  e.preventDefault();
+                  goToResults(searchQ);
+                  return;
+                }
+                if (e.key === "Escape") {
+                  setSearchOpen(false);
+                  return;
+                }
+                if (e.key === "ArrowDown") {
+                  e.preventDefault();
+                  setSearchOpen(true);
+                  setSearchActiveIndex((i) => Math.min((searchHits.length || 1) - 1, i + 1));
+                  return;
+                }
+                if (e.key === "ArrowUp") {
+                  e.preventDefault();
+                  setSearchOpen(true);
+                  setSearchActiveIndex((i) => Math.max(0, i - 1));
+                  return;
+                }
+              }}
+              className="tl-input h-10 w-full pl-10"
+              placeholder="Buscar: producto, proveedor, SKU, precio..."
+              autoComplete="off"
+            />
+            {searchLoading ? (
+              <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-tl-muted">…</span>
+            ) : null}
+          </div>
+
+          {searchOpen && searchQ.trim() && (
+            <div
+              className="absolute left-0 right-0 top-12 z-50 overflow-hidden rounded-2xl border border-tl-line bg-tl-canvas shadow-lg"
+              role="listbox"
+              aria-label="Resultados de búsqueda"
+            >
+              {searchHits.length === 0 && !searchLoading ? (
+                <div className="px-4 py-3 text-sm text-tl-muted">Sin coincidencias rápidas. Enter para ver todo.</div>
+              ) : (
+                <ul className="divide-y divide-tl-line-subtle">
+                  {searchHits.map((h, idx) => (
+                    <li key={`${h.kind}:${h.id}`}>
+                      <button
+                        type="button"
+                        role="option"
+                        aria-selected={idx === searchActiveIndex}
+                        className={cn(
+                          "w-full px-4 py-3 text-left transition-colors hover:bg-tl-canvas-subtle focus:outline-none focus-visible:ring-2 focus-visible:ring-tl-accent/30",
+                          idx === searchActiveIndex && "bg-tl-canvas-subtle",
+                        )}
+                        onMouseEnter={() => setSearchActiveIndex(idx)}
+                        onClick={() => goToResults(searchQ)}
+                      >
+                        <p className="truncate text-sm font-semibold text-tl-ink">{h.title}</p>
+                        <p className="truncate text-xs text-tl-muted">{h.subtitle}</p>
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              )}
+              <div className="border-t border-tl-line-subtle px-4 py-2 text-[11px] text-tl-muted">
+                Enter: ver todos los resultados · Esc: cerrar
+              </div>
+            </div>
+          )}
+        </div>
       </div>
 
       {/* Right: Settings, status, actions */}
