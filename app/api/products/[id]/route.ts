@@ -76,30 +76,100 @@ export async function PATCH(request: Request, ctx: RouteCtx) {
   const restoring = data.restore === true && existing.deletedAt != null;
 
   try {
-    const product = await prisma.product.update({
-      where: { id },
-      data: {
-        ...(restoring ? { deletedAt: null } : {}),
-        ...(data.sku !== undefined ? { sku: data.sku } : {}),
-        ...(data.name !== undefined ? { name: data.name } : {}),
-        ...(data.priceCents !== undefined ? { priceCents: data.priceCents } : {}),
-        ...(data.priceUsdCents !== undefined ? { priceUsdCents: data.priceUsdCents } : {}),
-        ...(data.unitsPerBox !== undefined ? { unitsPerBox: data.unitsPerBox } : {}),
-        ...(data.wholesaleCupCents !== undefined
-          ? { wholesaleCupCents: data.wholesaleCupCents }
-          : {}),
-        ...(data.costCents !== undefined ? { costCents: data.costCents } : {}),
-        ...(data.supplierId !== undefined
-          ? { supplierId: data.supplierId, supplierName: supplierNameFromId ?? null }
-          : {}),
-        ...(data.supplierName !== undefined && data.supplierId === undefined
-          ? { supplierName: data.supplierName }
-          : {}),
-        ...(data.stockQty !== undefined ? { stockQty: data.stockQty } : {}),
-        ...(data.lowStockAt !== undefined ? { lowStockAt: data.lowStockAt } : {}),
-        ...(data.active !== undefined ? { active: data.active } : {}),
-      },
+    const nextStockQty = data.stockQty !== undefined ? data.stockQty : existing.stockQty;
+    const stockChanged = data.stockQty !== undefined && data.stockQty !== existing.stockQty;
+
+    const product = await prisma.$transaction(async (tx) => {
+      const updated = await tx.product.update({
+        where: { id },
+        data: {
+          ...(restoring ? { deletedAt: null } : {}),
+          ...(data.sku !== undefined ? { sku: data.sku } : {}),
+          ...(data.name !== undefined ? { name: data.name } : {}),
+          ...(data.priceCents !== undefined ? { priceCents: data.priceCents } : {}),
+          ...(data.priceUsdCents !== undefined ? { priceUsdCents: data.priceUsdCents } : {}),
+          ...(data.unitsPerBox !== undefined ? { unitsPerBox: data.unitsPerBox } : {}),
+          ...(data.wholesaleCupCents !== undefined ? { wholesaleCupCents: data.wholesaleCupCents } : {}),
+          ...(data.costCents !== undefined ? { costCents: data.costCents } : {}),
+          ...(data.supplierId !== undefined
+            ? { supplierId: data.supplierId, supplierName: supplierNameFromId ?? null }
+            : {}),
+          ...(data.supplierName !== undefined && data.supplierId === undefined
+            ? { supplierName: data.supplierName }
+            : {}),
+          ...(data.stockQty !== undefined ? { stockQty: data.stockQty } : {}),
+          ...(data.lowStockAt !== undefined ? { lowStockAt: data.lowStockAt } : {}),
+          ...(data.active !== undefined ? { active: data.active } : {}),
+        },
+      });
+
+      if (stockChanged) {
+        await tx.inventoryMovement.create({
+          data: {
+            storeId: session.storeId,
+            productId: updated.id,
+            delta: nextStockQty - existing.stockQty,
+            beforeQty: existing.stockQty,
+            afterQty: nextStockQty,
+            reason: "MANUAL_ADJUST",
+            actorType: "USER",
+            actorId: session.sub,
+            eventId: null,
+          },
+        });
+      }
+
+      const before = {
+        sku: existing.sku,
+        name: existing.name,
+        priceCents: existing.priceCents,
+        priceUsdCents: (existing as any).priceUsdCents ?? 0,
+        unitsPerBox: (existing as any).unitsPerBox ?? 1,
+        wholesaleCupCents: (existing as any).wholesaleCupCents ?? null,
+        costCents: (existing as any).costCents ?? null,
+        supplierId: (existing as any).supplierId ?? null,
+        supplierName: (existing as any).supplierName ?? null,
+        stockQty: existing.stockQty,
+        lowStockAt: existing.lowStockAt,
+        active: existing.active,
+        deletedAt: (existing as any).deletedAt ?? null,
+      };
+      const after = {
+        sku: updated.sku,
+        name: updated.name,
+        priceCents: updated.priceCents,
+        priceUsdCents: (updated as any).priceUsdCents ?? 0,
+        unitsPerBox: (updated as any).unitsPerBox ?? 1,
+        wholesaleCupCents: (updated as any).wholesaleCupCents ?? null,
+        costCents: (updated as any).costCents ?? null,
+        supplierId: (updated as any).supplierId ?? null,
+        supplierName: (updated as any).supplierName ?? null,
+        stockQty: updated.stockQty,
+        lowStockAt: updated.lowStockAt,
+        active: updated.active,
+        deletedAt: (updated as any).deletedAt ?? null,
+      };
+      const changedKeys = Object.keys(after).filter(
+        (k) => (after as any)[k] !== (before as any)[k],
+      );
+
+      await tx.auditLog.create({
+        data: {
+          storeId: session.storeId,
+          actorType: "USER",
+          actorId: session.sub,
+          action: restoring ? "PRODUCT_RESTORE" : stockChanged ? "PRODUCT_UPDATE_STOCK" : "PRODUCT_UPDATE",
+          entityType: "Product",
+          entityId: updated.id,
+          before: before as any,
+          after: after as any,
+          meta: { changedKeys } as any,
+        },
+      });
+
+      return updated;
     });
+
     return NextResponse.json({ product });
   } catch (e) {
     if (isMissingDbColumnError(e)) {
@@ -140,12 +210,36 @@ export async function DELETE(request: Request, ctx: RouteCtx) {
   const skuArchived = `__arch__${existing.id.slice(-12)}__${existing.sku}`.slice(0, 240);
 
   try {
-    await prisma.product.update({
+    const before = {
+      sku: existing.sku,
+      name: existing.name,
+      active: existing.active,
+      deletedAt: existing.deletedAt ?? null,
+    };
+    const updated = await prisma.product.update({
       where: { id },
       data: {
         deletedAt: new Date(),
         active: false,
         sku: skuArchived,
+      },
+    });
+    const after = {
+      sku: updated.sku,
+      name: updated.name,
+      active: updated.active,
+      deletedAt: (updated as any).deletedAt ?? null,
+    };
+    await prisma.auditLog.create({
+      data: {
+        storeId: session.storeId,
+        actorType: "USER",
+        actorId: session.sub,
+        action: "PRODUCT_ARCHIVE",
+        entityType: "Product",
+        entityId: existing.id,
+        before: before as any,
+        after: after as any,
       },
     });
     return NextResponse.json({ ok: true });

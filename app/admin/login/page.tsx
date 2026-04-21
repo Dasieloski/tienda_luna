@@ -3,13 +3,12 @@
 import { useRouter } from "next/navigation"
 import { useState } from "react"
 import Link from "next/link"
-import { STATIC_ADMIN_EMAIL, STATIC_ADMIN_PASSWORD } from "@/lib/static-admin-auth"
 import { ArrowLeft, Eye, EyeOff, Loader2, Lock, Mail, ShoppingBag } from "lucide-react"
 
 export default function AdminLoginPage() {
   const router = useRouter()
-  const [email, setEmail] = useState(STATIC_ADMIN_EMAIL)
-  const [password, setPassword] = useState(STATIC_ADMIN_PASSWORD)
+  const [email, setEmail] = useState("")
+  const [password, setPassword] = useState("")
   const [showPassword, setShowPassword] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)

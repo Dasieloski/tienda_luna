@@ -1,18 +1,33 @@
-import { loadCatalogProducts } from "@/lib/catalog-products";
 import { prisma } from "@/lib/db";
 import { LOCAL_ADMIN_STORE_ID } from "@/lib/static-admin-auth";
 
-function startOfDay(d: Date) {
-  const x = new Date(d);
-  x.setHours(0, 0, 0, 0);
-  return x;
+/**
+ * Convierte “hoy” local (por offset minutos) a rango UTC [from, to).
+ * Convención de offset: minutos respecto a UTC (ej. Cuba suele ser -240).
+ */
+function utcRangeForLocalDayContaining(now: Date, offsetMinutes: number) {
+  const local = new Date(now.getTime() + offsetMinutes * 60_000);
+  const y = local.getUTCFullYear();
+  const m = local.getUTCMonth(); // 0-based
+  const d = local.getUTCDate();
+  const baseUtcMidnight = Date.UTC(y, m, d, 0, 0, 0, 0);
+  const from = new Date(baseUtcMidnight - offsetMinutes * 60_000);
+  const to = new Date(from.getTime() + 24 * 60 * 60_000);
+  return { from, to, localYmd: `${y}-${String(m + 1).padStart(2, "0")}-${String(d).padStart(2, "0")}` };
 }
 
-function startOfMonth(d: Date) {
-  const x = new Date(d);
-  x.setDate(1);
-  x.setHours(0, 0, 0, 0);
-  return x;
+function utcStartOfLocalMonth(now: Date, offsetMinutes: number) {
+  const local = new Date(now.getTime() + offsetMinutes * 60_000);
+  const y = local.getUTCFullYear();
+  const m = local.getUTCMonth(); // 0-based
+  const baseUtcMonthStart = Date.UTC(y, m, 1, 0, 0, 0, 0);
+  return new Date(baseUtcMonthStart - offsetMinutes * 60_000);
+}
+
+function storeTzOffsetMinutes() {
+  const raw = process.env.TL_TZ_OFFSET_MINUTES ?? process.env.NEXT_PUBLIC_TL_TZ_OFFSET_MINUTES;
+  const v = raw == null ? -240 : Number(raw); // default Cuba (UTC-4)
+  return Number.isFinite(v) ? v : -240;
 }
 
 export function emptyOverviewPayload(now = new Date()) {
@@ -106,32 +121,59 @@ export async function getOverview(storeId: string, now = new Date()) {
 }
 
 async function computeOverviewFromDb(storeId: string, now: Date) {
-  const dayStart = startOfDay(now);
-  const monthStart = startOfMonth(now);
+  const offset = storeTzOffsetMinutes();
+  const dayRange = utcRangeForLocalDayContaining(now, offset);
+  const dayStart = dayRange.from;
+  const dayEnd = dayRange.to;
+  const monthStart = utcStartOfLocalMonth(now, offset);
 
   // Importante: evitar muchas consultas en paralelo porque Supabase + Prisma
   // están configurados con un connection_limit bajo (1), lo que puede provocar
   // timeouts en el pool. Aquí hacemos las consultas de forma secuencial.
 
-  const dailyAgg = await prisma.sale.aggregate({
-    where: { storeId, completedAt: { gte: dayStart } },
-    _sum: { totalCents: true },
-    _count: true,
-  });
+  const aggRows = await prisma.$queryRaw<
+    {
+      ventas_hoy: bigint;
+      ingresos_hoy_cents: bigint;
+      ventas_mes: bigint;
+      ingresos_mes_cents: bigint;
+      ingresos_total_cents: bigint;
+    }[]
+  >`
+    SELECT
+      COUNT(*) FILTER (WHERE "completedAt" >= ${dayStart} AND "completedAt" < ${dayEnd})::bigint AS ventas_hoy,
+      COALESCE(SUM("totalCents") FILTER (WHERE "completedAt" >= ${dayStart} AND "completedAt" < ${dayEnd}), 0)::bigint AS ingresos_hoy_cents,
+      COUNT(*) FILTER (WHERE "completedAt" >= ${monthStart})::bigint AS ventas_mes,
+      COALESCE(SUM("totalCents") FILTER (WHERE "completedAt" >= ${monthStart}), 0)::bigint AS ingresos_mes_cents,
+      COALESCE(SUM("totalCents"), 0)::bigint AS ingresos_total_cents
+    FROM "Sale"
+    WHERE "storeId" = ${storeId}
+  `;
+  const agg = aggRows[0] ?? {
+    ventas_hoy: BigInt(0),
+    ingresos_hoy_cents: BigInt(0),
+    ventas_mes: BigInt(0),
+    ingresos_mes_cents: BigInt(0),
+    ingresos_total_cents: BigInt(0),
+  };
 
-  const monthlyAgg = await prisma.sale.aggregate({
-    where: { storeId, completedAt: { gte: monthStart } },
-    _sum: { totalCents: true },
-    _count: true,
-  });
-
-  const topProducts = await prisma.saleLine.groupBy({
-    by: ["productId"],
-    where: { sale: { storeId } },
-    _sum: { quantity: true, subtotalCents: true },
-    orderBy: { _sum: { quantity: "desc" } },
-    take: 8,
-  });
+  const topProducts = await prisma.$queryRaw<
+    { productId: string; unidades: bigint; subtotal_cents: bigint; name: string | null; sku: string | null }[]
+  >`
+    SELECT
+      sl."productId" AS "productId",
+      SUM(sl.quantity)::bigint AS unidades,
+      COALESCE(SUM(sl."subtotalCents"), 0)::bigint AS subtotal_cents,
+      p.name AS name,
+      p.sku AS sku
+    FROM "SaleLine" sl
+    JOIN "Sale" s ON s.id = sl."saleId"
+    LEFT JOIN "Product" p ON p.id = sl."productId"
+    WHERE s."storeId" = ${storeId}
+    GROUP BY sl."productId", p.name, p.sku
+    ORDER BY unidades DESC
+    LIMIT 8
+  `;
 
   const stockRows = await prisma.product.findMany({
     where: { storeId, active: true },
@@ -146,30 +188,20 @@ async function computeOverviewFromDb(storeId: string, now: Date) {
     },
   });
 
-  const revenueTotal = await prisma.sale.aggregate({
-    where: { storeId },
-    _sum: { totalCents: true },
-  });
-
   const fraudCount = await prisma.event.count({
     where: { storeId, isFraud: true },
   });
 
-  const topIds = [...new Set(topProducts.map((t) => t.productId))];
-  const catalogForTop = (await loadCatalogProducts(prisma, storeId)).filter((p) =>
-    topIds.includes(p.id),
-  );
-  const metaById = new Map(catalogForTop.map((p) => [p.id, p]));
-
   const salesByHour = await prisma.$queryRaw<
     { hour: number; ventas: bigint; ingreso_cents: bigint }[]
   >`
-    SELECT EXTRACT(HOUR FROM "completedAt")::int AS hour,
+    SELECT EXTRACT(HOUR FROM ("completedAt" + (${offset}::int * interval '1 minute')))::int AS hour,
            COUNT(*)::bigint AS ventas,
            COALESCE(SUM("totalCents"),0)::bigint AS ingreso_cents
     FROM "Sale"
     WHERE "storeId" = ${storeId}
       AND "completedAt" >= ${dayStart}
+      AND "completedAt" < ${dayEnd}
     GROUP BY 1
     ORDER BY 1
   `;
@@ -193,19 +225,24 @@ async function computeOverviewFromDb(storeId: string, now: Date) {
     ventasPorHoraHoyFull[0]!,
   );
 
+  const dailyCount = Number(agg.ventas_hoy ?? BigInt(0));
+  const dailyRevenueCents = Number(agg.ingresos_hoy_cents ?? BigInt(0));
+  const monthlyCount = Number(agg.ventas_mes ?? BigInt(0));
+  const monthlyRevenueCents = Number(agg.ingresos_mes_cents ?? BigInt(0));
+
   const level1 = {
-    ventasHoy: dailyAgg._count,
-    ingresosHoyCents: dailyAgg._sum.totalCents ?? 0,
-    ventasMes: monthlyAgg._count,
-    ingresosMesCents: monthlyAgg._sum.totalCents ?? 0,
-    ingresosTotalesCents: revenueTotal._sum.totalCents ?? 0,
+    ventasHoy: dailyCount,
+    ingresosHoyCents: dailyRevenueCents,
+    ventasMes: monthlyCount,
+    ingresosMesCents: monthlyRevenueCents,
+    ingresosTotalesCents: Number(agg.ingresos_total_cents ?? BigInt(0)),
     ticketMedioHoyCents:
-      dailyAgg._count > 0
-        ? Math.round((dailyAgg._sum.totalCents ?? 0) / dailyAgg._count)
+      dailyCount > 0
+        ? Math.round(dailyRevenueCents / dailyCount)
         : 0,
     ticketMedioMesCents:
-      monthlyAgg._count > 0
-        ? Math.round((monthlyAgg._sum.totalCents ?? 0) / monthlyAgg._count)
+      monthlyCount > 0
+        ? Math.round(monthlyRevenueCents / monthlyCount)
         : 0,
     horaPicoHoy: {
       hora: pico.ventas > 0 ? pico.hora : null,
@@ -214,10 +251,10 @@ async function computeOverviewFromDb(storeId: string, now: Date) {
     },
     productosTop: topProducts.map((t) => ({
       productId: t.productId,
-      nombre: metaById.get(t.productId)?.name ?? t.productId,
-      sku: metaById.get(t.productId)?.sku,
-      unidades: t._sum.quantity ?? 0,
-      subtotalCents: t._sum.subtotalCents ?? 0,
+      nombre: t.name ?? t.productId,
+      sku: t.sku ?? undefined,
+      unidades: Number(t.unidades ?? BigInt(0)),
+      subtotalCents: Number(t.subtotal_cents ?? BigInt(0)),
     })),
     stockActual: stockRows.map((p) => ({
       id: p.id,
@@ -230,29 +267,24 @@ async function computeOverviewFromDb(storeId: string, now: Date) {
   };
 
   const thirtyDaysAgo = new Date(now.getTime() - 30 * 86400000);
-  const sales30d = await prisma.sale.findMany({
-    where: { storeId, completedAt: { gte: thirtyDaysAgo } },
-    include: { lines: true },
-  });
 
-  const productCosts = await prisma.product.findMany({
-    where: { storeId },
-    select: { id: true, costCents: true },
-  });
-  const costById = new Map(productCosts.map((p) => [p.id, p.costCents]));
+  const marginRows = await prisma.$queryRaw<
+    { cogs_cents: bigint; revenue_with_cost_cents: bigint }[]
+  >`
+    SELECT
+      COALESCE(SUM((p."costCents" * sl.quantity)), 0)::bigint AS cogs_cents,
+      COALESCE(SUM(sl."subtotalCents"), 0)::bigint AS revenue_with_cost_cents
+    FROM "SaleLine" sl
+    JOIN "Sale" s ON s.id = sl."saleId"
+    JOIN "Product" p ON p.id = sl."productId"
+    WHERE s."storeId" = ${storeId}
+      AND s."completedAt" >= ${thirtyDaysAgo}
+      AND p."costCents" IS NOT NULL
+  `;
+  const margin = marginRows[0] ?? { cogs_cents: BigInt(0), revenue_with_cost_cents: BigInt(0) };
+  const cogs = Number(margin.cogs_cents ?? BigInt(0));
+  const revenueLinesWithCost = Number(margin.revenue_with_cost_cents ?? BigInt(0));
 
-  /** COGS y PVP solo en líneas con precio de compra en catálogo (misma regla que Economía). */
-  let cogs = 0;
-  let revenueLinesWithCost = 0;
-  for (const s of sales30d) {
-    for (const l of s.lines) {
-      const unitCost = costById.get(l.productId);
-      if (unitCost == null) continue;
-      cogs += unitCost * l.quantity;
-      revenueLinesWithCost += l.subtotalCents;
-    }
-  }
-  const revenue30 = sales30d.reduce((a, s) => a + s.totalCents, 0);
   const inventoryValue = stockRows.reduce(
     (a, p) => a + p.stockQty * (p.costCents ?? p.priceCents),
     0,

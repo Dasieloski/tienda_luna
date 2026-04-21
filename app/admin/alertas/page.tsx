@@ -1,6 +1,7 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { Suspense, useCallback, useEffect, useState } from "react";
+import { useSearchParams } from "next/navigation";
 import { AlertTriangle, Shield, ShieldAlert, ShieldCheck } from "lucide-react";
 import { AdminShell } from "@/components/admin/admin-shell";
 import { KpiCard } from "@/components/admin/kpi-card";
@@ -36,11 +37,13 @@ type Overview = {
   };
 };
 
-export default function AlertsPage() {
+function AlertsPageClient() {
+  const searchParams = useSearchParams();
   const [events, setEvents] = useState<AuditEvent[]>([]);
   const [anomalies, setAnomalies] = useState<Anomaly[]>([]);
   const [fraudCount, setFraudCount] = useState(0);
   const [loading, setLoading] = useState(true);
+  const [onlyFraud, setOnlyFraud] = useState(false);
 
   const loadData = useCallback(async () => {
     try {
@@ -70,8 +73,18 @@ export default function AlertsPage() {
 
   // Sin auto-refresh: solo carga inicial.
 
+  // Drill-down: /admin/alertas?fraud=1
+  useEffect(() => {
+    const fraud = searchParams.get("fraud");
+    if (fraud === "1" || fraud?.toLowerCase() === "true") {
+      setOnlyFraud(true);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   const fraudEvents = events.filter((e) => e.isFraud);
   const normalEvents = events.filter((e) => !e.isFraud);
+  const tableEvents = onlyFraud ? fraudEvents : events;
 
   const eventColumns: Column<AuditEvent>[] = [
     {
@@ -263,13 +276,25 @@ export default function AlertsPage() {
 
         {/* All events table */}
         <section>
-          <div className="mb-4">
-            <h2 className="text-lg font-semibold text-tl-ink">Auditoría de eventos</h2>
-            <p className="mt-0.5 text-sm text-tl-muted">Registro completo del sistema</p>
+          <div className="mb-4 flex flex-wrap items-start justify-between gap-3">
+            <div>
+              <h2 className="text-lg font-semibold text-tl-ink">Auditoría de eventos</h2>
+              <p className="mt-0.5 text-sm text-tl-muted">
+                {onlyFraud ? "Mostrando solo eventos marcados como fraude" : "Registro completo del sistema"}
+              </p>
+            </div>
+            <button
+              type="button"
+              className="tl-btn tl-btn-secondary tl-interactive !px-4 !py-2"
+              onClick={() => setOnlyFraud((v) => !v)}
+              title={onlyFraud ? "Ver todos los eventos" : "Ver solo fraude"}
+            >
+              {onlyFraud ? "Ver todos" : "Solo fraude"}
+            </button>
           </div>
           <DataTable
             columns={eventColumns}
-            data={events}
+            data={tableEvents}
             keyExtractor={(row) => row.id}
             searchable
             searchPlaceholder="Buscar por tipo o dispositivo..."
@@ -282,5 +307,24 @@ export default function AlertsPage() {
         </section>
       </div>
     </AdminShell>
+  );
+}
+
+export default function AlertsPage() {
+  return (
+    <Suspense
+      fallback={
+        <AdminShell title="Alertas">
+          <div className="flex min-h-[60vh] items-center justify-center">
+            <div className="flex flex-col items-center gap-3">
+              <Shield className="h-8 w-8 text-tl-accent tl-pulse" aria-hidden />
+              <p className="text-sm text-tl-muted">Cargando alertas...</p>
+            </div>
+          </div>
+        </AdminShell>
+      }
+    >
+      <AlertsPageClient />
+    </Suspense>
   );
 }

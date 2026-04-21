@@ -19,6 +19,7 @@ import { cn } from "@/lib/utils";
 import { formatCup } from "@/lib/money";
 import { CupUsdMoney } from "@/components/admin/cup-usd-money";
 import { TablePriceCupCell } from "@/components/admin/table-price-cup-cell";
+import { DataTable, type Column } from "@/components/admin/data-table";
 
 const TABS = [
   { id: "vista" as const, label: "Vista general", icon: LayoutGrid },
@@ -150,6 +151,14 @@ type AuditEvent = {
   fraudReason: string | null;
   serverTimestamp: string;
 };
+
+function fmtHour12(h: number) {
+  const hh = ((h % 24) + 24) % 24;
+  const ampm = hh >= 12 ? "pm" : "am";
+  const x = hh % 12;
+  const hour = x === 0 ? 12 : x;
+  return `${hour} ${ampm}`;
+}
 
 function SectionTitle({ children }: { children: React.ReactNode }) {
   return (
@@ -374,11 +383,190 @@ export function AdminDashboard() {
 
   const dbOk = data?.meta?.dbAvailable !== false;
 
+  const liveSalesColumns: Column<RecentSale>[] = useMemo(
+    () => [
+      {
+        key: "completedAt",
+        label: "Hora",
+        sortable: true,
+        width: "190px",
+        render: (row) => (
+          <span className="whitespace-nowrap text-xs text-zinc-400">
+            {new Date(row.completedAt).toLocaleString("es-ES")}
+          </span>
+        ),
+      },
+      {
+        key: "totalCents",
+        label: "Total",
+        sortable: true,
+        align: "right",
+        width: "120px",
+        render: (row) => <TablePriceCupCell cupCents={row.totalCents} compact inverse />,
+      },
+      {
+        key: "status",
+        label: "Estado",
+        width: "120px",
+        filter: {
+          kind: "select",
+          options: [
+            { label: "COMPLETED", value: "COMPLETED" },
+            { label: "PARTIAL", value: "PARTIAL" },
+          ],
+          getValue: (row) => String(row.status),
+        },
+        render: (row) => <span className="rounded-full bg-white/10 px-2 py-0.5 text-xs text-zinc-200">{row.status}</span>,
+      },
+      {
+        key: "deviceId",
+        label: "Dispositivo",
+        sortable: true,
+        filter: { kind: "text", placeholder: "Filtrar dispositivo…" },
+        width: "160px",
+        render: (row) => (
+          <span className="max-w-[160px] truncate font-mono text-xs text-zinc-400" title={row.deviceId}>
+            {row.deviceId}
+          </span>
+        ),
+      },
+      {
+        key: "lines",
+        label: "Líneas",
+        render: (row) => (
+          <span className="text-xs text-zinc-400">
+            {row.lines
+              .map((l) => `${l.quantity}× ${l.productName}`)
+              .slice(0, 3)
+              .join(" · ")}
+            {row.lines.length > 3 ? "…" : ""}
+          </span>
+        ),
+      },
+    ],
+    [],
+  );
+
+  const productsColumns: Column<ProductRow>[] = useMemo(
+    () => [
+      {
+        key: "name",
+        label: "Nombre",
+        sortable: true,
+        filter: { kind: "text", placeholder: "Filtrar por nombre…" },
+        render: (row) => <span className="font-medium text-zinc-200">{row.name}</span>,
+      },
+      {
+        key: "priceCents",
+        label: "PVP",
+        sortable: true,
+        align: "right",
+        width: "120px",
+        render: (row) => (
+          <TablePriceCupCell cupCents={row.priceCents} explicitUsdCents={row.priceUsdCents} compact inverse />
+        ),
+      },
+      {
+        key: "unitsPerBox",
+        label: "Ud/caja",
+        sortable: true,
+        align: "right",
+        width: "90px",
+        filter: { kind: "numberRange" },
+        render: (row) => <span className="tabular-nums text-zinc-400">{row.unitsPerBox ?? 1}</span>,
+      },
+      {
+        key: "supplierName",
+        label: "Proveedor",
+        sortable: true,
+        filter: { kind: "select", placeholder: "Todos" },
+        width: "160px",
+        render: (row) => <span className="text-zinc-400">{row.supplierName ?? "—"}</span>,
+      },
+      {
+        key: "wholesaleCupCents",
+        label: "Mayorista",
+        sortable: true,
+        align: "right",
+        width: "130px",
+        render: (row) => (
+          <span className="tabular-nums text-zinc-400">
+            {row.wholesaleCupCents != null ? formatCup(row.wholesaleCupCents) : "—"}
+          </span>
+        ),
+      },
+      {
+        key: "stockQty",
+        label: "Stock",
+        sortable: true,
+        align: "right",
+        width: "90px",
+        filter: { kind: "numberRange" },
+        render: (row) => <span className="tabular-nums text-zinc-200">{row.stockQty}</span>,
+      },
+      {
+        key: "lowStockAt",
+        label: "Umbral",
+        sortable: true,
+        align: "right",
+        width: "90px",
+        filter: { kind: "numberRange" },
+        render: (row) => <span className="tabular-nums text-zinc-500">{row.lowStockAt}</span>,
+      },
+    ],
+    [],
+  );
+
+  const auditColumns: Column<AuditEvent>[] = useMemo(
+    () => [
+      { key: "type", label: "Tipo", sortable: true, filter: { kind: "text", placeholder: "Filtrar tipo…" } },
+      { key: "status", label: "Estado", sortable: true, filter: { kind: "text", placeholder: "Filtrar estado…" } },
+      {
+        key: "isFraud",
+        label: "Fraude",
+        width: "110px",
+        filter: {
+          kind: "select",
+          options: [
+            { label: "Sí", value: "true" },
+            { label: "No", value: "false" },
+          ],
+          getValue: (row) => String(Boolean(row.isFraud)),
+        },
+        render: (row) => <span className="text-xs text-zinc-300">{row.isFraud ? "sí" : "no"}</span>,
+      },
+      {
+        key: "deviceId",
+        label: "Dispositivo",
+        sortable: true,
+        filter: { kind: "text", placeholder: "Filtrar dispositivo…" },
+        width: "160px",
+        render: (row) => (
+          <span className="font-mono text-xs text-zinc-400" title={row.deviceId}>
+            {row.deviceId}
+          </span>
+        ),
+      },
+      {
+        key: "serverTimestamp",
+        label: "Servidor",
+        sortable: true,
+        width: "190px",
+        render: (row) => (
+          <span className="text-xs text-zinc-500">
+            {new Date(row.serverTimestamp).toLocaleString("es-ES")}
+          </span>
+        ),
+      },
+    ],
+    [],
+  );
+
   const horaPicoLabel = useMemo(() => {
     if (!data) return "—";
     const h = data.level1.horaPicoHoy.hora;
     if (h == null) return "Sin ventas hoy";
-    return `${String(h).padStart(2, "0")}:00 · ${data.level1.horaPicoHoy.ventas} tickets`;
+    return `${fmtHour12(h)} · ${data.level1.horaPicoHoy.ventas} tickets`;
   }, [data]);
 
   if (err && !data) {
@@ -454,7 +642,7 @@ export function AdminDashboard() {
           <p className="mt-1 text-amber-100/90">
             {data.meta?.hint ??
               data.meta?.message ??
-              "Configura STATIC_ADMIN_STORE_ID o revisa DATABASE_URL. Los datos y gráficas aparecerán en cuanto haya tienda en BD."}
+              "Revisa DATABASE_URL/DIRECT_URL. Los datos y gráficas aparecerán en cuanto haya tienda en BD."}
           </p>
         </div>
       ) : null}
@@ -622,54 +810,16 @@ export function AdminDashboard() {
               highlightSale && "ring-violet-500/40 shadow-violet-500/10",
             )}
           >
-            <table className="w-full min-w-[720px] text-left text-sm">
-              <thead className="sticky top-0 border-b border-white/10 bg-zinc-900/95 text-[11px] uppercase tracking-wider text-zinc-500 backdrop-blur">
-                <tr>
-                  <th className="px-4 py-3">Hora</th>
-                  <th className="px-4 py-3">Total</th>
-                  <th className="px-4 py-3">Estado</th>
-                  <th className="px-4 py-3">Dispositivo</th>
-                  <th className="px-4 py-3">Líneas</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-white/5 text-zinc-300">
-                {salesLive.length === 0 ? (
-                  <tr>
-                    <td colSpan={5} className="px-4 py-10 text-center text-zinc-500">
-                      No hay ventas recientes o la BD no está conectada.
-                    </td>
-                  </tr>
-                ) : (
-                  salesLive.map((s, idx) => (
-                    <tr
-                      key={s.id}
-                      className={cn(
-                        "transition-colors hover:bg-white/[0.04]",
-                        idx === 0 && highlightSale && "bg-violet-500/10 motion-safe:animate-pulse",
-                      )}
-                    >
-                      <td className="whitespace-nowrap px-4 py-3 text-xs text-zinc-400">
-                        {new Date(s.completedAt).toLocaleString("es-ES")}
-                      </td>
-                      <td className="px-4 py-3 text-right align-top font-semibold text-white">
-                        <TablePriceCupCell cupCents={s.totalCents} compact inverse />
-                      </td>
-                      <td className="px-4 py-3">
-                        <span className="rounded-full bg-white/10 px-2 py-0.5 text-xs">{s.status}</span>
-                      </td>
-                      <td className="max-w-[140px] truncate px-4 py-3 font-mono text-xs text-zinc-400">{s.deviceId}</td>
-                      <td className="px-4 py-3 text-xs text-zinc-400">
-                        {s.lines
-                          .map((l) => `${l.quantity}× ${l.productName}`)
-                          .slice(0, 3)
-                          .join(" · ")}
-                        {s.lines.length > 3 ? "…" : ""}
-                      </td>
-                    </tr>
-                  ))
-                )}
-              </tbody>
-            </table>
+            <DataTable
+              columns={liveSalesColumns}
+              data={salesLive}
+              keyExtractor={(r) => r.id}
+              searchable
+              searchPlaceholder="Buscar por dispositivo, estado o producto…"
+              searchKeys={["deviceId", "status"]}
+              emptyMessage="No hay ventas recientes o la BD no está conectada."
+              maxHeight="min(520px, 65vh)"
+            />
           </div>
         </div>
       )}
@@ -684,43 +834,16 @@ export function AdminDashboard() {
 
           <div className="grid gap-8 lg:grid-cols-[minmax(0,1fr)_320px]">
             <div className="overflow-x-auto rounded-2xl border border-white/10 ring-1 ring-white/5">
-              <table className="w-full min-w-[820px] text-left text-sm">
-                <thead className="border-b border-white/10 bg-white/[0.04] text-[11px] uppercase tracking-wider text-zinc-500">
-                  <tr>
-                    <th className="px-4 py-3">Nombre</th>
-                    <th className="px-4 py-3 text-right">PVP</th>
-                    <th className="px-4 py-3">Ud/caja</th>
-                    <th className="px-4 py-3">Proveedor</th>
-                    <th className="px-4 py-3">Mayorista</th>
-                    <th className="px-4 py-3">Stock</th>
-                    <th className="px-4 py-3">Umbral</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-white/5">
-                  {products.map((p) => (
-                    <tr key={p.id} className="hover:bg-white/[0.03]">
-                      <td className="px-4 py-2.5 font-medium text-zinc-200">{p.name}</td>
-                      <td className="px-4 py-2.5 text-right align-top">
-                        <TablePriceCupCell
-                          cupCents={p.priceCents}
-                          explicitUsdCents={p.priceUsdCents}
-                          compact
-                          inverse
-                        />
-                      </td>
-                      <td className="px-4 py-2.5 tabular-nums text-zinc-400">
-                        {p.unitsPerBox ?? 1}
-                      </td>
-                      <td className="px-4 py-2.5 text-zinc-400">{p.supplierName ?? "—"}</td>
-                      <td className="px-4 py-2.5 tabular-nums text-zinc-400">
-                        {p.wholesaleCupCents != null ? formatCup(p.wholesaleCupCents) : "—"}
-                      </td>
-                      <td className="px-4 py-2.5 tabular-nums">{p.stockQty}</td>
-                      <td className="px-4 py-2.5 tabular-nums text-zinc-500">{p.lowStockAt}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
+              <DataTable
+                columns={productsColumns}
+                data={products}
+                keyExtractor={(r) => r.id}
+                searchable
+                searchPlaceholder="Buscar producto…"
+                searchKeys={["name", "supplierName"]}
+                emptyMessage="No hay productos."
+                maxHeight="min(620px, 70vh)"
+              />
             </div>
 
             <div className="h-fit rounded-2xl border border-violet-500/20 bg-gradient-to-b from-violet-500/10 to-zinc-950/80 p-5 ring-1 ring-violet-500/20">
@@ -939,30 +1062,14 @@ export function AdminDashboard() {
 
           <SectionTitle>Auditoría · eventos</SectionTitle>
           <div className="overflow-x-auto rounded-2xl border border-white/10 ring-1 ring-white/5">
-            <table className="w-full min-w-[640px] text-left text-sm">
-              <thead className="border-b border-white/10 bg-white/[0.04] text-xs uppercase tracking-wider text-zinc-500">
-                <tr>
-                  <th className="px-3 py-2">Tipo</th>
-                  <th className="px-3 py-2">Estado</th>
-                  <th className="px-3 py-2">Fraude</th>
-                  <th className="px-3 py-2">Dispositivo</th>
-                  <th className="px-3 py-2">Servidor</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-white/10 text-zinc-300">
-                {events.map((e) => (
-                  <tr key={e.id} className="hover:bg-white/[0.03]">
-                    <td className="px-3 py-2">{e.type}</td>
-                    <td className="px-3 py-2">{e.status}</td>
-                    <td className="px-3 py-2">{e.isFraud ? "sí" : "no"}</td>
-                    <td className="px-3 py-2 font-mono text-xs">{e.deviceId}</td>
-                    <td className="px-3 py-2 text-xs text-zinc-500">
-                      {new Date(e.serverTimestamp).toLocaleString("es-ES")}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+            <DataTable
+              columns={auditColumns}
+              data={events}
+              keyExtractor={(r) => r.id}
+              searchable={false}
+              emptyMessage="Sin eventos."
+              maxHeight="min(520px, 65vh)"
+            />
           </div>
         </div>
       )}
@@ -1004,9 +1111,7 @@ export function AdminDashboard() {
               <li>El panel refresca métricas y ventas cada 5 segundos cuando está abierto.</li>
               <li>Los gráficos animan al montar y al recibir nuevos datos del resumen.</li>
               <li>
-                Sesión admin estática: revisa{" "}
-                <code className="text-zinc-300">lib/static-admin-auth.ts</code> y variables{" "}
-                <code className="text-zinc-300">STATIC_ADMIN_*</code>.
+                Si el panel aparece sin datos, revisa que la base de datos esté enlazada y que exista al menos una tienda en BD.
               </li>
               <li>
                 Volver al sitio público:{" "}

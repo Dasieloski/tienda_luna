@@ -301,7 +301,21 @@ export async function processBatch(
             where: { id: productId },
             data: { stockQty: next },
           });
-          results.push(await record({ status: "ACCEPTED" }));
+          const rec = await record({ status: "ACCEPTED" });
+          await tx.inventoryMovement.create({
+            data: {
+              storeId: params.storeId,
+              productId,
+              delta: -Math.trunc(quantity),
+              beforeQty: current,
+              afterQty: next,
+              reason: "STOCK_DECREASED",
+              actorType: "DEVICE",
+              actorId: params.deviceId,
+              eventId: rec.serverEventId,
+            },
+          });
+          results.push(rec);
           break;
         }
 
@@ -417,6 +431,12 @@ export async function processBatch(
           const status: EventStatus = shortfall ? "CORRECTED" : "ACCEPTED";
 
           let totalCents = 0;
+          const movementDrafts: {
+            productId: string;
+            beforeQty: number;
+            afterQty: number;
+            delta: number;
+          }[] = [];
           for (const l of resolvedLines) {
             if (l.fulfilled <= 0) continue;
             const cur = stock.get(l.productId) ?? 0;
@@ -425,6 +445,12 @@ export async function processBatch(
             await tx.product.update({
               where: { id: l.productId },
               data: { stockQty: next },
+            });
+            movementDrafts.push({
+              productId: l.productId,
+              beforeQty: cur,
+              afterQty: next,
+              delta: -Math.trunc(l.fulfilled),
             });
             totalCents += l.fulfilled * l.unitPriceCents;
           }
@@ -436,6 +462,22 @@ export async function processBatch(
             correctionNote,
           });
           results.push(main);
+
+          if (movementDrafts.length > 0) {
+            await tx.inventoryMovement.createMany({
+              data: movementDrafts.map((m) => ({
+                storeId: params.storeId,
+                productId: m.productId,
+                delta: m.delta,
+                beforeQty: m.beforeQty,
+                afterQty: m.afterQty,
+                reason: "SALE_COMPLETED",
+                actorType: "DEVICE",
+                actorId: params.deviceId,
+                eventId: main.serverEventId,
+              })),
+            });
+          }
 
           // La app no gestiona datos de cliente; cada venta cuenta como 1 cliente.
 

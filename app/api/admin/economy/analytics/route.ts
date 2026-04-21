@@ -271,11 +271,29 @@ export async function GET(request: Request) {
         const revPrevM = Number(sumPrevMonth._sum.totalCents ?? 0);
         const cntPrevM = sumPrevMonth._count;
 
-        const dailyRows = dailyAgg.map((r) => ({
+        // Preferir snapshots diarios (si existen) para series históricas.
+        let dailyRows = dailyAgg.map((r) => ({
           date: r.d.toISOString().slice(0, 10),
           revenueCents: Number(r.revenue),
           sales: Number(r.cnt),
         }));
+        try {
+          // Snapshots solo hasta ayer (hoy puede estar incompleto).
+          const snapRows = await prisma.metricSnapshot.findMany({
+            where: { storeId, day: { gte: startOfDayUtc(from90), lt: todayStart } },
+            orderBy: { day: "asc" },
+            select: { day: true, revenueCents: true, saleCount: true },
+          });
+          if (snapRows.length >= 14) {
+            dailyRows = snapRows.map((s) => ({
+              date: s.day.toISOString().slice(0, 10),
+              revenueCents: s.revenueCents,
+              sales: s.saleCount,
+            }));
+          }
+        } catch {
+          // si la tabla aún no existe o falla, usamos el cálculo live
+        }
         const revenues = dailyRows.map((x) => x.revenueCents);
         const minDaily =
           revenues.length > 0
@@ -292,11 +310,33 @@ export async function GET(request: Request) {
         const avgTicket7 = cnt7 > 0 ? Math.round(rev7 / cnt7) : 0;
         const avgTicketMonth = cntCurM > 0 ? Math.round(revCurM / cntCurM) : 0;
 
-        const months = last6Months.map((m) => ({
+        let months = last6Months.map((m) => ({
           month: m.ym,
           revenueCents: Number(m.revenue),
           sales: Number(m.cnt),
         }));
+        try {
+          const snapRows6m = await prisma.metricSnapshot.findMany({
+            where: { storeId, day: { gte: from6m, lt: todayStart } },
+            orderBy: { day: "asc" },
+            select: { day: true, revenueCents: true, saleCount: true },
+          });
+          if (snapRows6m.length >= 20) {
+            const byMonth = new Map<string, { revenueCents: number; sales: number }>();
+            for (const s of snapRows6m) {
+              const ym = s.day.toISOString().slice(0, 7);
+              const prev = byMonth.get(ym) ?? { revenueCents: 0, sales: 0 };
+              prev.revenueCents += s.revenueCents;
+              prev.sales += s.saleCount;
+              byMonth.set(ym, prev);
+            }
+            months = Array.from(byMonth.entries())
+              .sort((a, b) => a[0].localeCompare(b[0]))
+              .map(([month, v]) => ({ month, revenueCents: v.revenueCents, sales: v.sales }));
+          }
+        } catch {
+          // ignore
+        }
         const monthRevenues = months.map((m) => m.revenueCents);
         const avgMonthlyLastN =
           monthRevenues.length > 0

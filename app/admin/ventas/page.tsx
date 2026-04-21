@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import { RefreshCw, WifiOff } from "lucide-react";
 import { AdminShell } from "@/components/admin/admin-shell";
 import { DataTable, type Column } from "@/components/admin/data-table";
 import { cn } from "@/lib/utils";
@@ -32,12 +33,24 @@ export default function SalesPage() {
   const [sales, setSales] = useState<RecentSale[]>([]);
   const [loading, setLoading] = useState(true);
   const [highlightNew, setHighlightNew] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
+  const [pollError, setPollError] = useState<string | null>(null);
+  const [lastUpdatedAt, setLastUpdatedAt] = useState<Date | null>(null);
   const topSaleRef = useRef<string | null>(null);
+  const inFlightRef = useRef(false);
+  const stopRef = useRef(false);
 
-  const loadSales = useCallback(async () => {
+  const loadSales = useCallback(async (opts?: { initial?: boolean; manual?: boolean }) => {
+    if (inFlightRef.current) return;
+    inFlightRef.current = true;
+    const isInitial = opts?.initial === true;
+    if (!isInitial) setRefreshing(true);
     try {
       const res = await fetch("/api/admin/sales/recent?limit=30", { credentials: "include" });
-      if (!res.ok) return;
+      if (!res.ok) {
+        setPollError("No se pudo actualizar ventas.");
+        return;
+      }
       const json = (await res.json()) as { sales: RecentSale[] };
       const next = (json.sales ?? []).map((s) => ({
         ...s,
@@ -57,17 +70,44 @@ export default function SalesPage() {
       }
       topSaleRef.current = next[0]?.id ?? null;
       setSales(next);
+      setPollError(null);
+      setLastUpdatedAt(new Date());
     } finally {
       setLoading(false);
+      setRefreshing(false);
+      inFlightRef.current = false;
     }
   }, []);
 
   // Initial load
   useEffect(() => {
-    void loadSales();
+    void loadSales({ initial: true });
   }, [loadSales]);
 
-  // Sin auto-refresh: solo carga inicial (y el usuario puede recargar manualmente si lo desea).
+  // Auto-refresh (5s) solo si la pestaña está visible.
+  useEffect(() => {
+    stopRef.current = false;
+    let interval: number | null = null;
+
+    const tick = () => {
+      if (stopRef.current) return;
+      if (document.visibilityState !== "visible") return;
+      void loadSales();
+    };
+
+    interval = window.setInterval(tick, 5000);
+
+    const onVis = () => {
+      if (document.visibilityState === "visible") tick();
+    };
+    document.addEventListener("visibilitychange", onVis);
+
+    return () => {
+      stopRef.current = true;
+      if (interval != null) window.clearInterval(interval);
+      document.removeEventListener("visibilitychange", onVis);
+    };
+  }, [loadSales]);
 
   const columns: Column<RecentSale>[] = [
     {
@@ -185,6 +225,28 @@ export default function SalesPage() {
             <p className="mt-2 text-sm text-tl-muted">
               Actualización automática cada 5 segundos
             </p>
+            <div className="mt-2 flex flex-wrap items-center gap-3">
+              <button
+                type="button"
+                className="tl-btn tl-btn-secondary tl-interactive tl-hover-lift tl-press tl-focus !px-4 !py-2"
+                onClick={() => void loadSales({ manual: true })}
+                disabled={loading || refreshing}
+              >
+                <RefreshCw className={cn("h-4 w-4", (loading || refreshing) && "animate-spin")} aria-hidden />
+                {refreshing ? "Actualizando..." : "Actualizar"}
+              </button>
+              {lastUpdatedAt && (
+                <span className="text-xs text-tl-muted">
+                  Última actualización: {lastUpdatedAt.toLocaleTimeString("es-ES", { hour: "2-digit", minute: "2-digit" })}
+                </span>
+              )}
+              {pollError && (
+                <span className="inline-flex items-center gap-2 text-xs text-tl-warning">
+                  <WifiOff className="h-4 w-4" aria-hidden />
+                  {pollError}
+                </span>
+              )}
+            </div>
           </div>
           <div
             className={cn(

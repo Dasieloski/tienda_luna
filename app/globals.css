@@ -9,7 +9,7 @@
   /* Text */
   --tl-ink: #1a1a1a;
   --tl-ink-secondary: #4a4a4a;
-  --tl-muted: #8a8a8a;
+  --tl-muted: #6f6f6f;
   
   /* Accent - Yellow/Gold */
   --tl-accent: #f5c518;
@@ -320,6 +320,19 @@
 .tl-table td {
   @apply px-3 py-3 text-tl-ink-secondary sm:px-4 sm:py-3.5;
   border-bottom: 1px solid var(--tl-line-subtle);
+}
+
+/* Density toggle (set by Topbar: documentElement.dataset.density) */
+:root[data-density="compact"] .tl-table th {
+  @apply px-2 py-2 sm:px-3;
+}
+
+:root[data-density="compact"] .tl-table td {
+  @apply px-2 py-2 sm:px-3 sm:py-2.5;
+}
+
+:root[data-density="compact"] .tl-table-pagination {
+  @apply px-3 py-2;
 }
 
 .tl-table tbody tr {

@@ -12,6 +12,7 @@ import {
   Plus,
   Package,
   RefreshCw,
+  Rows3,
   Settings,
   ShoppingCart,
   Trash2,
@@ -65,6 +66,18 @@ export function Topbar({
   const [newPassword, setNewPassword] = useState("");
   const [newRole, setNewRole] = useState<"ADMIN" | "CASHIER">("ADMIN");
   const [usersMsg, setUsersMsg] = useState<string | null>(null);
+
+  const [density, setDensity] = useState<"comfortable" | "compact">("comfortable");
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem("tl-density");
+      const next = raw === "compact" ? "compact" : "comfortable";
+      setDensity(next);
+      document.documentElement.dataset.density = next;
+    } catch {
+      document.documentElement.dataset.density = "comfortable";
+    }
+  }, []);
 
   const label = useMemo(() => {
     const r = usdRateCup ?? 250;
@@ -322,6 +335,24 @@ export function Topbar({
 
       {/* Right: Settings, status, actions */}
       <div className="flex shrink-0 items-center gap-2">
+        <button
+          type="button"
+          className="hidden items-center gap-2 rounded-full border border-tl-line bg-tl-canvas-inset px-3 py-2 text-xs font-semibold text-tl-ink tl-interactive tl-hover-lift tl-press tl-focus hover:bg-tl-canvas-subtle sm:inline-flex"
+          onClick={() => {
+            const next = density === "compact" ? "comfortable" : "compact";
+            setDensity(next);
+            try {
+              localStorage.setItem("tl-density", next);
+            } catch {
+              // ignore
+            }
+            document.documentElement.dataset.density = next;
+          }}
+          title={density === "compact" ? "Cambiar a modo normal" : "Cambiar a modo denso"}
+        >
+          <Rows3 className="h-4 w-4 text-tl-muted" aria-hidden />
+          {density === "compact" ? "Denso" : "Normal"}
+        </button>
         {/* Exchange rate (always accessible) */}
         <div className="relative">
           <button

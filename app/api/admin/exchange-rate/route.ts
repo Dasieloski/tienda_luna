@@ -49,10 +49,29 @@ export async function PATCH(request: Request) {
   }
 
   try {
-    const updated = await prisma.store.update({
-      where: { id: session.storeId },
-      data: { usdRateCup: parsed.data.usdRateCup },
-      select: { usdRateCup: true },
+    const updated = await prisma.$transaction(async (tx) => {
+      const before = await tx.store.findUnique({
+        where: { id: session.storeId },
+        select: { usdRateCup: true },
+      });
+      const next = await tx.store.update({
+        where: { id: session.storeId },
+        data: { usdRateCup: parsed.data.usdRateCup },
+        select: { usdRateCup: true },
+      });
+      await tx.auditLog.create({
+        data: {
+          storeId: session.storeId,
+          actorType: "USER",
+          actorId: session.sub,
+          action: "EXCHANGE_RATE_UPDATE",
+          entityType: "Store",
+          entityId: session.storeId,
+          before: { usdRateCup: before?.usdRateCup ?? null } as any,
+          after: { usdRateCup: next.usdRateCup } as any,
+        },
+      });
+      return next;
     });
     return NextResponse.json({ usdRateCup: updated.usdRateCup });
   } catch (e) {

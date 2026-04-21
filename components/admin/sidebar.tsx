@@ -5,6 +5,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import {
   AlertTriangle,
+  ArrowUpDown,
   BarChart3,
   Boxes,
   ChevronDown,
@@ -34,6 +35,7 @@ const NAV_ITEMS = [
     section: "Gestión",
     items: [
       { href: "/admin/inventario", label: "Inventario", icon: Boxes },
+      { href: "/admin/entradas-salidas", label: "Entradas/Salidas", icon: ArrowUpDown },
       { href: "/admin/proveedores", label: "Proveedores", icon: Truck },
       { href: "/admin/analitica", label: "Analítica", icon: BarChart3 },
       { href: "/admin/economia", label: "Economía", icon: Landmark },

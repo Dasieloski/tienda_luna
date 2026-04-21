@@ -43,6 +43,9 @@ model Store {
   events     Event[]
   sales      Sale[]
   suppliers  Supplier[]
+  inventoryMovements InventoryMovement[]
+  metricSnapshots MetricSnapshot[]
+  auditLogs AuditLog[]
 }
 
 /// Nomenclador de proveedores por tienda (nombre único por tienda).
@@ -117,11 +120,44 @@ model Product {
   updatedAt   DateTime @updatedAt
 
   saleLines SaleLine[]
+  inventoryMovements InventoryMovement[]
 
   @@unique([storeId, sku])
   @@index([storeId])
   @@index([storeId, deletedAt])
   @@index([supplierId])
+}
+
+/// Kardex: entradas/salidas y ajustes de stock por producto.
+model InventoryMovement {
+  id        String   @id @default(cuid())
+  storeId   String
+  store     Store    @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  productId String
+  product   Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
+
+  /// Diferencia aplicada al stock (positivo = entrada, negativo = salida)
+  delta     Int
+  beforeQty Int
+  afterQty  Int
+
+  /// Motivo (ej. MANUAL_ADJUST, SALE_COMPLETED, STOCK_DECREASED)
+  reason    String
+
+  /// Quién lo hizo (USER o DEVICE) y su id (userId o deviceId)
+  actorType String
+  actorId   String
+
+  /// Si proviene de un evento del sync, se enlaza aquí.
+  eventId   String?
+  event     Event?    @relation(fields: [eventId], references: [id], onDelete: SetNull)
+
+  createdAt DateTime @default(now())
+
+  @@index([storeId, createdAt])
+  @@index([storeId, productId, createdAt])
+  @@index([storeId, actorType, actorId, createdAt])
+  @@index([storeId, eventId])
 }
 
 model Customer {
@@ -159,6 +195,8 @@ model Event {
   correctionNote      String?
   /// Agrupa eventos de una misma venta offline (payload.saleId)
   relatedClientSaleId String?
+
+  inventoryMovements InventoryMovement[]
 
   @@unique([storeId, clientEventId])
   @@index([storeId, serverTimestamp])
@@ -198,4 +236,57 @@ model SaleLine {
   subtotalCents  Int
 
   @@index([productId])
+}
+
+/// Snapshots diarios agregados (para analítica histórica rápida).
+model MetricSnapshot {
+  id        String   @id @default(cuid())
+  storeId   String
+  store     Store    @relation(fields: [storeId], references: [id], onDelete: Cascade)
+
+  /// Día (UTC) representado por este snapshot (convención: 00:00:00.000Z).
+  day       DateTime
+
+  revenueCents   Int      @default(0)
+  saleCount      Int      @default(0)
+  ticketAvgCents Int      @default(0)
+
+  /// Margen estimado en CUP (solo líneas con coste definido).
+  marginCents    Int      @default(0)
+  marginPct      Float?
+  linesWithCost  Int      @default(0)
+  linesWithoutCost Int    @default(0)
+
+  /// Mezcla de pagos (por método), agregada por día.
+  paymentMix Json?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([storeId, day])
+  @@index([storeId, day])
+}
+
+/// Auditoría de acciones sensibles (cambios de producto, stock, ajustes, configuraciones).
+model AuditLog {
+  id        String   @id @default(cuid())
+  storeId   String
+  store     Store    @relation(fields: [storeId], references: [id], onDelete: Cascade)
+
+  actorType String   /// USER | DEVICE
+  actorId   String
+
+  action    String   /// e.g. PRODUCT_UPDATE, PRODUCT_ARCHIVE, EXCHANGE_RATE_UPDATE
+  entityType String  /// e.g. Product, Store, InventoryMovement
+  entityId  String?
+
+  before    Json?
+  after     Json?
+  meta      Json?
+
+  createdAt DateTime @default(now())
+
+  @@index([storeId, createdAt])
+  @@index([storeId, action, createdAt])
+  @@index([storeId, entityType, entityId])
 }

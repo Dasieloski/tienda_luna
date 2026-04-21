@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ArchiveRestore, Boxes, ChevronRight, Package, Pencil, Trash2, X } from "lucide-react";
 import { AdminShell } from "@/components/admin/admin-shell";
 import { DataTable, type Column } from "@/components/admin/data-table";
@@ -96,6 +96,13 @@ export default function InventoryPage() {
   const [reactivateId, setReactivateId] = useState<string | null>(null);
   const [deleteBusyId, setDeleteBusyId] = useState<string | null>(null);
   const [restoreDeletedId, setRestoreDeletedId] = useState<string | null>(null);
+
+  const editPrevFocusRef = useRef<HTMLElement | null>(null);
+  const editDialogRef = useRef<HTMLDivElement | null>(null);
+
+  const closeEdit = useCallback(() => {
+    setEditOpen(false);
+  }, []);
 
   const loadSuppliers = useCallback(async () => {
     try {
@@ -214,13 +221,57 @@ export default function InventoryPage() {
   useEffect(() => {
     if (!editOpen) return;
     function onKey(e: KeyboardEvent) {
-      if (e.key === "Escape") setEditOpen(false);
+      if (e.key === "Escape") {
+        e.preventDefault();
+        closeEdit();
+        return;
+      }
+      if (e.key === "Tab") {
+        const root = editDialogRef.current;
+        if (!root) return;
+        const nodes = Array.from(
+          root.querySelectorAll<HTMLElement>(
+            'a[href],button:not([disabled]),textarea,input:not([disabled]),select:not([disabled]),[tabindex]:not([tabindex="-1"])',
+          ),
+        ).filter((el) => !el.hasAttribute("disabled") && el.tabIndex !== -1 && el.offsetParent !== null);
+        if (nodes.length === 0) return;
+        const first = nodes[0]!;
+        const last = nodes[nodes.length - 1]!;
+        const active = document.activeElement as HTMLElement | null;
+        if (e.shiftKey) {
+          if (!active || active === first || !root.contains(active)) {
+            e.preventDefault();
+            last.focus();
+          }
+        } else {
+          if (!active || active === last || !root.contains(active)) {
+            e.preventDefault();
+            first.focus();
+          }
+        }
+      }
     }
     window.addEventListener("keydown", onKey);
+    // Focus inicial al abrir
+    window.setTimeout(() => {
+      const root = editDialogRef.current;
+      if (!root) return;
+      const first = root.querySelector<HTMLElement>(
+        'input:not([disabled]),select:not([disabled]),textarea:not([disabled]),button:not([disabled]),[tabindex]:not([tabindex="-1"])',
+      );
+      first?.focus();
+    }, 0);
     return () => window.removeEventListener("keydown", onKey);
+  }, [closeEdit, editOpen]);
+
+  // Retorno de foco al cerrar el diálogo
+  useEffect(() => {
+    if (editOpen) return;
+    editPrevFocusRef.current?.focus?.();
   }, [editOpen]);
 
   function openEdit(p: ProductRow) {
+    editPrevFocusRef.current = document.activeElement as HTMLElement | null;
     setEditId(p.id);
     setESku(p.sku);
     setEName(p.name);
@@ -738,6 +789,7 @@ export default function InventoryPage() {
             searchPlaceholder="Buscar por SKU o nombre..."
             searchKeys={["sku", "name"]}
             emptyMessage="No hay productos en el catálogo"
+            fillHeight
             maxHeight="calc(100vh - 340px)"
             loading={loading}
             skeletonRows={12}
@@ -880,8 +932,10 @@ export default function InventoryPage() {
                     id="np-st"
                     type="number"
                     min={0}
+                    step={1}
                     value={formStock}
                     onChange={(e) => setFormStock(e.target.value)}
+                    onWheel={(e) => (e.currentTarget as HTMLInputElement).blur()}
                     className="tl-input mt-1"
                   />
                 </div>
@@ -893,8 +947,10 @@ export default function InventoryPage() {
                     id="np-low"
                     type="number"
                     min={0}
+                    step={1}
                     value={formLow}
                     onChange={(e) => setFormLow(e.target.value)}
+                    onWheel={(e) => (e.currentTarget as HTMLInputElement).blur()}
                     className="tl-input mt-1"
                   />
                 </div>
@@ -970,10 +1026,11 @@ export default function InventoryPage() {
           role="dialog"
           aria-modal="true"
           aria-labelledby="edit-product-title"
-          onClick={() => setEditOpen(false)}
+          onClick={closeEdit}
         >
           <div
             className="tl-glass max-h-[90vh] w-full max-w-lg overflow-y-auto rounded-2xl p-5 shadow-xl"
+            ref={editDialogRef}
             onClick={(e) => e.stopPropagation()}
           >
             <div className="flex items-start justify-between gap-3">
@@ -984,7 +1041,7 @@ export default function InventoryPage() {
                 type="button"
                 className="tl-btn tl-btn-secondary !p-2"
                 aria-label="Cerrar"
-                onClick={() => setEditOpen(false)}
+                onClick={closeEdit}
               >
                 <X className="h-4 w-4" aria-hidden />
               </button>
@@ -1118,8 +1175,10 @@ export default function InventoryPage() {
                     id="ed-st"
                     type="number"
                     min={0}
+                  step={1}
                     value={eStock}
                     onChange={(e) => setEStock(e.target.value)}
+                  onWheel={(e) => (e.currentTarget as HTMLInputElement).blur()}
                     className="tl-input mt-1"
                   />
                 </div>
@@ -1131,8 +1190,10 @@ export default function InventoryPage() {
                     id="ed-low"
                     type="number"
                     min={0}
+                  step={1}
                     value={eLow}
                     onChange={(e) => setELow(e.target.value)}
+                  onWheel={(e) => (e.currentTarget as HTMLInputElement).blur()}
                     className="tl-input mt-1"
                   />
                 </div>

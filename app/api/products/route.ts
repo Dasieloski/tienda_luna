@@ -114,6 +114,30 @@ export async function POST(request: Request) {
           lowStockAt: parsed.data.lowStockAt ?? 5,
         },
       });
+      await prisma.auditLog.create({
+        data: {
+          storeId: session.storeId,
+          actorType: "USER",
+          actorId: session.sub,
+          action: "PRODUCT_CREATE",
+          entityType: "Product",
+          entityId: p.id,
+          after: {
+            sku: p.sku,
+            name: p.name,
+            priceCents: p.priceCents,
+            priceUsdCents: (p as any).priceUsdCents ?? 0,
+            unitsPerBox: (p as any).unitsPerBox ?? 1,
+            wholesaleCupCents: (p as any).wholesaleCupCents ?? null,
+            costCents: (p as any).costCents ?? null,
+            supplierId: (p as any).supplierId ?? null,
+            supplierName: (p as any).supplierName ?? null,
+            stockQty: p.stockQty,
+            lowStockAt: p.lowStockAt,
+            active: p.active,
+          } as any,
+        },
+      });
       return NextResponse.json({ product: p });
     }
 

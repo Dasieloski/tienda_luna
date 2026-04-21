@@ -15,17 +15,6 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "UNAUTHORIZED" }, { status: 401 });
   }
 
-  // El usuario "static-admin" no vive en la tabla User, así que no se puede cambiar aquí.
-  if (session.sub === "static-admin") {
-    return NextResponse.json(
-      {
-        error: "UNSUPPORTED",
-        hint: "Este usuario es static-admin (env). Cambia STATIC_ADMIN_PASSWORD en tu despliegue.",
-      },
-      { status: 400 },
-    );
-  }
-
   const json = await request.json().catch(() => null);
   const parsed = bodySchema.safeParse(json);
   if (!parsed.success) {

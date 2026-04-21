@@ -21,6 +21,7 @@ import { AdminShell } from "@/components/admin/admin-shell";
 import { KpiCard } from "@/components/admin/kpi-card";
 import { CupUsdMoney } from "@/components/admin/cup-usd-money";
 import { TablePriceCupCell } from "@/components/admin/table-price-cup-cell";
+import { DataTable, type Column } from "@/components/admin/data-table";
 import { cn } from "@/lib/utils";
 
 type SupplierRow = {
@@ -415,6 +416,252 @@ export default function SuppliersPage() {
     }
   }
 
+  const masterColumns: Column<MasterSupplier>[] = useMemo(
+    () => [
+      {
+        key: "name",
+        label: "Nombre",
+        sortable: true,
+        filter: { kind: "text", placeholder: "Filtrar por nombre…" },
+        render: (row) => <span className="font-medium text-tl-ink">{row.name}</span>,
+      },
+      {
+        key: "phone",
+        label: "Teléfono",
+        render: (row) => <span className="text-tl-muted">{row.phone ?? "—"}</span>,
+      },
+      {
+        key: "productCount",
+        label: "Productos",
+        sortable: true,
+        align: "right",
+        width: "110px",
+        filter: { kind: "numberRange" },
+        render: (row) => (
+          <span className="tabular-nums text-tl-ink">{row.productCount.toLocaleString("es-ES")}</span>
+        ),
+      },
+      {
+        key: "active",
+        label: "Estado",
+        width: "130px",
+        filter: {
+          kind: "select",
+          options: [
+            { label: "Activo", value: "true" },
+            { label: "Inactivo", value: "false" },
+          ],
+          getValue: (row) => String(Boolean(row.active)),
+        },
+        render: (row) => (
+          <button
+            type="button"
+            onClick={() => void toggleMasterActive(row)}
+            className={cn(
+              "rounded-full px-3 py-1 text-xs font-semibold transition-colors",
+              row.active
+                ? "bg-emerald-500/15 text-emerald-700 dark:text-emerald-300"
+                : "bg-zinc-500/10 text-tl-muted",
+            )}
+          >
+            {row.active ? "Activo" : "Inactivo"}
+          </button>
+        ),
+      },
+      {
+        key: "id",
+        label: "Acciones",
+        align: "right",
+        width: "140px",
+        render: (row) => (
+          <div className="flex justify-end gap-2">
+            <button
+              type="button"
+              onClick={() => openEditMaster(row)}
+              className="tl-btn tl-btn-secondary inline-flex !px-2.5 !py-1.5"
+              title="Editar"
+            >
+              <Pencil className="h-3.5 w-3.5" aria-hidden />
+            </button>
+            <button
+              type="button"
+              onClick={() => void onDeleteMaster(row)}
+              disabled={deleteBusyId === row.id || row.productCount > 0}
+              className="tl-btn tl-btn-secondary inline-flex !px-2.5 !py-1.5 disabled:opacity-40"
+              title={row.productCount > 0 ? "Hay productos usando este proveedor" : "Eliminar"}
+            >
+              <Trash2 className="h-3.5 w-3.5" aria-hidden />
+            </button>
+          </div>
+        ),
+      },
+    ],
+    [deleteBusyId],
+  );
+
+  const accountsColumns: Column<SupplierRow>[] = useMemo(
+    () => [
+      {
+        key: "supplier",
+        label: "Proveedor",
+        sortable: true,
+        filter: { kind: "text", placeholder: "Filtrar proveedor…" },
+        render: (row) => <span className="font-medium text-tl-ink">{row.supplier}</span>,
+      },
+      {
+        key: "units",
+        label: "Unidades",
+        sortable: true,
+        align: "right",
+        width: "110px",
+        filter: { kind: "numberRange" },
+        render: (row) => <span className="tabular-nums text-tl-ink">{row.units.toLocaleString("es-ES")}</span>,
+      },
+      {
+        key: "revenueCents",
+        label: "Ingresos venta",
+        sortable: true,
+        align: "right",
+        width: "140px",
+        render: (row) => <TablePriceCupCell cupCents={row.revenueCents} compact />,
+      },
+      {
+        key: "payableCents",
+        label: "A pagar prov.",
+        sortable: true,
+        align: "right",
+        width: "140px",
+        render: (row) => (
+          <span className="font-medium text-amber-900 dark:text-amber-100/95">
+            <TablePriceCupCell cupCents={row.payableCents ?? 0} compact />
+          </span>
+        ),
+      },
+      {
+        key: "profitCents",
+        label: "Ganancia est.",
+        sortable: true,
+        align: "right",
+        width: "140px",
+        render: (row) => <TablePriceCupCell cupCents={row.profitCents} compact />,
+      },
+      {
+        key: "products",
+        label: "Refs.",
+        sortable: true,
+        align: "right",
+        width: "90px",
+        filter: { kind: "numberRange" },
+        render: (row) => <span className="tabular-nums text-tl-muted">{row.products.toLocaleString("es-ES")}</span>,
+      },
+      {
+        key: "linesMissingCost",
+        label: "Sin coste",
+        sortable: true,
+        align: "right",
+        width: "110px",
+        filter: { kind: "numberRange" },
+        render: (row) => (
+          <span className="tabular-nums text-tl-muted">
+            {row.linesMissingCost > 0 ? row.linesMissingCost.toLocaleString("es-ES") : "—"}
+          </span>
+        ),
+      },
+    ],
+    [],
+  );
+
+  const rankingColumns: Column<SupplierRow>[] = useMemo(
+    () => [
+      {
+        key: "supplier",
+        label: "Proveedor",
+        sortable: true,
+        filter: { kind: "text", placeholder: "Filtrar proveedor…" },
+        render: (row) => <span className="font-medium text-tl-ink">{row.supplier}</span>,
+      },
+      {
+        key: "products",
+        label: "Refs.",
+        sortable: true,
+        align: "right",
+        width: "90px",
+        filter: { kind: "numberRange" },
+        render: (row) => <span className="tabular-nums text-tl-ink">{row.products.toLocaleString("es-ES")}</span>,
+      },
+      {
+        key: "units",
+        label: "Unidades",
+        sortable: true,
+        align: "right",
+        width: "110px",
+        filter: { kind: "numberRange" },
+        render: (row) => <span className="tabular-nums text-tl-ink">{row.units.toLocaleString("es-ES")}</span>,
+      },
+      {
+        key: "revenueCents",
+        label: "Ingresos",
+        sortable: true,
+        align: "right",
+        width: "140px",
+        render: (row) => <TablePriceCupCell cupCents={row.revenueCents} compact />,
+      },
+      {
+        key: "payableCents",
+        label: "A pagar prov.",
+        sortable: true,
+        align: "right",
+        width: "140px",
+        render: (row) => <TablePriceCupCell cupCents={row.payableCents ?? 0} compact />,
+      },
+      {
+        key: "profitCents",
+        label: "Ganancia est.",
+        sortable: true,
+        align: "right",
+        width: "140px",
+        render: (row) => <TablePriceCupCell cupCents={row.profitCents} compact />,
+      },
+      {
+        key: "linesMissingCost",
+        label: "Sin coste",
+        sortable: true,
+        align: "right",
+        width: "110px",
+        filter: { kind: "numberRange" },
+        render: (row) => (
+          <span className="tabular-nums text-tl-muted">
+            {row.linesMissingCost > 0 ? row.linesMissingCost.toLocaleString("es-ES") : "—"}
+          </span>
+        ),
+      },
+      {
+        key: "tops",
+        label: "Destacados",
+        render: (row) => {
+          const tops = topProductsBySupplier.get(row.supplier) ?? [];
+          if (tops.length === 0) return <span className="text-xs text-tl-muted">—</span>;
+          return (
+            <ul className="space-y-1.5">
+              {tops.map((p) => (
+                <li
+                  key={p.productId}
+                  className="flex flex-col gap-0.5 text-xs sm:flex-row sm:items-center sm:justify-between sm:gap-2"
+                >
+                  <span className="min-w-0 truncate text-tl-ink">{p.name}</span>
+                  <span className="shrink-0 tabular-nums text-tl-muted">
+                    {p.units} u. · <TablePriceCupCell cupCents={p.revenueCents} compact />
+                  </span>
+                </li>
+              ))}
+            </ul>
+          );
+        },
+      },
+    ],
+    [topProductsBySupplier],
+  );
+
   return (
     <AdminShell title="Proveedores">
       <div className="mx-auto max-w-7xl space-y-8">
@@ -588,80 +835,19 @@ export default function SuppliersPage() {
                 </button>
               </div>
 
-              <div className="overflow-x-auto px-2 pb-2 sm:px-0">
-                <table className="w-full min-w-[640px] text-left text-sm">
-                  <thead className="bg-tl-canvas-subtle/90 text-xs font-semibold uppercase tracking-wide text-tl-muted">
-                    <tr>
-                      <th className="rounded-tl-lg px-4 py-3 pl-5">Nombre</th>
-                      <th className="px-4 py-3">Teléfono</th>
-                      <th className="px-4 py-3 text-right">Productos</th>
-                      <th className="px-4 py-3">Estado</th>
-                      <th className="rounded-tr-lg px-4 py-3 pr-5 text-right">Acciones</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-tl-line-subtle">
-                    {mastersLoading ? (
-                      Array.from({ length: 5 }).map((_, i) => (
-                        <tr key={i}>
-                          {Array.from({ length: 5 }).map((__, j) => (
-                            <td key={j} className="px-4 py-3">
-                              <div className="tl-skeleton h-3 rounded-md" />
-                            </td>
-                          ))}
-                        </tr>
-                      ))
-                    ) : masters.length === 0 ? (
-                      <tr>
-                        <td colSpan={5} className="px-5 py-12 text-center text-sm text-tl-muted">
-                          Aún no hay proveedores. Usa el formulario de arriba para crear el primero.
-                        </td>
-                      </tr>
-                    ) : (
-                      masters.map((s) => (
-                        <tr key={s.id} className="transition-colors hover:bg-tl-canvas-subtle/50">
-                          <td className="px-4 py-3.5 pl-5 font-medium text-tl-ink">{s.name}</td>
-                          <td className="px-4 py-3.5 text-tl-muted">{s.phone ?? "—"}</td>
-                          <td className="px-4 py-3.5 text-right tabular-nums text-tl-ink">
-                            {s.productCount.toLocaleString("es-ES")}
-                          </td>
-                          <td className="px-4 py-3.5">
-                            <button
-                              type="button"
-                              onClick={() => void toggleMasterActive(s)}
-                              className={cn(
-                                "rounded-full px-3 py-1 text-xs font-semibold transition-colors",
-                                s.active
-                                  ? "bg-emerald-500/15 text-emerald-700 dark:text-emerald-300"
-                                  : "bg-zinc-500/10 text-tl-muted",
-                              )}
-                            >
-                              {s.active ? "Activo" : "Inactivo"}
-                            </button>
-                          </td>
-                          <td className="px-4 py-3.5 pr-5 text-right">
-                            <button
-                              type="button"
-                              onClick={() => openEditMaster(s)}
-                              className="tl-btn tl-btn-secondary inline-flex !px-2.5 !py-1.5"
-                              title="Editar"
-                            >
-                              <Pencil className="h-3.5 w-3.5" aria-hidden />
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() => void onDeleteMaster(s)}
-                              disabled={deleteBusyId === s.id || s.productCount > 0}
-                              className="tl-btn tl-btn-secondary !ml-2 inline-flex !px-2.5 !py-1.5 disabled:opacity-40"
-                              title={s.productCount > 0 ? "Hay productos usando este proveedor" : "Eliminar"}
-                            >
-                              <Trash2 className="h-3.5 w-3.5" aria-hidden />
-                            </button>
-                          </td>
-                        </tr>
-                      ))
-                    )}
-                  </tbody>
-                </table>
+              <div className="px-2 pb-2 sm:px-0">
+                <DataTable
+                  columns={masterColumns}
+                  data={masters}
+                  keyExtractor={(r) => r.id}
+                  searchable
+                  searchPlaceholder="Buscar proveedor por nombre o teléfono…"
+                  searchKeys={["name", "phone"]}
+                  emptyMessage="Aún no hay proveedores. Usa el formulario de arriba para crear el primero."
+                  loading={mastersLoading}
+                  skeletonRows={6}
+                  maxHeight="min(520px, 60vh)"
+                />
               </div>
               <p className="border-t border-tl-line-subtle px-5 py-3 text-xs leading-relaxed text-tl-muted">
                 Los inactivos no aparecen al crear productos nuevos. No se puede borrar si hay productos vinculados.
@@ -857,63 +1043,20 @@ export default function SuppliersPage() {
                   placeholder="Buscar proveedor…"
                   className="tl-input h-10 w-full sm:max-w-xs"
                   type="search"
+                  aria-label="Buscar proveedor (detalle)"
                 />
               </div>
-              <div className="overflow-x-auto">
-                <table className="w-full min-w-[880px] text-left text-sm">
-                  <thead className="sticky top-0 z-10 bg-tl-canvas-subtle/95 text-xs font-semibold uppercase tracking-wide text-tl-muted backdrop-blur-sm">
-                    <tr>
-                      <th className="px-4 py-3 pl-5">Proveedor</th>
-                      <th className="px-4 py-3 text-right">Unidades</th>
-                      <th className="px-4 py-3 text-right">Ingresos venta</th>
-                      <th className="px-4 py-3 text-right">A pagar prov.</th>
-                      <th className="px-4 py-3 text-right">Ganancia est.</th>
-                      <th className="px-4 py-3 text-right">Refs.</th>
-                      <th className="px-4 py-3 pr-5 text-right">Líneas sin coste</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-tl-line-subtle">
-                    {accountsLoading ? (
-                      Array.from({ length: 6 }).map((_, i) => (
-                        <tr key={i}>
-                          {Array.from({ length: 7 }).map((__, j) => (
-                            <td key={j} className="px-4 py-3">
-                              <div className="tl-skeleton h-3 rounded-md" />
-                            </td>
-                          ))}
-                        </tr>
-                      ))
-                    ) : accountsSorted.length === 0 ? (
-                      <tr>
-                        <td colSpan={7} className="px-5 py-12 text-center text-sm text-tl-muted">
-                          No hay ventas en este rango o no coincide la búsqueda.
-                        </td>
-                      </tr>
-                    ) : (
-                      accountsSorted.map((s) => (
-                        <tr key={s.supplier} className="hover:bg-tl-canvas-subtle/40">
-                          <td className="px-4 py-3.5 pl-5 font-medium text-tl-ink">{s.supplier}</td>
-                          <td className="px-4 py-3.5 text-right tabular-nums">{s.units.toLocaleString("es-ES")}</td>
-                          <td className="px-4 py-3.5 text-right">
-                            <TablePriceCupCell cupCents={s.revenueCents} compact />
-                          </td>
-                          <td className="px-4 py-3.5 text-right font-medium text-amber-900 dark:text-amber-100/95">
-                            <TablePriceCupCell cupCents={s.payableCents ?? 0} compact />
-                          </td>
-                          <td className="px-4 py-3.5 text-right">
-                            <TablePriceCupCell cupCents={s.profitCents} compact />
-                          </td>
-                          <td className="px-4 py-3.5 text-right tabular-nums text-tl-muted">
-                            {s.products.toLocaleString("es-ES")}
-                          </td>
-                          <td className="px-4 py-3.5 pr-5 text-right tabular-nums text-tl-muted">
-                            {s.linesMissingCost > 0 ? s.linesMissingCost.toLocaleString("es-ES") : "—"}
-                          </td>
-                        </tr>
-                      ))
-                    )}
-                  </tbody>
-                </table>
+              <div className="px-4 pb-4 sm:px-6">
+                <DataTable
+                  columns={accountsColumns}
+                  data={accountsSorted}
+                  keyExtractor={(r) => r.supplier}
+                  searchable={false}
+                  emptyMessage="No hay ventas en este rango o no coincide la búsqueda."
+                  loading={accountsLoading}
+                  skeletonRows={8}
+                  maxHeight="min(560px, 65vh)"
+                />
               </div>
               <p className="border-t border-tl-line-subtle px-5 py-3 text-xs leading-relaxed text-tl-muted">
                 «A pagar» usa el precio de compra del producto. Si falta, esa línea no suma al pago y se cuenta en
@@ -1096,89 +1239,21 @@ export default function SuppliersPage() {
                   placeholder="Buscar en la tabla…"
                   className="tl-input h-10 w-full sm:max-w-xs"
                   type="search"
+                  aria-label="Buscar en la tabla de proveedores"
                 />
               </div>
 
-              <div className="overflow-x-auto">
-                <table className="w-full min-w-[1080px] text-left text-sm">
-                  <thead className="sticky top-0 z-10 bg-tl-canvas-subtle/95 text-xs font-semibold uppercase tracking-wide text-tl-muted backdrop-blur-sm">
-                    <tr>
-                      <th className="px-4 py-3 pl-5">Proveedor</th>
-                      <th className="px-4 py-3 text-right">Refs.</th>
-                      <th className="px-4 py-3 text-right">Unidades</th>
-                      <th className="px-4 py-3 text-right">Ingresos</th>
-                      <th className="px-4 py-3 text-right">A pagar prov.</th>
-                      <th className="px-4 py-3 text-right">Ganancia est.</th>
-                      <th className="px-4 py-3 text-right">Sin coste</th>
-                      <th className="px-4 py-3 pr-5">Destacados</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-tl-line-subtle">
-                    {loading ? (
-                      Array.from({ length: 8 }).map((_, i) => (
-                        <tr key={i}>
-                          {Array.from({ length: 8 }).map((__, j) => (
-                            <td key={j} className="px-4 py-3">
-                              <div className="tl-skeleton h-3 rounded-md" />
-                            </td>
-                          ))}
-                        </tr>
-                      ))
-                    ) : suppliersFiltered.length === 0 ? (
-                      <tr>
-                        <td colSpan={8} className="px-5 py-12 text-center text-sm text-tl-muted">
-                          No hay ventas en este periodo o no coincide la búsqueda.
-                        </td>
-                      </tr>
-                    ) : (
-                      suppliersFiltered.map((s) => {
-                        const tops = topProductsBySupplier.get(s.supplier) ?? [];
-                        return (
-                          <tr key={s.supplier} className="hover:bg-tl-canvas-subtle/40">
-                            <td className="px-4 py-3.5 pl-5 font-medium text-tl-ink">{s.supplier}</td>
-                            <td className="px-4 py-3.5 text-right tabular-nums text-tl-ink">
-                              {s.products.toLocaleString("es-ES")}
-                            </td>
-                            <td className="px-4 py-3.5 text-right tabular-nums text-tl-ink">
-                              {s.units.toLocaleString("es-ES")}
-                            </td>
-                            <td className="px-4 py-3.5 text-right align-top">
-                              <TablePriceCupCell cupCents={s.revenueCents} compact />
-                            </td>
-                            <td className="px-4 py-3.5 text-right align-top text-amber-900/90 dark:text-amber-100/80">
-                              <TablePriceCupCell cupCents={s.payableCents ?? 0} compact />
-                            </td>
-                            <td className="px-4 py-3.5 text-right align-top">
-                              <TablePriceCupCell cupCents={s.profitCents} compact />
-                            </td>
-                            <td className="px-4 py-3.5 text-right tabular-nums text-tl-muted">
-                              {s.linesMissingCost > 0 ? s.linesMissingCost.toLocaleString("es-ES") : "—"}
-                            </td>
-                            <td className="max-w-[220px] px-4 py-3.5 pr-5">
-                              {tops.length === 0 ? (
-                                <span className="text-xs text-tl-muted">—</span>
-                              ) : (
-                                <ul className="space-y-1.5">
-                                  {tops.map((p) => (
-                                    <li
-                                      key={p.productId}
-                                      className="flex flex-col gap-0.5 text-xs sm:flex-row sm:items-center sm:justify-between sm:gap-2"
-                                    >
-                                      <span className="min-w-0 truncate text-tl-ink">{p.name}</span>
-                                      <span className="shrink-0 tabular-nums text-tl-muted">
-                                        {p.units} u. · <TablePriceCupCell cupCents={p.revenueCents} compact />
-                                      </span>
-                                    </li>
-                                  ))}
-                                </ul>
-                              )}
-                            </td>
-                          </tr>
-                        );
-                      })
-                    )}
-                  </tbody>
-                </table>
+              <div className="px-4 pb-4 sm:px-6">
+                <DataTable
+                  columns={rankingColumns}
+                  data={suppliersFiltered}
+                  keyExtractor={(r) => r.supplier}
+                  searchable={false}
+                  emptyMessage="No hay ventas en este periodo o no coincide la búsqueda."
+                  loading={loading}
+                  skeletonRows={10}
+                  maxHeight="min(620px, 70vh)"
+                />
               </div>
               <p className="border-t border-tl-line-subtle px-5 py-3 text-xs leading-relaxed text-tl-muted">
                 «A pagar» es coste de compra × unidades. La ganancia usa PVP − ese coste. Si falta precio de compra, se

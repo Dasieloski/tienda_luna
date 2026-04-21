@@ -4,60 +4,51 @@ import { Suspense, useCallback, useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { Filter, RefreshCw } from "lucide-react";
 import { AdminShell } from "@/components/admin/admin-shell";
-import { DataTable, type Column } from "@/components/admin/data-table";
+import { DataTable, type Column, type DataTableFilters, type DataTableSorting } from "@/components/admin/data-table";
 import { cn } from "@/lib/utils";
-import { CupUsdMoney } from "@/components/admin/cup-usd-money";
-import { TablePriceCupCell } from "@/components/admin/table-price-cup-cell";
 
-type HistorySale = {
+type MovementRow = {
   id: string;
-  deviceId: string;
-  deviceLabel: string | null;
-  soldBy: string | null;
-  totalCents: number;
-  status: string;
-  completedAt: string;
-  lines: {
-    id: string;
-    quantity: number;
-    unitPriceCents: number;
-    subtotalCents: number;
-    productName: string;
-    sku: string;
-  }[];
+  createdAt: string;
+  productId: string;
+  product: { id: string; name: string; sku: string } | null;
+  delta: number;
+  beforeQty: number;
+  afterQty: number;
+  reason: string;
+  actorType: "USER" | "DEVICE";
+  actorId: string;
+  eventId: string | null;
 };
 
-type HistoryResponse = {
-  sales: HistorySale[];
+type ApiResponse = {
   meta: {
     dbAvailable: boolean;
+    message?: string;
     page?: number;
     limit?: number;
     total?: number;
     totalPages?: number;
-    message?: string;
   };
+  rows: MovementRow[];
 };
 
 function toDatetimeLocalValue(iso: string) {
-  // iso -> YYYY-MM-DDTHH:mm (sin segundos) en hora local
   const d = new Date(iso);
   const pad = (n: number) => String(n).padStart(2, "0");
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
 }
 
 function fromDatetimeLocalValue(v: string) {
-  // string local -> ISO
   const d = new Date(v);
   return Number.isNaN(d.getTime()) ? null : d.toISOString();
 }
 
-function SalesHistoryPageClient() {
+function InventoryMovementsPageClient() {
   const searchParams = useSearchParams();
-  const [sales, setSales] = useState<HistorySale[]>([]);
+  const [rows, setRows] = useState<MovementRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [selected, setSelected] = useState<HistorySale | null>(null);
 
   const [page, setPage] = useState(1);
   const [limit] = useState(25);
@@ -68,8 +59,20 @@ function SalesHistoryPageClient() {
   const [from, setFrom] = useState<string>("");
   const [to, setTo] = useState<string>("");
 
-  type SavedView = { id: string; name: string; q: string; from: string; to: string; createdAt: number };
-  const SAVED_VIEWS_KEY = "tl-saved-views:historial";
+  const [sorting, setSorting] = useState<DataTableSorting>({ key: "createdAt", dir: "desc" });
+  const [filters, setFilters] = useState<DataTableFilters>({});
+
+  type SavedView = {
+    id: string;
+    name: string;
+    q: string;
+    from: string;
+    to: string;
+    sorting: DataTableSorting;
+    filters: DataTableFilters;
+    createdAt: number;
+  };
+  const SAVED_VIEWS_KEY = "tl-saved-views:movements";
   const [savedViews, setSavedViews] = useState<SavedView[]>([]);
   const [selectedViewId, setSelectedViewId] = useState<string>("");
 
@@ -83,14 +86,29 @@ function SalesHistoryPageClient() {
       }
       const parsed = arr
         .filter((x): x is SavedView => x && typeof x === "object")
-        .map((x: any) => ({
-          id: String(x.id ?? ""),
-          name: String(x.name ?? ""),
-          q: typeof x.q === "string" ? x.q : "",
-          from: typeof x.from === "string" ? x.from : "",
-          to: typeof x.to === "string" ? x.to : "",
-          createdAt: typeof x.createdAt === "number" ? x.createdAt : Date.now(),
-        }))
+        .map((x: any): SavedView => {
+          const sorting: DataTableSorting =
+            x.sorting && typeof x.sorting === "object"
+              ? {
+                  key: typeof x.sorting.key === "string" ? x.sorting.key : null,
+                  dir: x.sorting.dir === "asc" ? "asc" : "desc",
+                }
+              : { key: "createdAt", dir: "desc" };
+
+          const filters: DataTableFilters =
+            x.filters && typeof x.filters === "object" ? (x.filters as DataTableFilters) : {};
+
+          return {
+            id: String(x.id ?? ""),
+            name: String(x.name ?? ""),
+            q: typeof x.q === "string" ? x.q : "",
+            from: typeof x.from === "string" ? x.from : "",
+            to: typeof x.to === "string" ? x.to : "",
+            sorting,
+            filters,
+            createdAt: typeof x.createdAt === "number" ? x.createdAt : Date.now(),
+          };
+        })
         .filter((x) => x.id && x.name);
       setSavedViews(parsed);
     } catch {
@@ -111,17 +129,19 @@ function SalesHistoryPageClient() {
     loadSavedViews();
   }, [loadSavedViews]);
 
-  // Drill-down: precargar filtros desde query params (solo 1 vez).
+  // Drill-down: precargar desde query params (solo 1 vez).
   useEffect(() => {
     const preset = (searchParams.get("preset") ?? "").toLowerCase();
     const qParam = searchParams.get("q");
     const fromIso = searchParams.get("from");
     const toIso = searchParams.get("to");
+    const actorType = (searchParams.get("actorType") ?? "").toUpperCase();
+    const actorId = searchParams.get("actorId");
+    const productId = searchParams.get("productId");
 
-    const shouldApply = preset || qParam || fromIso || toIso;
+    const shouldApply = preset || qParam || fromIso || toIso || actorType || actorId || productId;
     if (!shouldApply) return;
 
-    // Aplica una sola vez: si el usuario ya interactuó, no sobreescribimos.
     setPage(1);
     if (typeof qParam === "string") setQ(qParam);
 
@@ -131,20 +151,31 @@ function SalesHistoryPageClient() {
       start.setHours(0, 0, 0, 0);
       setFrom(toDatetimeLocalValue(start.toISOString()));
       setTo(toDatetimeLocalValue(d.toISOString()));
-      return;
-    }
-    if (preset === "week" || preset === "semana") {
+    } else if (preset === "week" || preset === "semana") {
       const d = new Date();
       const start = new Date(d);
       start.setDate(start.getDate() - 6);
       start.setHours(0, 0, 0, 0);
       setFrom(toDatetimeLocalValue(start.toISOString()));
       setTo(toDatetimeLocalValue(d.toISOString()));
-      return;
+    } else {
+      if (fromIso) setFrom(toDatetimeLocalValue(fromIso));
+      if (toIso) setTo(toDatetimeLocalValue(toIso));
     }
 
-    if (fromIso) setFrom(toDatetimeLocalValue(fromIso));
-    if (toIso) setTo(toDatetimeLocalValue(toIso));
+    setFilters((prev) => {
+      const next: DataTableFilters = { ...prev };
+      if (actorType === "USER" || actorType === "DEVICE") {
+        next.actorType = { kind: "select", value: actorType };
+      }
+      if (typeof actorId === "string" && actorId.trim()) {
+        next.actorId = { kind: "text", value: actorId.trim() };
+      }
+      if (typeof productId === "string" && productId.trim()) {
+        next.productId = { kind: "text", value: productId.trim() };
+      }
+      return next;
+    });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -165,87 +196,144 @@ function SalesHistoryPageClient() {
         if (iso) params.set("to", iso);
       }
 
-      const res = await fetch(`/api/admin/sales/history?${params.toString()}`, { credentials: "include" });
-      const json = (await res.json()) as HistoryResponse;
+      // DataTable controlled filters -> query params
+      const actorType = filters.actorType?.kind === "select" ? filters.actorType.value : "";
+      const actorId = filters.actorId?.kind === "text" ? filters.actorId.value : "";
+      const productId = filters.productId?.kind === "text" ? filters.productId.value : "";
+
+      if (actorType) params.set("actorType", actorType);
+      if (actorId.trim()) params.set("actorId", actorId.trim());
+      if (productId.trim()) params.set("productId", productId.trim());
+
+      if (sorting.key) {
+        // API limita a llaves conocidas
+        const k = sorting.key;
+        if (["createdAt", "product", "delta", "actorType", "reason"].includes(k)) {
+          params.set("sortKey", k);
+          params.set("sortDir", sorting.dir);
+        }
+      }
+
+      const res = await fetch(`/api/admin/inventory/movements?${params.toString()}`, { credentials: "include" });
+      const json = (await res.json()) as ApiResponse;
       if (!res.ok) {
-        setError("No se pudo cargar el historial.");
+        setError("No se pudo cargar Entradas/Salidas.");
         return;
       }
       if (!json.meta?.dbAvailable) {
-        setSales([]);
-        setTotalPages(1);
+        setRows([]);
         setTotal(0);
+        setTotalPages(1);
         setError(json.meta?.message ?? "Base de datos no disponible.");
         return;
       }
-      const nextSales = json.sales ?? [];
-      setSales(nextSales);
-      setTotalPages(json.meta.totalPages ?? 1);
+      setRows(json.rows ?? []);
       setTotal(json.meta.total ?? 0);
-      setSelected((prev) => {
-        if (!prev) return null;
-        return nextSales.some((s) => s.id === prev.id) ? prev : null;
-      });
+      setTotalPages(json.meta.totalPages ?? 1);
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Error cargando historial");
+      setError(e instanceof Error ? e.message : "Error de red.");
     } finally {
       setLoading(false);
     }
-  }, [from, limit, page, q, to]);
+  }, [filters, from, limit, page, q, sorting.dir, sorting.key, to]);
 
   useEffect(() => {
     void load();
   }, [load]);
 
-  // Sin auto-refresh: evita recargar mientras filtras o revisas detalle.
-
-  const columns: Column<HistorySale>[] = useMemo(
+  const columns: Column<MovementRow>[] = useMemo(
     () => [
       {
-        key: "completedAt",
+        key: "createdAt",
         label: "Fecha",
         sortable: true,
         width: "190px",
-        render: (row) => (
-          <span className="text-xs tabular-nums text-tl-muted">{new Date(row.completedAt).toLocaleString("es-ES")}</span>
-        ),
-      },
-      {
-        key: "soldBy",
-        label: "Vendido por",
-        width: "180px",
-        render: (row) => (
-          <span className="text-sm text-tl-ink-secondary">{row.soldBy ?? "—"}</span>
-        ),
-      },
-      {
-        key: "deviceLabel",
-        label: "Caja",
-        width: "140px",
-        render: (row) => (
-          <span className="text-xs font-medium text-tl-ink-secondary">
-            {row.deviceLabel ?? "Caja"}
+        sortValue: (r) => r.createdAt,
+        render: (r) => (
+          <span className="text-xs tabular-nums text-tl-muted">
+            {new Date(r.createdAt).toLocaleString("es-ES")}
           </span>
         ),
       },
       {
-        key: "totalCents",
-        label: "Total",
+        key: "product",
+        label: "Producto",
         sortable: true,
-        align: "right",
-        width: "120px",
-        render: (row) => <TablePriceCupCell cupCents={row.totalCents} compact />,
+        sortValue: (r) => r.product?.name ?? "",
+        render: (r) => (
+          <div className="flex flex-col">
+            <span className="font-medium text-tl-ink">{r.product?.name ?? "—"}</span>
+            {r.product?.sku ? <span className="text-xs font-mono text-tl-muted">{r.product.sku}</span> : null}
+          </div>
+        ),
       },
       {
-        key: "lines",
-        label: "Items",
-        render: (row) => (
-          <span className="text-sm text-tl-ink-secondary">
-            {row.lines
-              .map((l) => `${l.quantity}x ${l.productName}`)
-              .slice(0, 3)
-              .join(", ")}
-            {row.lines.length > 3 && "..."}
+        key: "delta",
+        label: "Δ",
+        sortable: true,
+        align: "right",
+        width: "80px",
+        render: (r) => (
+          <span className={cn("tabular-nums font-semibold", r.delta >= 0 ? "text-tl-success" : "text-tl-warning")}>
+            {r.delta >= 0 ? `+${r.delta}` : String(r.delta)}
+          </span>
+        ),
+      },
+      {
+        key: "beforeQty",
+        label: "Antes",
+        align: "right",
+        width: "90px",
+        render: (r) => <span className="tabular-nums text-tl-muted">{r.beforeQty}</span>,
+      },
+      {
+        key: "afterQty",
+        label: "Después",
+        align: "right",
+        width: "90px",
+        render: (r) => <span className="tabular-nums text-tl-ink">{r.afterQty}</span>,
+      },
+      {
+        key: "reason",
+        label: "Motivo",
+        sortable: true,
+        width: "160px",
+        render: (r) => <span className="text-xs font-semibold uppercase tracking-wide text-tl-muted">{r.reason}</span>,
+      },
+      {
+        key: "actorType",
+        label: "Actor",
+        sortable: true,
+        width: "120px",
+        filter: {
+          kind: "select",
+          options: [
+            { label: "USER", value: "USER" },
+            { label: "DEVICE", value: "DEVICE" },
+          ],
+          getValue: (r) => r.actorType,
+        },
+        render: (r) => <span className="text-xs font-medium text-tl-ink-secondary">{r.actorType}</span>,
+      },
+      {
+        key: "actorId",
+        label: "Quién",
+        sortable: true,
+        width: "180px",
+        filter: { kind: "text", placeholder: "Filtrar actorId…" },
+        render: (r) => (
+          <span className="truncate font-mono text-xs text-tl-muted" title={r.actorId}>
+            {r.actorId}
+          </span>
+        ),
+      },
+      {
+        key: "productId",
+        label: "productId",
+        filter: { kind: "text", placeholder: "Filtrar productId…" },
+        render: (r) => (
+          <span className="truncate font-mono text-[11px] text-tl-muted" title={r.productId}>
+            {r.productId}
           </span>
         ),
       },
@@ -253,16 +341,14 @@ function SalesHistoryPageClient() {
     [],
   );
 
-  const selectedTotalItems = selected?.lines.reduce((acc, l) => acc + l.quantity, 0) ?? 0;
-
   return (
-    <AdminShell title="Historial">
+    <AdminShell title="Entradas/Salidas">
       <div className="space-y-6">
         <div className="flex flex-wrap items-start justify-between gap-6">
           <div>
-            <h1 className="tl-welcome-header">Historial de ventas</h1>
+            <h1 className="tl-welcome-header">Entradas / Salidas</h1>
             <p className="mt-2 text-sm text-tl-muted">
-              {total.toLocaleString("es-ES")} ventas registradas
+              Registro (kardex) de ajustes y salidas por ventas: fecha/hora y quién lo hizo.
             </p>
           </div>
           <div className="flex items-center gap-2">
@@ -277,7 +363,6 @@ function SalesHistoryPageClient() {
           </div>
         </div>
 
-        {/* Filters */}
         <div className="tl-glass rounded-xl p-4">
           <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-end">
             <div className="w-full">
@@ -314,14 +399,28 @@ function SalesHistoryPageClient() {
                   >
                     Esta semana
                   </button>
+                  <button
+                    type="button"
+                    className="tl-btn tl-btn-secondary tl-interactive !px-3 !py-2 text-xs"
+                    onClick={() => {
+                      setFilters({
+                        ...filters,
+                        actorType: { kind: "select", value: "DEVICE" },
+                      });
+                      setPage(1);
+                    }}
+                    title="Preset: solo cambios de dispositivos"
+                  >
+                    Solo DEVICE
+                  </button>
                 </div>
 
                 <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
-                  <label className="sr-only" htmlFor="tl-historial-saved">
+                  <label className="sr-only" htmlFor="tl-movements-saved">
                     Vistas guardadas
                   </label>
                   <select
-                    id="tl-historial-saved"
+                    id="tl-movements-saved"
                     className="tl-input h-10 w-full sm:w-[260px]"
                     value={selectedViewId}
                     onChange={(e) => {
@@ -332,6 +431,8 @@ function SalesHistoryPageClient() {
                       setQ(v.q);
                       setFrom(v.from);
                       setTo(v.to);
+                      setSorting(v.sorting);
+                      setFilters(v.filters);
                       setPage(1);
                     }}
                   >
@@ -357,6 +458,8 @@ function SalesHistoryPageClient() {
                         q,
                         from,
                         to,
+                        sorting,
+                        filters,
                         createdAt: Date.now(),
                       };
                       persistSavedViews([v, ...savedViews].slice(0, 30));
@@ -387,7 +490,7 @@ function SalesHistoryPageClient() {
             </div>
             <div className="min-w-0 flex-1 sm:min-w-[240px]">
               <label className="mb-1 block text-xs font-semibold uppercase tracking-wider text-tl-muted">
-              Buscar (cajero, dispositivo)
+                Buscar (producto, sku, actor, motivo)
               </label>
               <input
                 value={q}
@@ -396,7 +499,8 @@ function SalesHistoryPageClient() {
                   setQ(e.target.value);
                 }}
                 className="tl-input"
-              placeholder="Ej: cajero@..., Caja 1..."
+                placeholder="Ej: arroz, STOCK_DECREASED, device..."
+                type="search"
               />
             </div>
             <div>
@@ -446,6 +550,8 @@ function SalesHistoryPageClient() {
                 setQ("");
                 setFrom("");
                 setTo("");
+                setFilters({});
+                setSorting({ key: "createdAt", dir: "desc" });
                 setPage(1);
               }}
             >
@@ -460,105 +566,52 @@ function SalesHistoryPageClient() {
           </div>
         )}
 
-        <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_360px]">
-          <div>
-            <DataTable
-              columns={columns}
-              data={sales}
-              keyExtractor={(row) => row.id}
-              searchable={false}
-              emptyMessage="No hay ventas en el rango seleccionado"
-              maxHeight="calc(100vh - 430px)"
-              loading={loading}
-              skeletonRows={12}
-              selectedKey={selected?.id ?? null}
-              onRowClick={(row) => setSelected(row)}
-              pagination={{
-                page,
-                totalPages,
-                onPageChange: setPage,
-                summary: `${total.toLocaleString("es-ES")} ventas · página ${page} de ${totalPages}`,
-              }}
-            />
-          </div>
-
-          {/* Detail panel */}
-          <aside className="tl-glass rounded-xl p-4">
-            <h2 className="text-sm font-semibold text-tl-ink">Detalle</h2>
-            {!selected ? (
-              <p className="mt-2 text-sm text-tl-muted">Selecciona una venta para ver el detalle.</p>
-            ) : (
-              <div className="mt-3 space-y-3">
-                <div className="rounded-xl border border-tl-line-subtle bg-tl-canvas-inset p-3">
-                  <p className="text-xs font-semibold uppercase tracking-wider text-tl-muted">Fecha</p>
-                  <p className="mt-1 text-sm font-medium text-tl-ink">
-                    {new Date(selected.completedAt).toLocaleString("es-ES")}
-                  </p>
-                </div>
-                <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-1">
-                  <div className="rounded-xl border border-tl-line-subtle bg-tl-canvas-inset p-3">
-                    <p className="text-xs font-semibold uppercase tracking-wider text-tl-muted">Vendido por</p>
-                    <p className="mt-1 text-sm font-medium text-tl-ink">{selected.soldBy ?? "—"}</p>
-                  </div>
-                  <div className="rounded-xl border border-tl-line-subtle bg-tl-canvas-inset p-3">
-                    <p className="text-xs font-semibold uppercase tracking-wider text-tl-muted">Caja</p>
-                    <p className="mt-1 text-sm font-medium text-tl-ink">
-                      {selected.deviceLabel ?? "—"}
-                    </p>
-                    <p className="mt-1 text-xs font-mono text-tl-muted">{selected.deviceId}</p>
-                  </div>
-                </div>
-                <div className="rounded-xl border border-tl-line-subtle bg-tl-canvas-inset p-3">
-                  <p className="text-xs font-semibold uppercase tracking-wider text-tl-muted">Total</p>
-                <div className="mt-1 text-lg font-bold text-tl-ink">
-                  <CupUsdMoney cents={selected.totalCents} />
-                </div>
-                  <p className="mt-1 text-xs text-tl-muted">{selectedTotalItems} artículos</p>
-                </div>
-                <div className="rounded-xl border border-tl-line-subtle bg-tl-canvas-inset p-3">
-                  <p className="text-xs font-semibold uppercase tracking-wider text-tl-muted">Productos</p>
-                  <ul className="mt-2 space-y-2">
-                    {selected.lines.map((l) => (
-                      <li key={l.id} className="flex items-start justify-between gap-3">
-                        <div className="min-w-0">
-                          <p className="truncate text-sm font-medium text-tl-ink">{l.productName}</p>
-                        </div>
-                        <div className="shrink-0 text-right">
-                          <p className="text-xs text-tl-muted">
-                            {l.quantity} × <CupUsdMoney cents={l.unitPriceCents} compact />
-                          </p>
-                          <div className="text-sm font-semibold text-tl-ink">
-                            <CupUsdMoney cents={l.subtotalCents} compact />
-                          </div>
-                        </div>
-                      </li>
-                    ))}
-                  </ul>
-                </div>
-              </div>
-            )}
-          </aside>
-        </div>
+        <DataTable
+          columns={columns}
+          data={rows}
+          keyExtractor={(r) => r.id}
+          searchable={false}
+          emptyMessage="No hay movimientos para el filtro actual."
+          maxHeight="calc(100vh - 460px)"
+          loading={loading}
+          skeletonRows={12}
+          sorting={sorting}
+          onSortingChange={(next) => {
+            setPage(1);
+            setSorting(next);
+          }}
+          filters={filters}
+          onFiltersChange={(next) => {
+            setPage(1);
+            setFilters(next);
+          }}
+          pagination={{
+            page,
+            totalPages,
+            onPageChange: setPage,
+            summary: `${total.toLocaleString("es-ES")} movimientos · página ${page} de ${totalPages}`,
+          }}
+        />
       </div>
     </AdminShell>
   );
 }
 
-export default function SalesHistoryPage() {
+export default function InventoryMovementsPage() {
   return (
     <Suspense
       fallback={
-        <AdminShell title="Historial">
+        <AdminShell title="Entradas/Salidas">
           <div className="flex min-h-[60vh] items-center justify-center">
             <div className="flex flex-col items-center gap-3">
               <RefreshCw className="h-8 w-8 text-tl-accent tl-spin" aria-hidden />
-              <p className="text-sm text-tl-muted">Cargando historial...</p>
+              <p className="text-sm text-tl-muted">Cargando movimientos...</p>
             </div>
           </div>
         </AdminShell>
       }
     >
-      <SalesHistoryPageClient />
+      <InventoryMovementsPageClient />
     </Suspense>
   );
 }

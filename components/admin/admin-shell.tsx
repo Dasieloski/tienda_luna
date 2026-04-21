@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { Sidebar } from "./sidebar";
 import { Topbar } from "./topbar";
+import { CommandK } from "./command-k";
 import { cn } from "@/lib/utils";
 
 interface AdminShellProps {
@@ -49,6 +50,7 @@ export function AdminShell({ children, title = "Dashboard" }: AdminShellProps) {
 
   return (
     <div className="flex min-h-screen bg-tl-canvas">
+      <CommandK />
       <Sidebar
         collapsed={sidebarCollapsed}
         onCollapsedChange={setSidebarCollapsed}

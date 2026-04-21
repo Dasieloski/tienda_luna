@@ -27,6 +27,14 @@ type Hourly = { hora: number; ventas: number; ingresosCents: number };
 type TopP = { nombre: string; unidades: number; subtotalCents: number };
 type Dev = { deviceId: string; ventas: number; ingresosCents: number };
 
+function fmtHour12(h: number) {
+  const hh = ((h % 24) + 24) % 24;
+  const ampm = hh >= 12 ? "pm" : "am";
+  const x = hh % 12;
+  const hour = x === 0 ? 12 : x;
+  return `${hour} ${ampm}`;
+}
+
 function ChartFrame({
   title,
   subtitle,
@@ -78,7 +86,7 @@ export function DashboardCharts({
   const hourlyChart = useMemo(
     () =>
       hourly.map((h) => ({
-        label: `${String(h.hora).padStart(2, "0")}:00`,
+        label: fmtHour12(h.hora),
         ingresos: Math.round(h.ingresosCents / 100),
         ventas: h.ventas,
       })),
@@ -173,7 +181,7 @@ export function DashboardCharts({
                 const n = typeof v === "number" ? v : Number(v);
                 const label = String(name);
                 return [
-                  label === "ingresos" ? `${n} EUR` : n,
+                  label === "ingresos" ? `${n} CUP` : n,
                   label === "ingresos" ? "Ingresos" : "Ventas",
                 ];
               }}

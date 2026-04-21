@@ -42,8 +42,10 @@ export default function SettingsPage() {
   const [loading, setLoading] = useState(true);
   const [sessionMe, setSessionMe] = useState<SessionMe | null>(null);
   const [copyMsg, setCopyMsg] = useState<string | null>(null);
+  const [refreshing, setRefreshing] = useState(false);
 
   const loadData = useCallback(async () => {
+    setRefreshing(true);
     try {
       const [overviewRes, meRes] = await Promise.all([
         fetch("/api/stats/overview", { credentials: "include" }),
@@ -61,6 +63,7 @@ export default function SettingsPage() {
       }
     } finally {
       setLoading(false);
+      setRefreshing(false);
     }
   }, []);
 
@@ -68,7 +71,29 @@ export default function SettingsPage() {
     void loadData();
   }, [loadData]);
 
-  // Sin auto-refresh: solo carga inicial.
+  // Auto-refresh liviano del estado (60s) solo si la pestaña está visible.
+  useEffect(() => {
+    let interval: number | null = null;
+    let cancelled = false;
+
+    const tick = () => {
+      if (cancelled) return;
+      if (document.visibilityState !== "visible") return;
+      void loadData();
+    };
+
+    interval = window.setInterval(tick, 60_000);
+    const onVis = () => {
+      if (document.visibilityState === "visible") tick();
+    };
+    document.addEventListener("visibilitychange", onVis);
+
+    return () => {
+      cancelled = true;
+      if (interval != null) window.clearInterval(interval);
+      document.removeEventListener("visibilitychange", onVis);
+    };
+  }, [loadData]);
 
   const dbOk = data?.meta?.dbAvailable !== false;
 
@@ -150,8 +175,19 @@ export default function SettingsPage() {
               </div>
             </div>
             <p className="mt-3 text-xs text-tl-muted">
-              El panel refresca métricas y ventas cada 5 segundos automáticamente.
+              Esta pantalla refresca su estado cada 60 segundos. Las ventas se actualizan cada 5 segundos en la vista
+              <span className="font-semibold"> Ventas</span>.
             </p>
+            <div className="mt-3 flex flex-wrap items-center gap-2">
+              <button
+                type="button"
+                className="tl-btn tl-btn-secondary tl-interactive !px-3 !py-2 text-xs"
+                onClick={() => void loadData()}
+                disabled={refreshing}
+              >
+                {refreshing ? "Actualizando..." : "Actualizar ahora"}
+              </button>
+            </div>
           </div>
         </div>
 
@@ -169,10 +205,9 @@ export default function SettingsPage() {
               <p className="mt-3 rounded-lg border border-tl-warning/30 bg-tl-warning-subtle px-3 py-2 text-xs text-tl-warning">
                 Estás usando el marcador local sin BD real (
                 <code className="font-mono">__local_sin_bd__</code>). En Vercel define{" "}
-                <code className="font-mono">STATIC_ADMIN_STORE_ID</code> con el{" "}
-                <code className="font-mono">Store.id</code> real o quita{" "}
-                <code className="font-mono">STATIC_ADMIN_SKIP_DB</code> para que el login tome la
-                primera tienda de la base.
+                <code className="font-mono">DATABASE_URL</code> / <code className="font-mono">DIRECT_URL</code> para que el panel
+                pueda leer tu tienda real desde Postgres. Si el panel no ve una tienda en BD, algunas secciones
+                aparecerán vacías.
               </p>
             )}
             <div className="mt-4 flex flex-col gap-2 sm:flex-row sm:items-center">

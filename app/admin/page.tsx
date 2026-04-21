@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
+import Link from "next/link";
 import {
   AlertTriangle,
   Boxes,
@@ -245,12 +246,15 @@ export default function AdminOverviewPage() {
         {/* Primary KPIs */}
         <section>
           <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-            <KpiCard
-              label="Ventas hoy"
-              value={String(data?.level1.ventasHoy ?? 0)}
-              variant="default"
-              icon={<ShoppingCart className="h-4 w-4" />}
-            />
+            <Link href="/admin/historial?preset=today" className="block">
+              <KpiCard
+                label="Ventas hoy"
+                value={String(data?.level1.ventasHoy ?? 0)}
+                variant="default"
+                icon={<ShoppingCart className="h-4 w-4" />}
+                actionable
+              />
+            </Link>
             <KpiCard
               label="Ingresos hoy"
               value={<CupUsdMoney cents={data?.level1.ingresosHoyCents ?? 0} />}
@@ -294,12 +298,15 @@ export default function AdminOverviewPage() {
               label="Ingresos totales"
               value={<CupUsdMoney cents={data?.level1.ingresosTotalesCents ?? 0} />}
             />
-            <KpiCard
-              label="Eventos fraude"
-              value={String(data?.level1.eventosFraudulentos ?? 0)}
-              variant={data?.level1.eventosFraudulentos ? "danger" : "default"}
-              icon={data?.level1.eventosFraudulentos ? <AlertTriangle className="h-4 w-4" /> : undefined}
-            />
+            <Link href="/admin/alertas?fraud=1" className="block">
+              <KpiCard
+                label="Eventos fraude"
+                value={String(data?.level1.eventosFraudulentos ?? 0)}
+                variant={data?.level1.eventosFraudulentos ? "danger" : "default"}
+                icon={data?.level1.eventosFraudulentos ? <AlertTriangle className="h-4 w-4" /> : undefined}
+                actionable
+              />
+            </Link>
           </div>
         </section>
 

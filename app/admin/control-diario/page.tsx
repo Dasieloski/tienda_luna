@@ -14,6 +14,7 @@ import {
   TrendingUp,
 } from "lucide-react";
 import { AdminShell } from "@/components/admin/admin-shell";
+import { DataTable, type Column } from "@/components/admin/data-table";
 import { formatCup } from "@/lib/money";
 import { CupUsdMoney } from "@/components/admin/cup-usd-money";
 import { TablePriceCupCell } from "@/components/admin/table-price-cup-cell";
@@ -181,7 +182,6 @@ export default function DailyControlPage() {
   const [profitDay, setProfitDay] = useState<ProfitDay | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [q, setQ] = useState("");
   const [page, setPage] = useState(1);
   const limit = 50;
 
@@ -247,27 +247,89 @@ export default function DailyControlPage() {
     }, rows[0]!);
   }, [rows]);
 
-  const filtered = useMemo(() => {
-    const needle = q.trim().toLowerCase();
-    if (!needle) return rows;
-    return rows.filter((r) => {
-      return (
-        r.name.toLowerCase().includes(needle) ||
-        (r.sku ?? "").toLowerCase().includes(needle)
-      );
-    });
-  }, [rows, q]);
-
-  const totalPages = Math.max(1, Math.ceil(filtered.length / limit));
+  const totalPages = Math.max(1, Math.ceil(rows.length / limit));
   const pageSafe = Math.min(Math.max(1, page), totalPages);
   const paged = useMemo(() => {
     const start = (pageSafe - 1) * limit;
-    return filtered.slice(start, start + limit);
-  }, [filtered, pageSafe]);
+    return rows.slice(start, start + limit);
+  }, [rows, pageSafe]);
 
   useEffect(() => {
     setPage(1);
-  }, [q, date]);
+  }, [date]);
+
+  const columns: Column<DailyRow>[] = useMemo(
+    () => [
+      {
+        key: "name",
+        label: "Producto",
+        sortable: true,
+        filter: { kind: "text", placeholder: "Filtrar por nombre o SKU…" },
+        sortValue: (row) => row.name,
+        render: (row) => (
+          <div className="flex flex-col">
+            <span className="font-medium text-tl-ink">{row.name}</span>
+            {row.sku ? <span className="text-xs font-mono text-tl-muted">{row.sku}</span> : null}
+          </div>
+        ),
+      },
+      {
+        key: "priceCents",
+        label: "PVP",
+        sortable: true,
+        align: "right",
+        width: "120px",
+        render: (row) => (
+          <TablePriceCupCell cupCents={row.priceCents} explicitUsdCents={row.priceUsdCents} compact />
+        ),
+      },
+      {
+        key: "qty",
+        label: "Cant.",
+        sortable: true,
+        align: "right",
+        width: "80px",
+        filter: { kind: "numberRange", placeholderMin: "Min", placeholderMax: "Max" },
+        render: (row) => <span className="tabular-nums text-tl-ink">{row.qty}</span>,
+      },
+      {
+        key: "efectivoCents",
+        label: "Efectivo",
+        sortable: true,
+        align: "right",
+        width: "130px",
+        render: (row) => <span className="tabular-nums text-tl-ink">{formatCup(row.efectivoCents)}</span>,
+      },
+      {
+        key: "transferenciaCents",
+        label: "Transfer.",
+        sortable: true,
+        align: "right",
+        width: "130px",
+        render: (row) => <span className="tabular-nums text-tl-ink">{formatCup(row.transferenciaCents)}</span>,
+      },
+      {
+        key: "usdCents",
+        label: "USD (CUP)",
+        sortable: true,
+        align: "right",
+        width: "130px",
+        render: (row) => <TablePriceCupCell cupCents={row.usdCents} compact />,
+      },
+      {
+        key: "subtotal",
+        label: "Subtotal",
+        sortable: true,
+        align: "right",
+        width: "130px",
+        sortValue: (row) => row.efectivoCents + row.transferenciaCents + row.usdCents,
+        render: (row) => (
+          <TablePriceCupCell cupCents={row.efectivoCents + row.transferenciaCents + row.usdCents} compact />
+        ),
+      },
+    ],
+    [],
+  );
 
   return (
     <AdminShell title="Control diario">
@@ -326,7 +388,7 @@ export default function DailyControlPage() {
           {profitDay && !loading ? (
             <p className="mt-2 text-sm font-semibold text-tl-ink">
               Ganancia neta del día (ventas cerradas, PVP − proveedor): {formatCup(profitDay.marginCents)} ·{" "}
-              {profitDay.salesCount} tickets
+              {profitDay.marginPct != null ? `${profitDay.marginPct.toFixed(1)} %` : "—"} · {profitDay.salesCount} tickets
             </p>
           ) : null}
         </div>
@@ -454,65 +516,39 @@ export default function DailyControlPage() {
               Día {new Date(date).toLocaleDateString("es-ES")}
             </p>
             </div>
-            <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row sm:items-center">
-              <div className="relative w-full sm:w-[320px]">
-                <PackageSearch className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-tl-muted" aria-hidden />
-                <input
-                  value={q}
-                  onChange={(e) => setQ(e.target.value)}
-                  className="tl-input h-9 pl-10"
-                  placeholder="Filtrar por producto o SKU…"
-                />
-              </div>
-            </div>
           </div>
 
-          <div className="tl-no-print overflow-x-auto tl-glass rounded-xl">
-            <DailyControlSalesTable
-              rows={paged}
-              firstRowNumber={(pageSafe - 1) * limit + 1}
+          <div className="tl-no-print">
+            <DataTable
+              columns={columns}
+              data={paged}
+              keyExtractor={(r) => r.productId}
+              searchable
+              searchPlaceholder="Buscar por producto o SKU…"
+              searchKeys={["name", "sku"]}
+              emptyMessage="No hay filas para el filtro seleccionado."
               loading={loading}
-              footerSource={filtered}
+              skeletonRows={10}
+              maxHeight="calc(100vh - 520px)"
+              pagination={{
+                page: pageSafe,
+                totalPages,
+                onPageChange: setPage,
+                summary: `${rows.length.toLocaleString("es-ES")} filas · página ${pageSafe} de ${totalPages}`,
+              }}
             />
           </div>
 
           <div className="tl-print-only tl-print-table-wrap tl-print-wide tl-glass rounded-xl">
             {!loading && (
               <DailyControlSalesTable
-                rows={filtered}
+                rows={rows}
                 firstRowNumber={1}
                 loading={false}
-                footerSource={filtered}
+                footerSource={rows}
               />
             )}
           </div>
-
-          {/* Pagination (50 estándar) */}
-          {!loading && filtered.length > 0 && (
-            <div className="tl-no-print tl-table-pagination">
-              <p className="text-xs text-tl-muted">
-                {filtered.length.toLocaleString("es-ES")} filas · página {pageSafe} de {totalPages}
-              </p>
-              <div className="flex items-center gap-2">
-                <button
-                  type="button"
-                  className="tl-table-pagination__btn"
-                  onClick={() => setPage((p) => Math.max(1, p - 1))}
-                  disabled={pageSafe <= 1}
-                >
-                  Anterior
-                </button>
-                <button
-                  type="button"
-                  className="tl-table-pagination__btn"
-                  onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
-                  disabled={pageSafe >= totalPages}
-                >
-                  Siguiente
-                </button>
-              </div>
-            </div>
-          )}
         </section>
 
         <section className="tl-no-print text-xs text-tl-muted">

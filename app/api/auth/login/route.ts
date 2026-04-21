@@ -3,10 +3,6 @@ import { z } from "zod";
 import { compare } from "bcryptjs";
 import { prisma } from "@/lib/db";
 import { sessionCookieName } from "@/lib/auth";
-import {
-  LOCAL_ADMIN_STORE_ID,
-  matchesStaticAdmin,
-} from "@/lib/static-admin-auth";
 import { signUserSession } from "@/lib/jwt";
 
 const bodySchema = z.object({
@@ -14,25 +10,18 @@ const bodySchema = z.object({
   password: z.string().min(1),
 });
 
-const STATIC_ADMIN_USER_ID = "static-admin";
+type RateLimitState = { count: number; firstAt: number; blockedUntil: number };
 
-async function resolveStoreId(): Promise<string> {
-  const fromEnv = process.env.STATIC_ADMIN_STORE_ID?.trim();
-  if (fromEnv) return fromEnv;
+function getClientIp(request: Request) {
+  const xf = request.headers.get("x-forwarded-for");
+  if (xf) return xf.split(",")[0]!.trim();
+  return request.headers.get("x-real-ip")?.trim() || "unknown";
+}
 
-  if (process.env.STATIC_ADMIN_SKIP_DB === "1") {
-    return LOCAL_ADMIN_STORE_ID;
-  }
-
-  try {
-    const s = await prisma.store.findFirst({
-      orderBy: { createdAt: "asc" },
-      select: { id: true },
-    });
-    return s?.id ?? LOCAL_ADMIN_STORE_ID;
-  } catch {
-    return LOCAL_ADMIN_STORE_ID;
-  }
+function getRlStore() {
+  const g = globalThis as typeof globalThis & { __tlLoginRl?: Map<string, RateLimitState> };
+  if (!g.__tlLoginRl) g.__tlLoginRl = new Map();
+  return g.__tlLoginRl;
 }
 
 export async function POST(request: Request) {
@@ -44,31 +33,35 @@ export async function POST(request: Request) {
     }
 
     const { email, password } = parsed.data;
+    const emailNorm = email.trim().toLowerCase();
+    const ip = getClientIp(request);
 
-    // 1) Static admin (env) - compat actual
-    if (matchesStaticAdmin(email, password)) {
-      const storeId = await resolveStoreId();
-      const token = await signUserSession(STATIC_ADMIN_USER_ID, storeId, "ADMIN");
-      const res = NextResponse.json({
-        token,
-        role: "ADMIN",
-        storeId,
-        userId: STATIC_ADMIN_USER_ID,
-        mode: "static_admin",
-      });
-      res.cookies.set(sessionCookieName(), token, {
-        httpOnly: true,
-        sameSite: "lax",
-        secure: process.env.NODE_ENV === "production",
-        path: "/",
-        maxAge: 60 * 60 * 8,
-      });
-      return res;
+    // Rate limit básico (memoria del runtime). Protege contra fuerza bruta.
+    const now = Date.now();
+    const key = `login:${ip}:${emailNorm}`;
+    const store = getRlStore();
+    const st = store.get(key) ?? { count: 0, firstAt: now, blockedUntil: 0 };
+    const windowMs = 10 * 60_000;
+    const maxAttempts = 8;
+    const blockMs = 15 * 60_000;
+    const inWindow = now - st.firstAt <= windowMs;
+    const state = inWindow ? st : { count: 0, firstAt: now, blockedUntil: st.blockedUntil };
+
+    if (state.blockedUntil > now) {
+      return NextResponse.json({ error: "RATE_LIMITED" }, { status: 429 });
     }
 
-    // 2) Usuarios reales en DB
+    state.count += 1;
+    if (state.count > maxAttempts) {
+      state.blockedUntil = now + blockMs;
+      store.set(key, state);
+      return NextResponse.json({ error: "RATE_LIMITED" }, { status: 429 });
+    }
+    store.set(key, state);
+
+    // Usuarios reales en BD
     const user = await prisma.user.findUnique({
-      where: { email },
+      where: { email: emailNorm },
       select: { id: true, passwordHash: true, role: true, storeId: true },
     });
     if (!user) {
@@ -78,6 +71,9 @@ export async function POST(request: Request) {
     if (!ok) {
       return NextResponse.json({ error: "INVALID_CREDENTIALS" }, { status: 401 });
     }
+
+    // Éxito: limpia contador para este par (ip+email)
+    store.delete(key);
 
     const token = await signUserSession(user.id, user.storeId, user.role);
     const res = NextResponse.json({
