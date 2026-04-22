@@ -377,11 +377,15 @@ export function AdminDashboard() {
       );
       return;
     }
-    const created = (await res.json()) as { product?: { sku?: string } };
+    const created = (await res.json()) as {
+      product?: { sku?: string };
+      meta?: { auditLogSkipped?: boolean; reason?: string };
+    };
+    const skuMsg = created.product?.sku ? `Producto creado. SKU: ${created.product.sku}` : "Producto creado correctamente.";
     setFormMsg(
-      created.product?.sku
-        ? `Producto creado. SKU: ${created.product.sku}`
-        : "Producto creado correctamente.",
+      created.meta?.auditLogSkipped
+        ? `${skuMsg} (aviso: no se pudo registrar auditoría${created.meta.reason ? `: ${created.meta.reason}` : ""}).`
+        : skuMsg,
     );
     setFormName("");
     setFormPriceCup("");
