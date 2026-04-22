@@ -1,6 +1,6 @@
 "use client";
 
-import { useId, useMemo, useState } from "react";
+import { useEffect, useId, useMemo, useState, type ReactNode } from "react";
 import { ChevronDown, ChevronLeft, ChevronRight, ChevronUp, Search, X } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -73,6 +73,10 @@ interface DataTableProps<T> {
   searchable?: boolean;
   searchPlaceholder?: string;
   searchKeys?: (keyof T)[];
+  /** Búsqueda controlada (opcional). Si se define, el input usa este valor. */
+  searchQuery?: string;
+  /** Callback cuando cambia la búsqueda (modo controlado). */
+  onSearchQueryChange?: (next: string) => void;
   emptyMessage?: string;
   className?: string;
   /** Si true, la tarjeta llena la altura disponible (útil en grids) */
@@ -95,6 +99,13 @@ interface DataTableProps<T> {
   onSortingChange?: (next: DataTableSorting) => void;
   filters?: DataTableFilters;
   onFiltersChange?: (next: DataTableFilters) => void;
+  /**
+   * Filas visibles tras búsqueda + filtros de columna + orden (útil para totales al pie).
+   * No incluye paginación (si existiera server-side pagination externa, integrar aparte).
+   */
+  onVisibleRowsChange?: (rows: T[]) => void;
+  /** Pie de tabla (desktop) + bloque al final (mobile). */
+  footer?: ReactNode;
 }
 
 export function DataTable<T extends Record<string, unknown>>({
@@ -104,6 +115,8 @@ export function DataTable<T extends Record<string, unknown>>({
   searchable = false,
   searchPlaceholder = "Buscar...",
   searchKeys = [],
+  searchQuery,
+  onSearchQueryChange,
   emptyMessage = "No hay datos disponibles",
   className,
   fillHeight = false,
@@ -118,8 +131,10 @@ export function DataTable<T extends Record<string, unknown>>({
   onSortingChange,
   filters,
   onFiltersChange,
+  onVisibleRowsChange,
+  footer,
 }: DataTableProps<T>) {
-  const [search, setSearch] = useState("");
+  const [searchLocal, setSearchLocal] = useState("");
   const [sortKeyLocal, setSortKeyLocal] = useState<string | null>(null);
   const [sortDirLocal, setSortDirLocal] = useState<"asc" | "desc">("asc");
   const [filtersLocal, setFiltersLocal] = useState<DataTableFilters>({});
@@ -128,6 +143,8 @@ export function DataTable<T extends Record<string, unknown>>({
   const sortKey = sorting?.key ?? sortKeyLocal;
   const sortDir = sorting?.dir ?? sortDirLocal;
   const activeFilters = filters ?? filtersLocal;
+  const searchControlled = searchQuery !== undefined;
+  const search = searchControlled ? (searchQuery ?? "") : searchLocal;
 
   const setNextSorting = (next: DataTableSorting) => {
     if (onSortingChange) onSortingChange(next);
@@ -210,7 +227,7 @@ export function DataTable<T extends Record<string, unknown>>({
     });
   };
 
-  const filteredData =
+  const baseFilteredData =
     searchable && search.trim()
       ? data.filter((row) => {
           const searchLower = search.toLowerCase();
@@ -222,7 +239,7 @@ export function DataTable<T extends Record<string, unknown>>({
         })
       : data;
 
-  const columnFilteredData = serverSideMode ? filteredData : applyColumnFilters(filteredData);
+  const columnFilteredData = serverSideMode ? baseFilteredData : applyColumnFilters(baseFilteredData);
 
   const sortedData = sortKey
     ? serverSideMode
@@ -247,6 +264,13 @@ export function DataTable<T extends Record<string, unknown>>({
         return sortDir === "asc" ? aStr.localeCompare(bStr) : bStr.localeCompare(aStr);
       })
     : columnFilteredData;
+
+  const visibleRows = loading ? [] : sortedData;
+
+  useEffect(() => {
+    if (!onVisibleRowsChange) return;
+    onVisibleRowsChange(visibleRows);
+  }, [onVisibleRowsChange, visibleRows, loading]);
 
   const handleSort = (key: string) => {
     if (sortKey === key) {
@@ -307,7 +331,11 @@ export function DataTable<T extends Record<string, unknown>>({
                   type="search"
                   placeholder={searchPlaceholder}
                   value={search}
-                  onChange={(e) => setSearch(e.target.value)}
+                  onChange={(e) => {
+                    const v = e.target.value;
+                    if (searchControlled) onSearchQueryChange?.(v);
+                    else setSearchLocal(v);
+                  }}
                   className="tl-input h-9 pl-10 text-sm"
                   disabled={loading}
                 />
@@ -586,6 +614,15 @@ export function DataTable<T extends Record<string, unknown>>({
               })
             )}
           </tbody>
+          {!loading && footer ? (
+            <tfoot>
+              <tr>
+                <td colSpan={columns.length} className="bg-tl-canvas-inset/60 p-0">
+                  {footer}
+                </td>
+              </tr>
+            </tfoot>
+          ) : null}
         </table>
       </div>
 
@@ -643,6 +680,7 @@ export function DataTable<T extends Record<string, unknown>>({
             );
           })
         )}
+        {!loading && footer ? <div className="border-t border-tl-line px-4 py-3 md:hidden">{footer}</div> : null}
       </div>
 
       {pagination && !loading && (

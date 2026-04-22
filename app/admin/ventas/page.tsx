@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { RefreshCw, WifiOff } from "lucide-react";
 import { AdminShell } from "@/components/admin/admin-shell";
 import { DataTable, type Column } from "@/components/admin/data-table";
@@ -29,8 +29,13 @@ type RecentSale = {
   }[];
 };
 
+function ymdLocal(d: Date) {
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+}
+
 export default function SalesPage() {
   const [sales, setSales] = useState<RecentSale[]>([]);
+  const [visibleSales, setVisibleSales] = useState<RecentSale[]>([]);
   const [loading, setLoading] = useState(true);
   const [highlightNew, setHighlightNew] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
@@ -40,13 +45,28 @@ export default function SalesPage() {
   const inFlightRef = useRef(false);
   const stopRef = useRef(false);
 
+  const now = useMemo(() => new Date(), []);
+  const [fromDay, setFromDay] = useState(() => {
+    const d = new Date(now);
+    d.setDate(d.getDate() - 6);
+    return ymdLocal(d);
+  });
+  const [toDay, setToDay] = useState(() => ymdLocal(now));
+
+  const [searchQuery, setSearchQuery] = useState("");
+
   const loadSales = useCallback(async (opts?: { initial?: boolean; manual?: boolean }) => {
     if (inFlightRef.current) return;
     inFlightRef.current = true;
     const isInitial = opts?.initial === true;
     if (!isInitial) setRefreshing(true);
     try {
-      const res = await fetch("/api/admin/sales/recent?limit=30", { credentials: "include" });
+      const qs = new URLSearchParams({
+        limit: "500",
+        fromDay,
+        toDay,
+      });
+      const res = await fetch(`/api/admin/sales/recent?${qs.toString()}`, { credentials: "include" });
       if (!res.ok) {
         setPollError("No se pudo actualizar ventas.");
         return;
@@ -77,7 +97,7 @@ export default function SalesPage() {
       setRefreshing(false);
       inFlightRef.current = false;
     }
-  }, []);
+  }, [fromDay, toDay]);
 
   // Initial load
   useEffect(() => {
@@ -108,6 +128,16 @@ export default function SalesPage() {
       document.removeEventListener("visibilitychange", onVis);
     };
   }, [loadSales]);
+
+  const totals = useMemo(() => {
+    const out = { totalCents: 0, units: 0, tickets: 0 };
+    out.tickets = visibleSales.length;
+    for (const s of visibleSales) {
+      out.totalCents += s.totalCents;
+      for (const l of s.lines) out.units += l.quantity;
+    }
+    return out;
+  }, [visibleSales]);
 
   const columns: Column<RecentSale>[] = [
     {
@@ -264,33 +294,66 @@ export default function SalesPage() {
           </div>
         </div>
 
-        {/* Summary cards */}
+        {/* Filtros */}
+        <div className="tl-glass rounded-xl p-4">
+          <div className="flex flex-wrap items-end gap-3">
+            <div className="min-w-[160px]">
+              <label className="text-xs font-semibold uppercase tracking-wider text-tl-muted" htmlFor="fromDay">
+                Desde
+              </label>
+              <input
+                id="fromDay"
+                type="date"
+                value={fromDay}
+                onChange={(e) => setFromDay(e.target.value)}
+                className="tl-input mt-1 h-9 text-sm"
+              />
+            </div>
+            <div className="min-w-[160px]">
+              <label className="text-xs font-semibold uppercase tracking-wider text-tl-muted" htmlFor="toDay">
+                Hasta
+              </label>
+              <input
+                id="toDay"
+                type="date"
+                value={toDay}
+                onChange={(e) => setToDay(e.target.value)}
+                className="tl-input mt-1 h-9 text-sm"
+              />
+            </div>
+            <div className="ml-auto text-xs text-tl-muted">
+              El total y las unidades se calculan sobre lo visible (búsqueda y rango).
+            </div>
+          </div>
+        </div>
+
+        {/* Summary cards (sobre lo filtrado) */}
         <div className="grid gap-4 sm:grid-cols-3">
           <div className="tl-glass rounded-xl p-4">
             <p className="text-xs font-semibold uppercase tracking-wider text-tl-muted">
-              Transacciones
+              Transacciones (filtrado)
             </p>
             <p className="mt-1 text-2xl font-bold tabular-nums text-tl-ink">
-              {sales.length}
+              {totals.tickets}
             </p>
           </div>
           <div className="tl-glass rounded-xl p-4">
             <p className="text-xs font-semibold uppercase tracking-wider text-tl-muted">
-              Total facturado
+              Total facturado (filtrado)
             </p>
             <div className="mt-1 text-2xl font-bold text-tl-ink">
-              <CupUsdMoney cents={sales.reduce((acc, s) => acc + s.totalCents, 0)} />
+              <CupUsdMoney cents={totals.totalCents} />
             </div>
           </div>
           <div className="tl-glass rounded-xl p-4">
             <p className="text-xs font-semibold uppercase tracking-wider text-tl-muted">
-              Ticket medio
+              Ticket medio (filtrado)
             </p>
             <div className="mt-1 text-2xl font-bold text-tl-ink">
               <CupUsdMoney
                 cents={
-                  sales.length > 0
-                    ? Math.round(sales.reduce((acc, s) => acc + s.totalCents, 0) / sales.length)
+                  totals.tickets > 0
+                    ? Math.round(totals.totalCents / totals.tickets)
                     : 0
                 }
               />
@@ -305,10 +368,28 @@ export default function SalesPage() {
           searchable
           searchPlaceholder="Buscar por dispositivo, producto o método..."
           searchKeys={["deviceId", "searchText", "paymentMethod"]}
+          searchQuery={searchQuery}
+          onSearchQueryChange={setSearchQuery}
+          onVisibleRowsChange={setVisibleSales}
           emptyMessage="No hay ventas recientes"
           maxHeight="calc(100vh - 400px)"
           loading={loading}
           skeletonRows={10}
+          footer={
+            <div className="flex flex-wrap items-center justify-between gap-3 px-4 py-3">
+              <div className="text-xs font-semibold uppercase tracking-wider text-tl-muted">
+                Total visible
+              </div>
+              <div className="flex flex-wrap items-center gap-4 text-sm">
+                <span className="text-tl-muted">
+                  Unidades: <span className="tabular-nums text-tl-ink">{totals.units}</span>
+                </span>
+                <span className="text-tl-muted">
+                  Importe: <span className="font-semibold text-tl-ink"><CupUsdMoney cents={totals.totalCents} /></span>
+                </span>
+              </div>
+            </div>
+          }
         />
       </div>
     </AdminShell>

@@ -4,9 +4,47 @@ import { getSessionFromRequest, requireAdmin } from "@/lib/auth";
 import { prisma } from "@/lib/db";
 import { LOCAL_ADMIN_STORE_ID } from "@/lib/static-admin-auth";
 
-const querySchema = z.object({
-  limit: z.coerce.number().int().min(1).max(80).optional().default(35),
-});
+const querySchema = z
+  .object({
+    limit: z.coerce.number().int().min(1).max(500).optional().default(35),
+    /** ISO datetime (recomendado) */
+    from: z.coerce.date().optional(),
+    to: z.coerce.date().optional(),
+    /** Día local YYYY-MM-DD (se interpreta con TL_TZ_OFFSET_MINUTES / NEXT_PUBLIC_TL_TZ_OFFSET_MINUTES) */
+    fromDay: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
+    toDay: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
+  })
+  .superRefine((val, ctx) => {
+    if (val.from && val.to && val.from.getTime() > val.to.getTime()) {
+      ctx.addIssue({ code: "custom", message: "from debe ser <= to" });
+    }
+    if (val.fromDay && val.from) {
+      ctx.addIssue({ code: "custom", message: "No mezcles fromDay con from" });
+    }
+    if (val.toDay && val.to) {
+      ctx.addIssue({ code: "custom", message: "No mezcles toDay con to" });
+    }
+  });
+
+function storeTzOffsetMinutes() {
+  const raw = process.env.TL_TZ_OFFSET_MINUTES ?? process.env.NEXT_PUBLIC_TL_TZ_OFFSET_MINUTES;
+  const v = raw == null ? -240 : Number(raw); // default Cuba (UTC-4)
+  return Number.isFinite(v) ? v : -240;
+}
+
+function localDayBoundsUtc(dayYmd: string, endExclusive: boolean) {
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(dayYmd);
+  if (!m) return null;
+  const y = Number(m[1]);
+  const mo = Number(m[2]) - 1;
+  const d = Number(m[3]);
+  if (!Number.isFinite(y) || !Number.isFinite(mo) || !Number.isFinite(d)) return null;
+  const offsetMinutes = storeTzOffsetMinutes();
+  const localStart = new Date(y, mo, d, 0, 0, 0, 0);
+  const localEnd = endExclusive ? new Date(y, mo, d + 1, 0, 0, 0, 0) : localStart;
+  const toUtc = (dt: Date) => new Date(dt.getTime() - offsetMinutes * 60_000);
+  return { fromUtc: toUtc(localStart), toUtc: toUtc(localEnd) };
+}
 
 function getPayloadNumberMaybe(payload: unknown, keys: string[]): number | null {
   if (!payload || typeof payload !== "object") return null;
@@ -29,7 +67,13 @@ export async function GET(request: Request) {
   }
 
   const url = new URL(request.url);
-  const parsed = querySchema.safeParse({ limit: url.searchParams.get("limit") ?? undefined });
+  const parsed = querySchema.safeParse({
+    limit: url.searchParams.get("limit") ?? undefined,
+    from: url.searchParams.get("from") ?? undefined,
+    to: url.searchParams.get("to") ?? undefined,
+    fromDay: url.searchParams.get("fromDay") ?? undefined,
+    toDay: url.searchParams.get("toDay") ?? undefined,
+  });
   if (!parsed.success) {
     return NextResponse.json({ error: "INVALID_QUERY" }, { status: 400 });
   }
@@ -39,8 +83,34 @@ export async function GET(request: Request) {
   }
 
   try {
+    const q = parsed.data;
+    let completedAt:
+      | undefined
+      | {
+          gte?: Date;
+          lte?: Date;
+          lt?: Date;
+        } = undefined;
+
+    if (q.fromDay || q.toDay) {
+      const fromB = q.fromDay ? localDayBoundsUtc(q.fromDay, false) : null;
+      const toB = q.toDay ? localDayBoundsUtc(q.toDay, true) : null;
+      if ((q.fromDay && !fromB) || (q.toDay && !toB)) {
+        return NextResponse.json({ error: "INVALID_DAY" }, { status: 400 });
+      }
+      completedAt = {
+        ...(fromB ? { gte: fromB.fromUtc } : {}),
+        ...(toB ? { lt: toB.toUtc } : {}),
+      };
+    } else if (q.from || q.to) {
+      completedAt = {
+        ...(q.from ? { gte: q.from } : {}),
+        ...(q.to ? { lte: q.to } : {}),
+      };
+    }
+
     const sales = await prisma.sale.findMany({
-      where: { storeId: session.storeId },
+      where: { storeId: session.storeId, ...(completedAt ? { completedAt } : {}) },
       orderBy: { completedAt: "desc" },
       take: parsed.data.limit,
       include: {
