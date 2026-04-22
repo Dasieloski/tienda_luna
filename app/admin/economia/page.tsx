@@ -139,6 +139,29 @@ type MarginRangePayload = {
   error?: string;
 };
 
+type EconomyCalendarDay = {
+  day: string; // YYYY-MM-DD (local tienda)
+  revenueCents: number;
+  saleCount: number;
+  marginCents: number;
+  ticketAvgCents: number;
+  avgUnitCostCents: number | null;
+  unitsTotal: number;
+  topProduct: { id: string; name: string; qty: number; revenueCents: number } | null;
+};
+
+type EconomyCalendarPayload = {
+  meta: {
+    dbAvailable: boolean;
+    year?: number;
+    tzOffsetMinutes?: number;
+    note?: string;
+    message?: string;
+  };
+  year: number | null;
+  days: EconomyCalendarDay[];
+};
+
 function utcTodayYmd() {
   return new Date().toISOString().slice(0, 10);
 }
@@ -234,6 +257,177 @@ function fmtPct(n: number | null | undefined, digits = 1) {
   return `${sign}${n.toFixed(digits)} %`;
 }
 
+const DOW_SHORT_ES = ["L", "M", "X", "J", "V", "S", "D"];
+const MONTHS_ES = [
+  "Enero",
+  "Febrero",
+  "Marzo",
+  "Abril",
+  "Mayo",
+  "Junio",
+  "Julio",
+  "Agosto",
+  "Septiembre",
+  "Octubre",
+  "Noviembre",
+  "Diciembre",
+];
+
+function ymd(y: number, m1: number, d: number) {
+  return `${y}-${String(m1).padStart(2, "0")}-${String(d).padStart(2, "0")}`;
+}
+
+function daysInMonth(y: number, m1: number) {
+  return new Date(y, m1, 0).getDate();
+}
+
+function isoDow1to7(date: Date) {
+  const dow0 = date.getDay(); // 0=Dom..6=Sáb
+  return dow0 === 0 ? 7 : dow0;
+}
+
+function CalendarDayCell({ day, data }: { day: string; data: EconomyCalendarDay | null }) {
+  const has = data != null && (data.revenueCents > 0 || data.marginCents !== 0 || data.saleCount > 0);
+  const rev = data?.revenueCents ?? 0;
+  const mar = data?.marginCents ?? 0;
+  const top = data?.topProduct ?? null;
+  const avgCost = data?.avgUnitCostCents ?? null;
+
+  return (
+    <div className="group relative">
+      <div
+        className={cn(
+          "min-h-[74px] rounded-xl border p-2 transition-colors",
+          has ? "border-tl-line bg-tl-canvas-inset" : "border-tl-line-subtle bg-tl-canvas",
+          "hover:border-tl-accent/35 hover:bg-tl-canvas-inset",
+        )}
+        title={has ? "Pasa el cursor para más detalles" : "Sin ventas"}
+      >
+        <div className="flex items-start justify-between gap-2">
+          <span className="text-xs font-semibold tabular-nums text-tl-muted">{day.slice(-2)}</span>
+          {data?.saleCount ? (
+            <span className="rounded-full bg-tl-canvas-subtle px-1.5 py-0.5 text-[10px] font-semibold tabular-nums text-tl-muted">
+              {data.saleCount}
+            </span>
+          ) : null}
+        </div>
+        <div className="mt-1 space-y-0.5">
+          <div className="text-[11px] leading-tight text-tl-ink">
+            <span className="text-tl-muted">Ing:</span>{" "}
+            <span className="font-semibold tabular-nums">{rev > 0 ? formatCup(rev) : "—"}</span>
+          </div>
+          <div className="text-[11px] leading-tight text-tl-ink">
+            <span className="text-tl-muted">Gan:</span>{" "}
+            <span
+              className={cn(
+                "font-semibold tabular-nums",
+                mar > 0 ? "text-tl-success" : mar < 0 ? "text-tl-warning" : "text-tl-muted",
+              )}
+            >
+              {mar !== 0 ? formatCup(mar) : "—"}
+            </span>
+          </div>
+        </div>
+      </div>
+
+      {has ? (
+        <div className="pointer-events-none absolute left-1/2 top-full z-30 mt-2 w-[280px] -translate-x-1/2 translate-y-1 rounded-2xl border border-tl-line bg-tl-canvas px-3 py-2 text-xs text-tl-ink shadow-lg opacity-0 invisible transition-[opacity,transform] duration-150 ease-out group-hover:visible group-hover:opacity-100 group-hover:translate-y-0">
+          <div className="flex items-center justify-between gap-2">
+            <p className="font-semibold tabular-nums">{day}</p>
+            <p className="text-[11px] text-tl-muted">
+              {formatUsdFromCupCents(rev)} · gan {formatUsdFromCupCents(mar)}
+            </p>
+          </div>
+          <div className="mt-1 grid grid-cols-2 gap-2">
+            <div className="rounded-xl border border-tl-line-subtle bg-tl-canvas-inset px-2 py-1.5">
+              <p className="text-[10px] font-semibold uppercase text-tl-muted">Ingreso</p>
+              <p className="mt-0.5 font-semibold tabular-nums">{formatCup(rev)}</p>
+            </div>
+            <div className="rounded-xl border border-tl-line-subtle bg-tl-canvas-inset px-2 py-1.5">
+              <p className="text-[10px] font-semibold uppercase text-tl-muted">Ganancia</p>
+              <p className="mt-0.5 font-semibold tabular-nums">{formatCup(mar)}</p>
+            </div>
+            <div className="rounded-xl border border-tl-line-subtle bg-tl-canvas-inset px-2 py-1.5">
+              <p className="text-[10px] font-semibold uppercase text-tl-muted">Ticket medio</p>
+              <p className="mt-0.5 font-semibold tabular-nums">{formatCup(data?.ticketAvgCents ?? 0)}</p>
+            </div>
+            <div className="rounded-xl border border-tl-line-subtle bg-tl-canvas-inset px-2 py-1.5">
+              <p className="text-[10px] font-semibold uppercase text-tl-muted">Compra media (ud)</p>
+              <p className="mt-0.5 font-semibold tabular-nums">{avgCost != null ? formatCup(avgCost) : "—"}</p>
+            </div>
+          </div>
+
+          <div className="mt-2 rounded-xl border border-tl-line-subtle bg-tl-canvas-inset px-2 py-1.5">
+            <p className="text-[10px] font-semibold uppercase text-tl-muted">Top producto</p>
+            {top ? (
+              <p className="mt-0.5">
+                <span className="font-semibold">{top.name}</span>{" "}
+                <span className="tabular-nums text-tl-muted">× {top.qty}</span>{" "}
+                <span className="tabular-nums text-tl-muted">· {formatCup(top.revenueCents)}</span>
+              </p>
+            ) : (
+              <p className="mt-0.5 text-tl-muted">—</p>
+            )}
+          </div>
+
+          <div className="mt-2 flex items-center justify-between text-[11px] text-tl-muted">
+            <span>Unidades vendidas: {String(data?.unitsTotal ?? 0)}</span>
+            <span>Ventas: {String(data?.saleCount ?? 0)}</span>
+          </div>
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+function MonthGrid({
+  year,
+  month1,
+  byDay,
+}: {
+  year: number;
+  month1: number; // 1-12
+  byDay: Map<string, EconomyCalendarDay>;
+}) {
+  const totalDays = daysInMonth(year, month1);
+  const first = new Date(year, month1 - 1, 1);
+  const isoFirst = isoDow1to7(first); // 1..7
+  const leading = isoFirst - 1;
+
+  const cells: { key: string; day: string | null }[] = [];
+  for (let i = 0; i < leading; i += 1) cells.push({ key: `p${i}`, day: null });
+  for (let d = 1; d <= totalDays; d += 1) {
+    cells.push({ key: `d${d}`, day: ymd(year, month1, d) });
+  }
+  while (cells.length % 7 !== 0) cells.push({ key: `t${cells.length}`, day: null });
+
+  const monthLabel = MONTHS_ES[month1 - 1] ?? `Mes ${month1}`;
+
+  return (
+    <div className="rounded-2xl border border-tl-line-subtle bg-tl-canvas p-4">
+      <div>
+        <p className="text-sm font-semibold text-tl-ink">{monthLabel}</p>
+        <p className="text-xs text-tl-muted">Ing. + ganancia (hover para detalles)</p>
+      </div>
+
+      <div className="mt-3 grid grid-cols-7 gap-2">
+        {DOW_SHORT_ES.map((d) => (
+          <div key={d} className="px-1 text-center text-[10px] font-semibold uppercase text-tl-muted">
+            {d}
+          </div>
+        ))}
+        {cells.map((c) =>
+          c.day ? (
+            <CalendarDayCell key={c.key} day={c.day} data={byDay.get(c.day) ?? null} />
+          ) : (
+            <div key={c.key} className="min-h-[74px] rounded-xl border border-transparent bg-transparent" />
+          ),
+        )}
+      </div>
+    </div>
+  );
+}
+
 /** Bloque de sección con título y subtítulo breve */
 function EconomySectionHeader({
   title,
@@ -269,6 +463,10 @@ export default function EconomyPage() {
   const [date, setDate] = useState(today);
   const [data, setData] = useState<EconomySummary | null>(null);
   const [analytics, setAnalytics] = useState<AnalyticsPayload | null>(null);
+  const [calendarYear, setCalendarYear] = useState(() => new Date().getFullYear());
+  const [calendar, setCalendar] = useState<EconomyCalendarPayload | null>(null);
+  const [calendarLoading, setCalendarLoading] = useState(false);
+  const [calendarErr, setCalendarErr] = useState<string | null>(null);
   const [rangeFrom, setRangeFrom] = useState(defaultMarginRangeUtc.from);
   const [rangeTo, setRangeTo] = useState(defaultMarginRangeUtc.to);
   const [marginRange, setMarginRange] = useState<MarginRangePayload | null>(null);
@@ -319,6 +517,28 @@ export default function EconomyPage() {
     }
   }, []);
 
+  const loadCalendar = useCallback(async (year: number) => {
+    setCalendarLoading(true);
+    setCalendarErr(null);
+    try {
+      const params = new URLSearchParams();
+      params.set("year", String(year));
+      const res = await fetch(`/api/admin/economy/calendar?${params.toString()}`, { credentials: "include" });
+      const json = (await res.json()) as EconomyCalendarPayload;
+      setCalendar(json);
+      if (!res.ok) {
+        setCalendarErr(json.meta?.message ?? "No se pudo cargar el calendario.");
+      } else if (json.meta?.dbAvailable === false && json.meta?.message) {
+        setCalendarErr(json.meta.message);
+      }
+    } catch (e) {
+      setCalendar(null);
+      setCalendarErr(e instanceof Error ? e.message : "Error de red al cargar calendario.");
+    } finally {
+      setCalendarLoading(false);
+    }
+  }, []);
+
   const fetchMarginRange = useCallback(async (from: string, to: string) => {
     setMarginRangeLoading(true);
     setMarginRangeErr(null);
@@ -365,6 +585,10 @@ export default function EconomyPage() {
   useEffect(() => {
     void loadAnalytics();
   }, [loadAnalytics]);
+
+  useEffect(() => {
+    void loadCalendar(calendarYear);
+  }, [calendarYear, loadCalendar]);
 
   useEffect(() => {
     void fetchMarginRange(defaultMarginRangeUtc.from, defaultMarginRangeUtc.to);
@@ -471,6 +695,12 @@ export default function EconomyPage() {
   const peakD = analytics?.peakWeekday365d;
   const months = analytics?.monthlySeries ?? [];
 
+  const calendarByDay = useMemo(() => {
+    const m = new Map<string, EconomyCalendarDay>();
+    for (const d of calendar?.days ?? []) m.set(d.day, d);
+    return m;
+  }, [calendar?.days]);
+
   return (
     <AdminShell title="Economía">
       <div className="mx-auto max-w-6xl space-y-10">
@@ -504,6 +734,7 @@ export default function EconomyPage() {
               onClick={() => {
                 void loadSummary();
                 void loadAnalytics();
+                void loadCalendar(calendarYear);
                 void fetchMarginRange(rangeFrom, rangeTo);
               }}
               className={cn(
@@ -564,6 +795,67 @@ export default function EconomyPage() {
             </div>
           </div>
         )}
+
+        {/* Calendario anual: ingreso + ganancia por día */}
+        <section className="space-y-4 border-t border-tl-line-subtle pt-10">
+          <EconomySectionHeader
+            title="Calendario de ingresos y ganancia"
+            subtitle="Cada día muestra ingreso bruto y ganancia estimada. Pasa el cursor por encima para ver USD, top producto y promedios."
+            icon={<Calendar className="h-5 w-5 text-tl-accent" aria-hidden />}
+          />
+
+          <div className="flex flex-wrap items-center gap-2">
+            <button
+              type="button"
+              className="tl-btn tl-btn-secondary tl-interactive tl-press tl-focus !px-3 !py-1.5 text-xs"
+              onClick={() => setCalendarYear((y) => y - 1)}
+              disabled={calendarLoading}
+              title="Año anterior"
+            >
+              ←
+            </button>
+            <div className="rounded-full border border-tl-line bg-tl-canvas-inset px-3 py-1 text-sm font-semibold tabular-nums text-tl-ink">
+              {calendarYear}
+            </div>
+            <button
+              type="button"
+              className="tl-btn tl-btn-secondary tl-interactive tl-press tl-focus !px-3 !py-1.5 text-xs"
+              onClick={() => setCalendarYear((y) => y + 1)}
+              disabled={calendarLoading}
+              title="Año siguiente"
+            >
+              →
+            </button>
+            <button
+              type="button"
+              className="tl-btn tl-btn-secondary tl-interactive tl-hover-lift tl-press tl-focus !px-3 !py-1.5 text-xs"
+              onClick={() => void loadCalendar(calendarYear)}
+              disabled={calendarLoading}
+              title="Actualizar calendario"
+            >
+              {calendarLoading ? "Cargando…" : "Actualizar"}
+            </button>
+            {calendar?.meta?.note ? (
+              <p className="w-full text-xs text-tl-muted">{calendar.meta.note}</p>
+            ) : null}
+          </div>
+
+          {calendarErr ? (
+            <div className="rounded-xl border border-tl-warning/20 bg-tl-warning-subtle px-4 py-3 text-sm text-tl-warning">
+              {calendarErr}
+            </div>
+          ) : null}
+
+          {calendar?.meta?.dbAvailable === false ? (
+            <p className="text-sm text-tl-muted">Base de datos no disponible para calendario.</p>
+          ) : null}
+
+          <div className="grid gap-4 lg:grid-cols-2">
+            {Array.from({ length: 12 }, (_, i) => i + 1).map((m1) => (
+              <MonthGrid key={m1} year={calendarYear} month1={m1} byDay={calendarByDay} />
+            ))}
+          </div>
+        </section>
 
         {/* Día seleccionado */}
         <section className="space-y-4">
