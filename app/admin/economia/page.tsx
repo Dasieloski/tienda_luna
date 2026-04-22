@@ -404,13 +404,19 @@ function MonthGrid({
   const monthLabel = MONTHS_ES[month1 - 1] ?? `Mes ${month1}`;
 
   return (
-    <div className="rounded-2xl border border-tl-line-subtle bg-tl-canvas p-4">
-      <div>
-        <p className="text-sm font-semibold text-tl-ink">{monthLabel}</p>
-        <p className="text-xs text-tl-muted">Ing. + ganancia (hover para detalles)</p>
+    <div className="relative overflow-hidden rounded-3xl border border-tl-line-subtle bg-gradient-to-br from-tl-canvas via-tl-canvas-inset to-tl-canvas p-4 shadow-sm">
+      <div
+        className="pointer-events-none absolute -right-20 -top-24 h-56 w-56 rounded-full bg-tl-accent/15 blur-3xl"
+        aria-hidden
+      />
+      <div className="relative">
+        <p className="text-sm font-semibold text-tl-ink">
+          {monthLabel} <span className="tabular-nums text-tl-muted">{year}</span>
+        </p>
+        <p className="text-xs text-tl-muted">Ingreso bruto + ganancia estimada por día</p>
       </div>
 
-      <div className="mt-3 grid grid-cols-7 gap-2">
+      <div className="relative mt-4 grid grid-cols-7 gap-2">
         {DOW_SHORT_ES.map((d) => (
           <div key={d} className="px-1 text-center text-[10px] font-semibold uppercase text-tl-muted">
             {d}
@@ -464,6 +470,7 @@ export default function EconomyPage() {
   const [data, setData] = useState<EconomySummary | null>(null);
   const [analytics, setAnalytics] = useState<AnalyticsPayload | null>(null);
   const [calendarYear, setCalendarYear] = useState(() => new Date().getFullYear());
+  const [calendarMonth1, setCalendarMonth1] = useState(() => new Date().getMonth() + 1);
   const [calendar, setCalendar] = useState<EconomyCalendarPayload | null>(null);
   const [calendarLoading, setCalendarLoading] = useState(false);
   const [calendarErr, setCalendarErr] = useState<string | null>(null);
@@ -804,40 +811,53 @@ export default function EconomyPage() {
             icon={<Calendar className="h-5 w-5 text-tl-accent" aria-hidden />}
           />
 
-          <div className="flex flex-wrap items-center gap-2">
-            <button
-              type="button"
-              className="tl-btn tl-btn-secondary tl-interactive tl-press tl-focus !px-3 !py-1.5 text-xs"
-              onClick={() => setCalendarYear((y) => y - 1)}
-              disabled={calendarLoading}
-              title="Año anterior"
-            >
-              ←
-            </button>
-            <div className="rounded-full border border-tl-line bg-tl-canvas-inset px-3 py-1 text-sm font-semibold tabular-nums text-tl-ink">
-              {calendarYear}
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                className="tl-btn tl-btn-secondary tl-interactive tl-hover-lift tl-press tl-focus !px-3 !py-1.5 text-xs"
+                onClick={() => {
+                  setCalendarMonth1((m) => {
+                    if (m > 1) return m - 1;
+                    setCalendarYear((y) => y - 1);
+                    return 12;
+                  });
+                }}
+                disabled={calendarLoading}
+                title="Mes anterior"
+              >
+                ←
+              </button>
+              <div className="rounded-full border border-tl-line bg-tl-canvas-inset px-3 py-1 text-sm font-semibold text-tl-ink">
+                {MONTHS_ES[calendarMonth1 - 1] ?? `Mes ${calendarMonth1}`}{" "}
+                <span className="tabular-nums text-tl-muted">{calendarYear}</span>
+              </div>
+              <button
+                type="button"
+                className="tl-btn tl-btn-secondary tl-interactive tl-hover-lift tl-press tl-focus !px-3 !py-1.5 text-xs"
+                onClick={() => {
+                  setCalendarMonth1((m) => {
+                    if (m < 12) return m + 1;
+                    setCalendarYear((y) => y + 1);
+                    return 1;
+                  });
+                }}
+                disabled={calendarLoading}
+                title="Mes siguiente"
+              >
+                →
+              </button>
             </div>
-            <button
-              type="button"
-              className="tl-btn tl-btn-secondary tl-interactive tl-press tl-focus !px-3 !py-1.5 text-xs"
-              onClick={() => setCalendarYear((y) => y + 1)}
-              disabled={calendarLoading}
-              title="Año siguiente"
-            >
-              →
-            </button>
+
             <button
               type="button"
               className="tl-btn tl-btn-secondary tl-interactive tl-hover-lift tl-press tl-focus !px-3 !py-1.5 text-xs"
               onClick={() => void loadCalendar(calendarYear)}
               disabled={calendarLoading}
-              title="Actualizar calendario"
+              title="Actualizar mes"
             >
               {calendarLoading ? "Cargando…" : "Actualizar"}
             </button>
-            {calendar?.meta?.note ? (
-              <p className="w-full text-xs text-tl-muted">{calendar.meta.note}</p>
-            ) : null}
           </div>
 
           {calendarErr ? (
@@ -846,14 +866,14 @@ export default function EconomyPage() {
             </div>
           ) : null}
 
+          {calendar?.meta?.note ? <p className="text-xs text-tl-muted">{calendar.meta.note}</p> : null}
+
           {calendar?.meta?.dbAvailable === false ? (
             <p className="text-sm text-tl-muted">Base de datos no disponible para calendario.</p>
           ) : null}
 
-          <div className="grid gap-4 lg:grid-cols-2">
-            {Array.from({ length: 12 }, (_, i) => i + 1).map((m1) => (
-              <MonthGrid key={m1} year={calendarYear} month1={m1} byDay={calendarByDay} />
-            ))}
+          <div className="transition-[transform,opacity] duration-200 ease-out">
+            <MonthGrid year={calendarYear} month1={calendarMonth1} byDay={calendarByDay} />
           </div>
         </section>
 
