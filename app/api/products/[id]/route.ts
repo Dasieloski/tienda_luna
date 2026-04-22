@@ -4,6 +4,18 @@ import { getSessionFromRequest, requireAdmin } from "@/lib/auth";
 import { isMissingDbColumnError } from "@/lib/db-schema-errors";
 import { prisma } from "@/lib/db";
 
+async function hasProductColumn(columnName: string): Promise<boolean> {
+  const rows = await prisma.$queryRaw<{ ok: number }[]>`
+    SELECT 1::int AS ok
+    FROM information_schema.columns
+    WHERE table_schema = 'public'
+      AND table_name = 'Product'
+      AND column_name = ${columnName}
+    LIMIT 1
+  `;
+  return rows.length > 0;
+}
+
 const patchSchema = z
   .object({
     sku: z.string().min(1).optional(),
@@ -74,11 +86,10 @@ export async function PATCH(request: Request, ctx: RouteCtx) {
   }
 
   const restoring = data.restore === true && existing.deletedAt != null;
+  const nextStockQty = data.stockQty !== undefined ? data.stockQty : existing.stockQty;
+  const stockChanged = data.stockQty !== undefined && data.stockQty !== existing.stockQty;
 
   try {
-    const nextStockQty = data.stockQty !== undefined ? data.stockQty : existing.stockQty;
-    const stockChanged = data.stockQty !== undefined && data.stockQty !== existing.stockQty;
-
     const product = await prisma.$transaction(async (tx) => {
       const updated = await tx.product.update({
         where: { id },
@@ -173,13 +184,141 @@ export async function PATCH(request: Request, ctx: RouteCtx) {
     return NextResponse.json({ product });
   } catch (e) {
     if (isMissingDbColumnError(e)) {
-      return NextResponse.json(
-        {
-          error: "DATABASE_SCHEMA_MISMATCH",
-          hint: "Ejecuta prisma/sql/add_product_pricing_columns.sql en Supabase o npx prisma db push.",
-        },
-        { status: 503 },
-      );
+      // Modo legacy: BD sin columnas nuevas (priceUsdCents/unitsPerBox/wholesaleCupCents/supplierId/deletedAt/etc).
+      // Aplicamos el patch solo sobre columnas existentes para no bloquear el panel.
+      try {
+        const supports = {
+          priceUsdCents: await hasProductColumn("priceUsdCents"),
+          unitsPerBox: await hasProductColumn("unitsPerBox"),
+          wholesaleCupCents: await hasProductColumn("wholesaleCupCents"),
+          costCents: await hasProductColumn("costCents"),
+          supplierId: await hasProductColumn("supplierId"),
+          supplierName: await hasProductColumn("supplierName"),
+          deletedAt: await hasProductColumn("deletedAt"),
+        };
+
+        const setParts: string[] = [];
+        const params: any[] = [];
+        let p = 1;
+        const pushSet = (sqlFrag: string, value: any) => {
+          setParts.push(sqlFrag.replace("?", `$${p}`));
+          params.push(value);
+          p += 1;
+        };
+
+        if (restoring && supports.deletedAt) {
+          setParts.push(`"deletedAt" = NULL`);
+        }
+        if (data.sku !== undefined) pushSet(`sku = ?`, data.sku);
+        if (data.name !== undefined) pushSet(`name = ?`, data.name);
+        if (data.priceCents !== undefined) pushSet(`"priceCents" = ?`, data.priceCents);
+        if (data.priceUsdCents !== undefined && supports.priceUsdCents)
+          pushSet(`"priceUsdCents" = ?`, data.priceUsdCents);
+        if (data.unitsPerBox !== undefined && supports.unitsPerBox)
+          pushSet(`"unitsPerBox" = ?`, data.unitsPerBox);
+        if (data.wholesaleCupCents !== undefined && supports.wholesaleCupCents)
+          pushSet(`"wholesaleCupCents" = ?`, data.wholesaleCupCents);
+        if (data.costCents !== undefined && supports.costCents) pushSet(`"costCents" = ?`, data.costCents);
+
+        // supplierId solo si existe columna; si no, permitimos supplierName (si existe) para no romper UI.
+        if (data.supplierId !== undefined && supports.supplierId) {
+          pushSet(`"supplierId" = ?`, data.supplierId);
+          if (supports.supplierName) pushSet(`"supplierName" = ?`, supplierNameFromId ?? null);
+        } else if (data.supplierName !== undefined && supports.supplierName) {
+          pushSet(`"supplierName" = ?`, data.supplierName);
+        }
+
+        if (data.stockQty !== undefined) pushSet(`"stockQty" = ?`, data.stockQty);
+        if (data.lowStockAt !== undefined) pushSet(`"lowStockAt" = ?`, data.lowStockAt);
+        if (data.active !== undefined) pushSet(`active = ?`, data.active);
+
+        if (setParts.length === 0) {
+          return NextResponse.json(
+            {
+              error: "DATABASE_SCHEMA_MISMATCH",
+              hint: "La BD es legacy y el cambio que intentas hacer requiere columnas que aún no existen. Migra la BD o edita solo campos básicos (sku, nombre, CUP, stock, activo).",
+            },
+            { status: 409 },
+          );
+        }
+
+        // Condición final: producto debe pertenecer a la tienda del admin.
+        const whereStoreId = session.storeId;
+        const idParam = id;
+        const sql = `
+          UPDATE "Product"
+          SET ${setParts.join(", ")}, "updatedAt" = NOW()
+          WHERE id = $${p} AND "storeId" = $${p + 1}
+          RETURNING *
+        `;
+        params.push(idParam, whereStoreId);
+        const rows = (await prisma.$queryRawUnsafe<any[]>(sql, ...params)) ?? [];
+        const updated = rows[0];
+        if (!updated) {
+          return NextResponse.json({ error: "NOT_FOUND" }, { status: 404 });
+        }
+
+        // Si cambió stock y existe tabla de movimientos, intentamos registrar; si falla, no bloquea.
+        if (stockChanged) {
+          try {
+            await prisma.inventoryMovement.create({
+              data: {
+                storeId: session.storeId,
+                productId: updated.id,
+                delta: nextStockQty - existing.stockQty,
+                beforeQty: existing.stockQty,
+                afterQty: nextStockQty,
+                reason: "MANUAL_ADJUST",
+                actorType: "USER",
+                actorId: session.sub,
+                eventId: null,
+              },
+            });
+          } catch {
+            // ignore en legacy parcial
+          }
+        }
+
+        // Auditoría best-effort
+        try {
+          await prisma.auditLog.create({
+            data: {
+              storeId: session.storeId,
+              actorType: "USER",
+              actorId: session.sub,
+              action: restoring
+                ? "PRODUCT_RESTORE"
+                : stockChanged
+                  ? "PRODUCT_UPDATE_STOCK"
+                  : "PRODUCT_UPDATE",
+              entityType: "Product",
+              entityId: updated.id,
+              before: { id: existing.id, sku: existing.sku, name: existing.name } as any,
+              after: { id: updated.id, sku: updated.sku, name: updated.name } as any,
+              meta: { schemaLegacy: true, appliedKeys: Object.keys(data) } as any,
+            },
+          });
+        } catch {
+          // ignore
+        }
+
+        return NextResponse.json({
+          product: updated,
+          meta: {
+            schemaLegacy: true as const,
+            hint: "BD legacy: PATCH aplicado solo a columnas existentes. Ejecuta prisma/sql/add_product_pricing_columns.sql (y otras migraciones) para soporte completo.",
+          },
+        });
+      } catch (err) {
+        console.error("[api/products/[id] legacy PATCH]", err);
+        return NextResponse.json(
+          {
+            error: "DATABASE_SCHEMA_MISMATCH",
+            hint: "La BD está desactualizada y no se pudo aplicar el patch en modo legacy. Ejecuta migraciones (prisma/sql/add_product_pricing_columns.sql) o npx prisma db push.",
+          },
+          { status: 503 },
+        );
+      }
     }
     return NextResponse.json({ error: "DUPLICATE_SKU_OR_DB" }, { status: 409 });
   }
