@@ -4,6 +4,7 @@ import { getSessionFromRequest, requireAdmin } from "@/lib/auth";
 import { prisma } from "@/lib/db";
 import { LOCAL_ADMIN_STORE_ID } from "@/lib/static-admin-auth";
 import { cacheGetOrSet } from "@/lib/ttl-cache";
+import { storeTzOffsetIntervalSql, storeTzOffsetMinutes } from "@/lib/economy-store-tz";
 
 const querySchema = z.object({
   year: z
@@ -12,16 +13,14 @@ const querySchema = z.object({
     .optional(),
 });
 
-function storeTzOffsetMinutes() {
-  const raw = process.env.TL_TZ_OFFSET_MINUTES ?? process.env.NEXT_PUBLIC_TL_TZ_OFFSET_MINUTES;
-  const v = raw == null ? -240 : Number(raw); // default Cuba (UTC-4)
-  return Number.isFinite(v) ? v : -240;
-}
-
-type DayRow = {
-  day_local: string; // YYYY-MM-DD
+type DayRevenueRow = {
+  day_local: string;
   revenue_cents: bigint;
   sale_count: bigint;
+};
+
+type DayMarginRow = {
+  day_local: string;
   margin_cents: bigint;
   cost_cents: bigint;
   units_with_cost: bigint;
@@ -66,17 +65,31 @@ export async function GET(request: Request) {
   const storeId = session.storeId;
 
   try {
-    const payload = await cacheGetOrSet(`economy-calendar:${storeId}:${year}:v1`, 60_000, async () => {
+    const payload = await cacheGetOrSet(`economy-calendar:${storeId}:${year}:v2`, 60_000, async () => {
       const fromUtc = new Date(Date.UTC(year, 0, 1, 0, 0, 0, 0));
       const toUtcExclusive = new Date(Date.UTC(year + 1, 0, 1, 0, 0, 0, 0));
 
-      const offsetInterval = `${offsetMinutes} minutes`;
+      const offsetInterval = storeTzOffsetIntervalSql();
 
-      const days = await prisma.$queryRaw<DayRow[]>`
+      /** Ingreso y nº de ventas: solo tabla Sale (evita duplicar totalCents por cada línea). */
+      const revenueDays = await prisma.$queryRaw<DayRevenueRow[]>`
         SELECT
           to_char(date_trunc('day', (s."completedAt" + (${offsetInterval}::interval))), 'YYYY-MM-DD') AS day_local,
           COALESCE(SUM(s."totalCents"), 0)::bigint AS revenue_cents,
-          COUNT(DISTINCT s.id)::bigint AS sale_count,
+          COUNT(*)::bigint AS sale_count
+        FROM "Sale" s
+        WHERE s."storeId" = ${storeId}
+          AND s."status" = 'COMPLETED'
+          AND s."completedAt" >= ${fromUtc}
+          AND s."completedAt" < ${toUtcExclusive}
+        GROUP BY 1
+        ORDER BY 1 ASC
+      `;
+
+      /** Margen y unidades: por línea (una fila por línea, sin repetir total del ticket). */
+      const marginDays = await prisma.$queryRaw<DayMarginRow[]>`
+        SELECT
+          to_char(date_trunc('day', (s."completedAt" + (${offsetInterval}::interval))), 'YYYY-MM-DD') AS day_local,
           COALESCE(SUM(
             CASE
               WHEN p."costCents" IS NOT NULL THEN (sl."subtotalCents" - (p."costCents" * sl."quantity"))
@@ -87,7 +100,7 @@ export async function GET(request: Request) {
           COALESCE(SUM(CASE WHEN p."costCents" IS NOT NULL THEN sl."quantity" ELSE 0 END), 0)::bigint AS units_with_cost,
           COALESCE(SUM(sl."quantity"), 0)::bigint AS units_total
         FROM "Sale" s
-        LEFT JOIN "SaleLine" sl ON sl."saleId" = s.id
+        JOIN "SaleLine" sl ON sl."saleId" = s.id
         LEFT JOIN "Product" p ON p.id = sl."productId"
         WHERE s."storeId" = ${storeId}
           AND s."status" = 'COMPLETED'
@@ -96,6 +109,11 @@ export async function GET(request: Request) {
         GROUP BY 1
         ORDER BY 1 ASC
       `;
+
+      const marginByDay = new Map<string, DayMarginRow>();
+      for (const m of marginDays) {
+        marginByDay.set(m.day_local, m);
+      }
 
       const tops = await prisma.$queryRaw<TopProductRow[]>`
         WITH per_product AS (
@@ -136,13 +154,14 @@ export async function GET(request: Request) {
         });
       }
 
-      const out = days.map((d) => {
+      const out = revenueDays.map((d) => {
         const revenueCents = Number(d.revenue_cents ?? BigInt(0));
         const saleCount = Number(d.sale_count ?? BigInt(0));
-        const marginCents = Number(d.margin_cents ?? BigInt(0));
-        const costCents = Number(d.cost_cents ?? BigInt(0));
-        const unitsWithCost = Number(d.units_with_cost ?? BigInt(0));
-        const unitsTotal = Number(d.units_total ?? BigInt(0));
+        const mx = marginByDay.get(d.day_local);
+        const marginCents = Number(mx?.margin_cents ?? BigInt(0));
+        const costCents = Number(mx?.cost_cents ?? BigInt(0));
+        const unitsWithCost = Number(mx?.units_with_cost ?? BigInt(0));
+        const unitsTotal = Number(mx?.units_total ?? BigInt(0));
         const ticketAvgCents = saleCount > 0 ? Math.round(revenueCents / saleCount) : 0;
         const avgUnitCostCents = unitsWithCost > 0 ? Math.round(costCents / unitsWithCost) : null;
         const top = topByDay.get(d.day_local) ?? null;
@@ -164,7 +183,7 @@ export async function GET(request: Request) {
           year,
           tzOffsetMinutes: offsetMinutes,
           note:
-            "Ganancia y coste medios usan costCents del catálogo en el momento de la consulta. Líneas sin costCents no entran en margen ni en coste medio.",
+            "Ingreso = suma de totalCents por venta (sin duplicar líneas). Ganancia = suma por línea (subtotal − coste×ud) usando costCents actual del catálogo. Líneas sin coste no entran en margen ni en coste medio.",
         },
         year,
         days: out,

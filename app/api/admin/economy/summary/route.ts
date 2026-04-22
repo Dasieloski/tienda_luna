@@ -4,6 +4,7 @@ import { getSessionFromRequest, requireAdmin } from "@/lib/auth";
 import { prisma } from "@/lib/db";
 import { LOCAL_ADMIN_STORE_ID } from "@/lib/static-admin-auth";
 import { cacheGetOrSet } from "@/lib/ttl-cache";
+import { storeTzOffsetIntervalSql, storeTzOffsetMinutes } from "@/lib/economy-store-tz";
 
 const querySchema = z.object({
   date: z
@@ -12,22 +13,16 @@ const querySchema = z.object({
     .optional(),
 });
 
-function startOfDay(date: Date) {
-  const d = new Date(date);
-  d.setHours(0, 0, 0, 0);
-  return d;
-}
-
-function endOfDay(date: Date) {
-  const d = startOfDay(date);
-  d.setDate(d.getDate() + 1);
-  return d;
-}
-
 type EconomyBucket = {
   method: string;
   ventas: number;
   totalCents: number;
+};
+
+type BucketRow = {
+  method: string | null;
+  ventas: bigint;
+  total_cents: bigint;
 };
 
 export async function GET(request: Request) {
@@ -58,34 +53,55 @@ export async function GET(request: Request) {
     return NextResponse.json({ error: "INVALID_QUERY" }, { status: 400 });
   }
 
-  const baseDate = parsed.data.date ? new Date(parsed.data.date) : new Date();
-  if (Number.isNaN(baseDate.getTime())) {
-    return NextResponse.json({ error: "INVALID_DATE" }, { status: 400 });
-  }
-  const from = startOfDay(baseDate);
-  const to = endOfDay(baseDate);
+  const offsetMinutes = storeTzOffsetMinutes();
+  const offsetInterval = storeTzOffsetIntervalSql();
 
   try {
+    let dayYmd = parsed.data.date ?? null;
+    if (!dayYmd) {
+      const todayRow = await prisma.$queryRaw<{ d: string }[]>`
+        SELECT to_char(date_trunc('day', (now() + (${offsetInterval}::interval))), 'YYYY-MM-DD') AS d
+      `;
+      dayYmd = todayRow[0]?.d ?? new Date().toISOString().slice(0, 10);
+    }
+
     const rows = await cacheGetOrSet(
-      `economy:${session.storeId}:${from.toISOString()}`,
+      `economy-summary:${session.storeId}:${dayYmd}:tz${offsetMinutes}:v2`,
       30_000,
       () =>
-        prisma.$queryRaw<
-          { method: string | null; ventas: bigint; total_cents: bigint }[]
-        >`
+        prisma.$queryRaw<BucketRow[]>`
+          WITH day_sales AS (
+            SELECT
+              s.id,
+              s."totalCents",
+              s."clientSaleId"
+            FROM "Sale" s
+            WHERE s."storeId" = ${session.storeId}
+              AND s."status" = 'COMPLETED'
+              AND to_char(
+                date_trunc('day', (s."completedAt" + (${offsetInterval}::interval))),
+                'YYYY-MM-DD'
+              ) = ${dayYmd}
+          )
           SELECT
-            (e.payload->>'paymentMethod') AS method,
+            COALESCE(pay.method, 'desconocido') AS method,
             COUNT(*)::bigint AS ventas,
-            COALESCE(SUM(s."totalCents"), 0)::bigint AS total_cents
-          FROM "Event" e
-          JOIN "Sale" s
-            ON s."storeId" = e."storeId"
-          AND s."clientSaleId" = (e.payload->>'saleId')
-          WHERE e."storeId" = ${session.storeId}
-            AND e.type = 'SALE_COMPLETED'
-            AND e.status IN ('ACCEPTED', 'CORRECTED')
-            AND s."completedAt" >= ${from}
-            AND s."completedAt" < ${to}
+            COALESCE(SUM(ds."totalCents"), 0)::bigint AS total_cents
+          FROM day_sales ds
+          LEFT JOIN LATERAL (
+            SELECT e.payload->>'paymentMethod' AS method
+            FROM "Event" e
+            WHERE e."storeId" = ${session.storeId}
+              AND e.type = 'SALE_COMPLETED'
+              AND e.status IN ('ACCEPTED', 'CORRECTED')
+              AND ds."clientSaleId" IS NOT NULL
+              AND (
+                (e."relatedClientSaleId" IS NOT NULL AND e."relatedClientSaleId" = ds."clientSaleId")
+                OR ((e.payload->>'saleId') IS NOT NULL AND (e.payload->>'saleId') = ds."clientSaleId")
+              )
+            ORDER BY e."serverTimestamp" DESC NULLS LAST
+            LIMIT 1
+          ) pay ON TRUE
           GROUP BY 1
         `,
     );
@@ -115,8 +131,14 @@ export async function GET(request: Request) {
     const ventas = buckets.reduce((acc, b) => acc + b.ventas, 0);
 
     return NextResponse.json({
-      meta: { dbAvailable: true as const },
-      date: from.toISOString(),
+      meta: {
+        dbAvailable: true as const,
+        dayLocal: dayYmd,
+        tzOffsetMinutes: offsetMinutes,
+        note:
+          "Misma regla que el calendario: día local tienda (TL_TZ_OFFSET_MINUTES). Ingreso = suma de totalCents por venta; cajas = último evento SALE_COMPLETED por ticket.",
+      },
+      date: dayYmd,
       totals: {
         ventas,
         totalCents,
@@ -148,4 +170,3 @@ export async function GET(request: Request) {
     );
   }
 }
-
