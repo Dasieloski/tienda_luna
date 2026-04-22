@@ -331,7 +331,7 @@ function CalendarDayCell({ day, data }: { day: string; data: EconomyCalendarDay 
       </div>
 
       {has ? (
-        <div className="pointer-events-none absolute left-1/2 top-full z-30 mt-2 w-[280px] -translate-x-1/2 translate-y-1 rounded-2xl border border-tl-line bg-tl-canvas px-3 py-2 text-xs text-tl-ink shadow-lg opacity-0 invisible transition-[opacity,transform] duration-150 ease-out group-hover:visible group-hover:opacity-100 group-hover:translate-y-0">
+        <div className="pointer-events-none absolute left-1/2 top-full z-50 mt-2 w-[280px] -translate-x-1/2 translate-y-1 rounded-2xl border border-tl-line bg-tl-canvas px-3 py-2 text-xs text-tl-ink shadow-lg opacity-0 invisible transition-[opacity,transform] duration-150 ease-out group-hover:visible group-hover:opacity-100 group-hover:translate-y-0">
           <div className="flex items-center justify-between gap-2">
             <p className="font-semibold tabular-nums">{day}</p>
             <p className="text-[11px] text-tl-muted">
@@ -404,7 +404,7 @@ function MonthGrid({
   const monthLabel = MONTHS_ES[month1 - 1] ?? `Mes ${month1}`;
 
   return (
-    <div className="relative overflow-hidden rounded-3xl border border-tl-line-subtle bg-gradient-to-br from-tl-canvas via-tl-canvas-inset to-tl-canvas p-4 shadow-sm">
+    <div className="relative overflow-visible rounded-3xl border border-tl-line-subtle bg-gradient-to-br from-tl-canvas via-tl-canvas-inset to-tl-canvas p-4 shadow-sm">
       <div
         className="pointer-events-none absolute -right-20 -top-24 h-56 w-56 rounded-full bg-tl-accent/15 blur-3xl"
         aria-hidden
@@ -416,7 +416,7 @@ function MonthGrid({
         <p className="text-xs text-tl-muted">Ingreso bruto + ganancia estimada por día</p>
       </div>
 
-      <div className="relative mt-4 grid grid-cols-7 gap-2">
+      <div className="relative mt-4 grid grid-cols-7 gap-2 overflow-visible">
         {DOW_SHORT_ES.map((d) => (
           <div key={d} className="px-1 text-center text-[10px] font-semibold uppercase text-tl-muted">
             {d}
