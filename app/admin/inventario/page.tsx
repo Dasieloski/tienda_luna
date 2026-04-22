@@ -58,6 +58,42 @@ function centsToInput(cents: number) {
   return (cents / 100).toFixed(2).replace(".", ",");
 }
 
+function pluralEs(n: number, singular: string, plural: string) {
+  return n === 1 ? singular : plural;
+}
+
+function stockBoxesHint(stockQty: number, unitsPerBox: number) {
+  const u = Math.max(1, Math.trunc(unitsPerBox) || 1);
+  const s = Math.max(0, Math.trunc(stockQty) || 0);
+  const boxes = Math.floor(s / u);
+  const units = s % u;
+  if (u <= 1) return null;
+  return `${boxes} ${pluralEs(boxes, "caja", "cajas")} y ${units} ${pluralEs(units, "unidad", "unidades")} (${u} ud/caja)`;
+}
+
+function StockQtyWithHover({ row, tone }: { row: ProductRow; tone: "muted" | "ink" | "warning" }) {
+  const hint = stockBoxesHint(row.stockQty, row.unitsPerBox ?? 1);
+  const color =
+    tone === "warning" ? "text-tl-warning" : tone === "ink" ? "text-tl-ink" : "text-tl-muted";
+  return (
+    <span
+      className={cn(
+        "relative inline-flex tabular-nums",
+        hint ? "cursor-help underline decoration-dotted underline-offset-2" : "",
+        color,
+      )}
+      title={hint ?? undefined}
+    >
+      {row.stockQty}
+      {hint ? (
+        <span className="pointer-events-none absolute right-0 top-full z-20 mt-2 min-w-max translate-y-1 rounded-lg border border-tl-line bg-tl-canvas px-2 py-1 text-xs font-normal text-tl-ink shadow-sm opacity-0 invisible transition-[opacity,transform] duration-150 ease-out group-hover:visible group-hover:opacity-100 group-hover:translate-y-0">
+          {hint}
+        </span>
+      ) : null}
+    </span>
+  );
+}
+
 export default function InventoryPage() {
   const [products, setProducts] = useState<ProductRow[]>([]);
   const [loading, setLoading] = useState(true);
@@ -559,13 +595,11 @@ export default function InventoryPage() {
         getValue: (row) => (row.stockQty <= row.lowStockAt ? "low" : "ok"),
       },
       render: (row) => (
-        <span
-          className={cn(
-            "tabular-nums font-medium",
-            row.stockQty <= row.lowStockAt ? "text-tl-warning" : "text-tl-ink",
-          )}
-        >
-          {row.stockQty}
+        <span className="group">
+          <StockQtyWithHover
+            row={row}
+            tone={row.stockQty <= row.lowStockAt ? "warning" : "ink"}
+          />
         </span>
       ),
     },
@@ -637,7 +671,11 @@ export default function InventoryPage() {
       sortable: true,
       align: "right",
       width: "72px",
-      render: (row) => <span className="tabular-nums text-tl-muted">{row.stockQty}</span>,
+      render: (row) => (
+        <span className="group">
+          <StockQtyWithHover row={row} tone="muted" />
+        </span>
+      ),
     },
     {
       key: "id",
@@ -720,7 +758,11 @@ export default function InventoryPage() {
       sortable: true,
       align: "right",
       width: "72px",
-      render: (row) => <span className="tabular-nums text-tl-muted">{row.stockQty}</span>,
+      render: (row) => (
+        <span className="group">
+          <StockQtyWithHover row={row} tone="muted" />
+        </span>
+      ),
     },
     {
       key: "id",
