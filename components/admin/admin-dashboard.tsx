@@ -354,10 +354,25 @@ export function AdminDashboard() {
     });
     setFormBusy(false);
     if (!res.ok) {
-      const j = (await res.json().catch(() => ({}))) as { error?: string };
+      const j = (await res.json().catch(() => ({}))) as { error?: string; message?: string; hint?: string };
+      if (j.error === "INVALID_SUPPLIER") {
+        setFormMsg("Proveedor no válido. Configura el nomenclador en Proveedores.");
+        return;
+      }
+      if (j.error === "DUPLICATE_SKU") {
+        setFormMsg("Ya existe un producto con ese SKU en la tienda.");
+        return;
+      }
+      if (j.error === "DATABASE_SCHEMA_MISMATCH") {
+        setFormMsg(
+          j.hint ??
+            (j.message ? `Esquema de BD incompatible: ${j.message}` : "La base de datos necesita migración (prisma db push)."),
+        );
+        return;
+      }
       setFormMsg(
-        j.error === "INVALID_SUPPLIER"
-          ? "Proveedor no válido. Configura el nomenclador en Proveedores."
+        j.message?.trim()
+          ? j.message
           : "No se pudo crear (revisa datos y precio de proveedor).",
       );
       return;

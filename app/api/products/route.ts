@@ -1,9 +1,11 @@
 import { NextResponse } from "next/server";
+import { Prisma } from "@prisma/client";
 import { z } from "zod";
 import { getSessionFromRequest, requireAdmin } from "@/lib/auth";
 import { loadCatalogProducts } from "@/lib/catalog-products";
 import { allocateProductSku } from "@/lib/product-sku";
 import { prisma } from "@/lib/db";
+import { isMissingDbColumnError } from "@/lib/db-schema-errors";
 
 async function hasProductColumn(columnName: string): Promise<boolean> {
   const rows = await prisma.$queryRaw<{ ok: number }[]>`
@@ -79,7 +81,12 @@ export async function POST(request: Request) {
   }
 
   const skuTrim = parsed.data.sku?.trim() ?? "";
-  let sku = skuTrim.length > 0 ? skuTrim : await allocateProductSku(prisma, session.storeId);
+  let sku: string;
+  try {
+    sku = skuTrim.length > 0 ? skuTrim : await allocateProductSku(prisma, session.storeId);
+  } catch {
+    return NextResponse.json({ error: "SKU_ALLOC_FAILED" }, { status: 503 });
+  }
 
   const supplier = await prisma.supplier.findFirst({
     where: {
@@ -94,72 +101,94 @@ export async function POST(request: Request) {
   const supplierNameResolved = supplier.name;
 
   try {
-    const hasUsd = await hasProductColumn("priceUsdCents");
-    const hasSupplierIdCol = await hasProductColumn("supplierId");
-    if (hasUsd) {
-      const p = await prisma.product.create({
-        data: {
-          storeId: session.storeId,
-          sku,
-          name: parsed.data.name,
-          priceCents: parsed.data.priceCents,
-          priceUsdCents: parsed.data.priceUsdCents,
-          unitsPerBox: parsed.data.unitsPerBox,
-          wholesaleCupCents: parsed.data.wholesaleCupCents ?? null,
-          costCents: parsed.data.costCents,
-          ...(hasSupplierIdCol
-            ? { supplierId: supplier.id, supplierName: supplierNameResolved }
-            : { supplierName: supplierNameResolved }),
-          stockQty: parsed.data.stockQty,
-          lowStockAt: parsed.data.lowStockAt ?? 5,
-        },
+    const hasUsdCol = await hasProductColumn("priceUsdCents");
+    const supports = {
+      priceUsdCents: hasUsdCol,
+      unitsPerBox: await hasProductColumn("unitsPerBox"),
+      wholesaleCupCents: await hasProductColumn("wholesaleCupCents"),
+      costCents: await hasProductColumn("costCents"),
+      supplierId: await hasProductColumn("supplierId"),
+      supplierName: await hasProductColumn("supplierName"),
+      deletedAt: await hasProductColumn("deletedAt"),
+    };
+
+    /** Prisma create solo con columnas que existen en BD (evita 42703 en esquemas parciales). */
+    if (hasUsdCol) {
+      const data: Prisma.ProductUncheckedCreateInput = {
+        storeId: session.storeId,
+        sku,
+        name: parsed.data.name,
+        priceCents: parsed.data.priceCents,
+        stockQty: parsed.data.stockQty,
+        lowStockAt: parsed.data.lowStockAt ?? 5,
+      };
+      if (supports.priceUsdCents) data.priceUsdCents = parsed.data.priceUsdCents;
+      if (supports.unitsPerBox) data.unitsPerBox = parsed.data.unitsPerBox;
+      if (supports.wholesaleCupCents) data.wholesaleCupCents = parsed.data.wholesaleCupCents ?? null;
+      if (supports.costCents) data.costCents = parsed.data.costCents;
+      if (supports.supplierId) {
+        data.supplierId = supplier.id;
+        if (supports.supplierName) data.supplierName = supplierNameResolved;
+      } else if (supports.supplierName) {
+        data.supplierName = supplierNameResolved;
+      }
+      if (supports.deletedAt) data.deletedAt = null;
+
+      const p = await prisma.$transaction(async (tx) => {
+        const created = await tx.product.create({ data });
+        await tx.auditLog.create({
+          data: {
+            storeId: session.storeId,
+            actorType: "USER",
+            actorId: session.sub,
+            action: "PRODUCT_CREATE",
+            entityType: "Product",
+            entityId: created.id,
+            after: {
+              sku: created.sku,
+              name: created.name,
+              priceCents: created.priceCents,
+              priceUsdCents: (created as any).priceUsdCents ?? 0,
+              unitsPerBox: (created as any).unitsPerBox ?? 1,
+              wholesaleCupCents: (created as any).wholesaleCupCents ?? null,
+              costCents: (created as any).costCents ?? null,
+              supplierId: (created as any).supplierId ?? null,
+              supplierName: (created as any).supplierName ?? null,
+              stockQty: created.stockQty,
+              lowStockAt: created.lowStockAt,
+              active: created.active,
+            } as any,
+          },
+        });
+        return created;
       });
-      await prisma.auditLog.create({
-        data: {
-          storeId: session.storeId,
-          actorType: "USER",
-          actorId: session.sub,
-          action: "PRODUCT_CREATE",
-          entityType: "Product",
-          entityId: p.id,
-          after: {
-            sku: p.sku,
-            name: p.name,
-            priceCents: p.priceCents,
-            priceUsdCents: (p as any).priceUsdCents ?? 0,
-            unitsPerBox: (p as any).unitsPerBox ?? 1,
-            wholesaleCupCents: (p as any).wholesaleCupCents ?? null,
-            costCents: (p as any).costCents ?? null,
-            supplierId: (p as any).supplierId ?? null,
-            supplierName: (p as any).supplierName ?? null,
-            stockQty: p.stockQty,
-            lowStockAt: p.lowStockAt,
-            active: p.active,
-          } as any,
-        },
-      });
+
       return NextResponse.json({ product: p });
     }
 
     // Modo legacy: BD sin columnas nuevas. Insertamos solo columnas existentes y devolvemos defaults.
     const lowStockAt = parsed.data.lowStockAt ?? 5;
     const supplierName = supplierNameResolved;
-    const rows = await prisma.$queryRaw<
-      {
-        id: string;
-        storeId: string;
-        sku: string;
-        name: string;
-        priceCents: number;
-        costCents: number | null;
-        supplierName: string | null;
-        stockQty: number;
-        lowStockAt: number;
-        active: boolean;
-        createdAt: Date;
-        updatedAt: Date;
-      }[]
-    >`
+    const hasCostCents = supports.costCents;
+    const hasSupplierNameCol = supports.supplierName;
+
+    const rows = hasCostCents && hasSupplierNameCol
+      ? await prisma.$queryRaw<
+          {
+            id: string;
+            storeId: string;
+            sku: string;
+            name: string;
+            priceCents: number;
+            costCents: number | null;
+            supplierName: string | null;
+            stockQty: number;
+            lowStockAt: number;
+            active: boolean;
+            createdAt: Date;
+            updatedAt: Date;
+          }[]
+        >`
       INSERT INTO "Product" (
         "storeId",
         sku,
@@ -195,24 +224,220 @@ export async function POST(request: Request) {
         active,
         "createdAt",
         "updatedAt"
+    `
+      : hasCostCents && !hasSupplierNameCol
+        ? await prisma.$queryRaw<
+            {
+              id: string;
+              storeId: string;
+              sku: string;
+              name: string;
+              priceCents: number;
+              costCents: number | null;
+              stockQty: number;
+              lowStockAt: number;
+              active: boolean;
+              createdAt: Date;
+              updatedAt: Date;
+            }[]
+          >`
+      INSERT INTO "Product" (
+        "storeId",
+        sku,
+        name,
+        "priceCents",
+        "costCents",
+        "stockQty",
+        "lowStockAt",
+        active
+      )
+      VALUES (
+        ${session.storeId},
+        ${sku},
+        ${parsed.data.name},
+        ${parsed.data.priceCents},
+        ${parsed.data.costCents},
+        ${parsed.data.stockQty},
+        ${lowStockAt},
+        true
+      )
+      RETURNING
+        id,
+        "storeId",
+        sku,
+        name,
+        "priceCents",
+        "costCents",
+        "stockQty",
+        "lowStockAt",
+        active,
+        "createdAt",
+        "updatedAt"
+    `
+        : !hasCostCents && hasSupplierNameCol
+          ? await prisma.$queryRaw<
+              {
+                id: string;
+                storeId: string;
+                sku: string;
+                name: string;
+                priceCents: number;
+                supplierName: string | null;
+                stockQty: number;
+                lowStockAt: number;
+                active: boolean;
+                createdAt: Date;
+                updatedAt: Date;
+              }[]
+            >`
+      INSERT INTO "Product" (
+        "storeId",
+        sku,
+        name,
+        "priceCents",
+        "supplierName",
+        "stockQty",
+        "lowStockAt",
+        active
+      )
+      VALUES (
+        ${session.storeId},
+        ${sku},
+        ${parsed.data.name},
+        ${parsed.data.priceCents},
+        ${supplierName},
+        ${parsed.data.stockQty},
+        ${lowStockAt},
+        true
+      )
+      RETURNING
+        id,
+        "storeId",
+        sku,
+        name,
+        "priceCents",
+        "supplierName",
+        "stockQty",
+        "lowStockAt",
+        active,
+        "createdAt",
+        "updatedAt"
+    `
+          : await prisma.$queryRaw<
+              {
+                id: string;
+                storeId: string;
+                sku: string;
+                name: string;
+                priceCents: number;
+                stockQty: number;
+                lowStockAt: number;
+                active: boolean;
+                createdAt: Date;
+                updatedAt: Date;
+              }[]
+            >`
+      INSERT INTO "Product" (
+        "storeId",
+        sku,
+        name,
+        "priceCents",
+        "stockQty",
+        "lowStockAt",
+        active
+      )
+      VALUES (
+        ${session.storeId},
+        ${sku},
+        ${parsed.data.name},
+        ${parsed.data.priceCents},
+        ${parsed.data.stockQty},
+        ${lowStockAt},
+        true
+      )
+      RETURNING
+        id,
+        "storeId",
+        sku,
+        name,
+        "priceCents",
+        "stockQty",
+        "lowStockAt",
+        active,
+        "createdAt",
+        "updatedAt"
     `;
+
     const r = rows[0];
     if (!r) {
       return NextResponse.json({ error: "DB_INSERT_FAILED" }, { status: 500 });
     }
+
+    try {
+      await prisma.auditLog.create({
+        data: {
+          storeId: session.storeId,
+          actorType: "USER",
+          actorId: session.sub,
+          action: "PRODUCT_CREATE",
+          entityType: "Product",
+          entityId: r.id,
+          after: {
+            sku: r.sku,
+            name: r.name,
+            priceCents: r.priceCents,
+            priceUsdCents: 0,
+            unitsPerBox: 1,
+            wholesaleCupCents: null,
+            costCents: "costCents" in r ? (r as { costCents: number | null }).costCents : null,
+            supplierId: null,
+            supplierName: "supplierName" in r ? (r as { supplierName: string | null }).supplierName : null,
+            stockQty: r.stockQty,
+            lowStockAt: r.lowStockAt,
+            active: r.active,
+          } as any,
+        },
+      });
+    } catch (auditErr) {
+      console.error("[api/products POST] auditLog legacy", auditErr);
+    }
+
     return NextResponse.json({
       product: {
         ...r,
         priceUsdCents: 0,
         unitsPerBox: 1,
         wholesaleCupCents: null,
+        costCents: "costCents" in r ? (r as { costCents: number | null }).costCents : null,
+        supplierName: "supplierName" in r ? (r as { supplierName: string | null }).supplierName : null,
       },
       meta: {
         schemaLegacy: true as const,
         hint: "BD sin columnas nuevas: priceUsdCents/unitsPerBox/wholesaleCupCents quedan en default hasta migrar.",
       },
     });
-  } catch {
-    return NextResponse.json({ error: "DUPLICATE_SKU_OR_DB" }, { status: 409 });
+  } catch (e) {
+    if (e instanceof Prisma.PrismaClientKnownRequestError && e.code === "P2002") {
+      return NextResponse.json(
+        { error: "DUPLICATE_SKU", meta: { target: e.meta?.target } },
+        { status: 409 },
+      );
+    }
+    const msg = e instanceof Error ? e.message : String(e);
+    console.error("[api/products POST]", e);
+    if (isMissingDbColumnError(e)) {
+      return NextResponse.json(
+        {
+          error: "DATABASE_SCHEMA_MISMATCH",
+          message: msg,
+          hint: "La BD no coincide con el esquema esperado. Ejecuta migraciones / prisma db push.",
+        },
+        { status: 500 },
+      );
+    }
+    return NextResponse.json(
+      { error: "PRODUCT_CREATE_FAILED", message: msg },
+      { status: 500 },
+    );
   }
 }
