@@ -658,6 +658,12 @@ export default function EconomyPage() {
     return out;
   }, [analytics]);
 
+  const calendarByDay = useMemo(() => {
+    const m = new Map<string, EconomyCalendarDay>();
+    for (const d of calendar?.days ?? []) m.set(d.day, d);
+    return m;
+  }, [calendar?.days]);
+
   if (initialLoading && !data) {
     return (
       <AdminShell>
@@ -694,12 +700,6 @@ export default function EconomyPage() {
   const dow = analytics?.seasonalityByWeekday365d ?? [];
   const peakD = analytics?.peakWeekday365d;
   const months = analytics?.monthlySeries ?? [];
-
-  const calendarByDay = useMemo(() => {
-    const m = new Map<string, EconomyCalendarDay>();
-    for (const d of calendar?.days ?? []) m.set(d.day, d);
-    return m;
-  }, [calendar?.days]);
 
   return (
     <AdminShell title="Economía">
