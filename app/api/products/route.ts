@@ -63,7 +63,7 @@ const createSchema = z.object({
   /** Precio de compra al proveedor (CUP, céntimos por unidad). Obligatorio en alta. */
   costCents: z.number().int().nonnegative(),
   /** Proveedor del nomenclador (obligatorio en alta desde panel). */
-  supplierId: z.string().cuid(),
+  supplierId: z.string().min(1),
   stockQty: z.number().int().nonnegative().default(0),
   lowStockAt: z.number().int().nonnegative().optional(),
 });
@@ -109,7 +109,6 @@ export async function POST(request: Request) {
       costCents: await hasProductColumn("costCents"),
       supplierId: await hasProductColumn("supplierId"),
       supplierName: await hasProductColumn("supplierName"),
-      deletedAt: await hasProductColumn("deletedAt"),
     };
 
     /** Prisma create solo con columnas que existen en BD (evita 42703 en esquemas parciales). */
@@ -121,6 +120,7 @@ export async function POST(request: Request) {
         priceCents: parsed.data.priceCents,
         stockQty: parsed.data.stockQty,
         lowStockAt: parsed.data.lowStockAt ?? 5,
+        active: true,
       };
       if (supports.priceUsdCents) data.priceUsdCents = parsed.data.priceUsdCents;
       if (supports.unitsPerBox) data.unitsPerBox = parsed.data.unitsPerBox;
@@ -132,11 +132,10 @@ export async function POST(request: Request) {
       } else if (supports.supplierName) {
         data.supplierName = supplierNameResolved;
       }
-      if (supports.deletedAt) data.deletedAt = null;
 
-      const p = await prisma.$transaction(async (tx) => {
-        const created = await tx.product.create({ data });
-        await tx.auditLog.create({
+      const created = await prisma.product.create({ data });
+      try {
+        await prisma.auditLog.create({
           data: {
             storeId: session.storeId,
             actorType: "USER",
@@ -160,10 +159,15 @@ export async function POST(request: Request) {
             } as any,
           },
         });
-        return created;
-      });
+      } catch (auditErr) {
+        console.error("[api/products POST] auditLog (modern)", auditErr);
+        return NextResponse.json({
+          product: created,
+          meta: { auditLogSkipped: true as const, reason: auditErr instanceof Error ? auditErr.message : "AUDIT" },
+        });
+      }
 
-      return NextResponse.json({ product: p });
+      return NextResponse.json({ product: created });
     }
 
     // Modo legacy: BD sin columnas nuevas. Insertamos solo columnas existentes y devolvemos defaults.
@@ -417,10 +421,21 @@ export async function POST(request: Request) {
       },
     });
   } catch (e) {
-    if (e instanceof Prisma.PrismaClientKnownRequestError && e.code === "P2002") {
+    const prismaCode =
+      typeof e === "object" && e !== null && "code" in e && typeof (e as { code: unknown }).code === "string"
+        ? (e as { code: string }).code
+        : null;
+    if (
+      prismaCode === "P2002" ||
+      (e instanceof Prisma.PrismaClientKnownRequestError && e.code === "P2002")
+    ) {
+      const meta = typeof e === "object" && e !== null && "meta" in e ? (e as { meta?: { target?: unknown } }).meta : undefined;
+      return NextResponse.json({ error: "DUPLICATE_SKU", meta: { target: meta?.target } }, { status: 409 });
+    }
+    if (prismaCode === "P2003" || (e instanceof Prisma.PrismaClientKnownRequestError && e.code === "P2003")) {
       return NextResponse.json(
-        { error: "DUPLICATE_SKU", meta: { target: e.meta?.target } },
-        { status: 409 },
+        { error: "INVALID_REFERENCE", message: "FK: revisa proveedor asociado o migración de esquema." },
+        { status: 400 },
       );
     }
     const msg = e instanceof Error ? e.message : String(e);
