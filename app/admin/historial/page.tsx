@@ -489,6 +489,16 @@ function SalesHistoryPageClient() {
               <p className="mt-2 text-sm text-tl-muted">Selecciona una venta para ver el detalle.</p>
             ) : (
               <div className="mt-3 space-y-3">
+                {selected.status === "deleted" ? (
+                  <div className="rounded-xl border border-tl-danger/20 bg-tl-danger-subtle p-3">
+                    <p className="text-xs font-semibold uppercase tracking-wider text-tl-danger">
+                      Venta eliminada por admin
+                    </p>
+                    <p className="mt-1 text-xs text-tl-muted">
+                      Esta venta fue borrada de la BD y se conserva aquí solo como registro de auditoría.
+                    </p>
+                  </div>
+                ) : null}
                 <div className="rounded-xl border border-tl-line-subtle bg-tl-canvas-inset p-3">
                   <p className="text-xs font-semibold uppercase tracking-wider text-tl-muted">Fecha</p>
                   <p className="mt-1 text-sm font-medium text-tl-ink">

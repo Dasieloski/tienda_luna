@@ -67,13 +67,61 @@ export async function GET(request: Request) {
   };
 
   try {
-    const [total, sales, devices] = await Promise.all([
+    const deletedRows = await prisma.auditLog.findMany({
+      where: {
+        storeId: session.storeId,
+        action: "SALE_DELETED_ADMIN",
+        ...(from || to
+          ? {
+              createdAt: {
+                ...(from ? { gte: new Date(from) } : {}),
+                ...(to ? { lte: new Date(to) } : {}),
+              },
+            }
+          : {}),
+      },
+      orderBy: { createdAt: "desc" },
+      take: 400,
+      select: { id: true, createdAt: true, before: true, meta: true },
+    });
+
+    const deletedNormalized = (deletedRows ?? [])
+      .map((r) => {
+        const snap = r.before as any;
+        if (!snap || typeof snap !== "object") return null;
+        const completedAt = typeof snap.completedAt === "string" ? snap.completedAt : r.createdAt.toISOString();
+        const search = String((r.meta as any)?.search ?? "").toLowerCase();
+        return {
+          kind: "deleted" as const,
+          id: String(snap.id ?? r.id),
+          deviceId: String(snap.deviceId ?? ""),
+          deviceLabel: null as string | null,
+          soldBy: snap.soldBy != null ? String(snap.soldBy) : null,
+          totalCents: Number(snap.totalCents ?? 0),
+          status: "deleted",
+          completedAt,
+          lines: Array.isArray(snap.lines)
+            ? snap.lines.map((l: any, idx: number) => ({
+                id: String(l.id ?? `${snap.id ?? r.id}:l${idx}`),
+                quantity: Number(l.quantity ?? 0),
+                unitPriceCents: Number(l.unitPriceCents ?? 0),
+                subtotalCents: Number(l.subtotalCents ?? 0),
+                productName: String(l.name ?? l.productName ?? "—"),
+                sku: String(l.sku ?? "—"),
+              }))
+            : [],
+          __search: search,
+        };
+      })
+      .filter(Boolean) as any[];
+
+    const [totalSales, sales, devices] = await Promise.all([
       prisma.sale.count({ where }),
       prisma.sale.findMany({
         where,
         orderBy: { completedAt: "desc" },
-        skip,
-        take: limit,
+        // paginación se hará después de mezclar con eliminadas
+        take: Math.min(800, limit * 6),
         include: {
           lines: {
             include: {
@@ -90,23 +138,56 @@ export async function GET(request: Request) {
 
     const deviceLabelById = new Map(devices.map((d) => [d.id, d.label]));
 
+    const live = sales.map((s) => ({
+      kind: "sale" as const,
+      id: s.id,
+      deviceId: s.deviceId,
+      deviceLabel: deviceLabelById.get(s.deviceId) ?? null,
+      soldBy: s.soldBy ?? null,
+      totalCents: s.totalCents,
+      status: s.status,
+      completedAt: s.completedAt.toISOString(),
+      lines: s.lines.map((l) => ({
+        id: l.id,
+        quantity: l.quantity,
+        unitPriceCents: l.unitPriceCents,
+        subtotalCents: l.subtotalCents,
+        productName: l.product.name,
+        sku: l.product.sku,
+      })),
+      __search: "",
+    }));
+
+    // Completar labels y filtrar por q usando meta.search en eliminadas.
+    for (const d of deletedNormalized) {
+      d.deviceLabel = deviceLabelById.get(d.deviceId) ?? null;
+    }
+
+    const qLower = (q ?? "").trim().toLowerCase();
+    const merged = [...live, ...deletedNormalized]
+      .filter((row) => {
+        if (!qLower) return true;
+        if (row.kind === "deleted") {
+          return String(row.__search ?? "").includes(qLower);
+        }
+        // las ventas normales ya se filtran en DB con where/q
+        return true;
+      })
+      .sort((a, b) => String(b.completedAt).localeCompare(String(a.completedAt)));
+
+    const total = totalSales + deletedNormalized.length;
+    const pageRows = merged.slice(skip, skip + limit);
+
     return NextResponse.json({
-      sales: sales.map((s) => ({
+      sales: pageRows.map((s) => ({
         id: s.id,
         deviceId: s.deviceId,
-        deviceLabel: deviceLabelById.get(s.deviceId) ?? null,
+        deviceLabel: s.deviceLabel ?? null,
         soldBy: s.soldBy ?? null,
         totalCents: s.totalCents,
         status: s.status,
-        completedAt: s.completedAt.toISOString(),
-        lines: s.lines.map((l) => ({
-          id: l.id,
-          quantity: l.quantity,
-          unitPriceCents: l.unitPriceCents,
-          subtotalCents: l.subtotalCents,
-          productName: l.product.name,
-          sku: l.product.sku,
-        })),
+        completedAt: s.completedAt,
+        lines: s.lines,
       })),
       meta: {
         dbAvailable: true as const,

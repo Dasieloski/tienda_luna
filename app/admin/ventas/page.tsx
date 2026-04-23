@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { RefreshCw, WifiOff } from "lucide-react";
+import { RefreshCw, Trash2, WifiOff } from "lucide-react";
 import { AdminShell } from "@/components/admin/admin-shell";
 import { DataTable, type Column } from "@/components/admin/data-table";
 import { cn } from "@/lib/utils";
@@ -54,6 +54,9 @@ export default function SalesPage() {
   const [toDay, setToDay] = useState(() => ymdLocal(now));
 
   const [searchQuery, setSearchQuery] = useState("");
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(() => new Set());
+  const [deleteBusy, setDeleteBusy] = useState(false);
+  const [deleteMsg, setDeleteMsg] = useState<string | null>(null);
 
   const loadSales = useCallback(async (opts?: { initial?: boolean; manual?: boolean }) => {
     if (inFlightRef.current) return;
@@ -140,6 +143,28 @@ export default function SalesPage() {
   }, [visibleSales]);
 
   const columns: Column<RecentSale>[] = [
+    {
+      key: "__sel",
+      label: "✓",
+      width: "46px",
+      render: (row) => (
+        <input
+          type="checkbox"
+          checked={selectedIds.has(row.id)}
+          onClick={(e) => e.stopPropagation()}
+          onChange={(e) => {
+            const checked = e.target.checked;
+            setSelectedIds((prev) => {
+              const next = new Set(prev);
+              if (checked) next.add(row.id);
+              else next.delete(row.id);
+              return next;
+            });
+          }}
+          aria-label="Seleccionar venta"
+        />
+      ),
+    },
     {
       key: "completedAt",
       label: "Fecha",
@@ -241,7 +266,62 @@ export default function SalesPage() {
         </span>
       ),
     },
+    {
+      key: "__actions",
+      label: "",
+      width: "70px",
+      align: "right",
+      render: (row) => (
+        <button
+          type="button"
+          className="tl-btn tl-btn-secondary !px-2 !py-2 text-xs"
+          title="Eliminar venta (admin)"
+          onClick={(e) => {
+            e.stopPropagation();
+            if (deleteBusy) return;
+            setSelectedIds((prev) => {
+              const next = new Set(prev);
+              next.add(row.id);
+              return next;
+            });
+          }}
+        >
+          <Trash2 className="h-4 w-4" aria-hidden />
+        </button>
+      ),
+    },
   ];
+
+  async function deleteSelected() {
+    const ids = Array.from(selectedIds);
+    if (ids.length === 0) return;
+    const ok = window.confirm(
+      `Vas a eliminar ${ids.length} venta(s) de la base de datos.\n\nEsto borra Sale/SaleLine y revierte stock.\nSolo quedará un registro en Historial como “venta eliminada por admin”.\n\n¿Continuar?`,
+    );
+    if (!ok) return;
+    setDeleteBusy(true);
+    setDeleteMsg(null);
+    try {
+      const res = await fetch("/api/admin/sales/delete", {
+        method: "POST",
+        credentials: "include",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ ids }),
+      });
+      const json = (await res.json().catch(() => null)) as any;
+      if (!res.ok) {
+        setDeleteMsg(json?.error ?? `No se pudo eliminar (HTTP ${res.status}).`);
+        return;
+      }
+      setSelectedIds(new Set());
+      await loadSales({ manual: true });
+      setDeleteMsg(`Eliminadas: ${json?.deleted ?? ids.length}.`);
+    } catch (e) {
+      setDeleteMsg(e instanceof Error ? e.message : "Error de red.");
+    } finally {
+      setDeleteBusy(false);
+    }
+  }
 
   return (
     <AdminShell title="Ventas">
@@ -276,7 +356,18 @@ export default function SalesPage() {
                   {pollError}
                 </span>
               )}
+              <button
+                type="button"
+                className="tl-btn tl-btn-secondary tl-interactive tl-hover-lift tl-press tl-focus !px-4 !py-2"
+                onClick={() => void deleteSelected()}
+                disabled={deleteBusy || selectedIds.size === 0}
+                title="Eliminar ventas seleccionadas"
+              >
+                <Trash2 className={cn("h-4 w-4", deleteBusy && "animate-spin")} aria-hidden />
+                {deleteBusy ? "Eliminando..." : `Eliminar (${selectedIds.size})`}
+              </button>
             </div>
+            {deleteMsg ? <p className="mt-2 text-xs text-tl-muted">{deleteMsg}</p> : null}
           </div>
           <div
             className={cn(
