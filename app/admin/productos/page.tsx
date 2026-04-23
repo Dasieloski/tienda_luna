@@ -111,7 +111,13 @@ export default function ProductosPage() {
       try {
         const res = await fetch("/api/products", { credentials: "include" });
         if (!res.ok) {
-          if (!cancelled) setErr("No se pudo cargar el catálogo.");
+          if (!cancelled) {
+            const hint =
+              res.status === 401 || res.status === 403
+                ? "Sesión no válida o sin permisos. Vuelve a iniciar sesión."
+                : "No se pudo cargar el catálogo.";
+            setErr(`${hint} (HTTP ${res.status})`);
+          }
           return;
         }
         const json = (await res.json()) as { products?: { id: string; sku: string; name: string }[] };
@@ -120,7 +126,7 @@ export default function ProductosPage() {
         if (cancelled) return;
         setProducts(opts);
         if (!selectedId && opts[0]) setSelectedId(opts[0].id);
-        setErr(null);
+        setErr(opts.length === 0 ? "Catálogo vacío: aún no hay productos en la tienda." : null);
       } finally {
         if (!cancelled) setLoadingList(false);
       }

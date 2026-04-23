@@ -60,12 +60,21 @@ const createSchema = z.object({
   priceUsdCents: z.number().int().nonnegative().default(0),
   unitsPerBox: z.number().int().positive().default(1),
   wholesaleCupCents: z.number().int().nonnegative().optional().nullable(),
-  /** Precio de compra al proveedor (CUP, céntimos por unidad). Obligatorio en alta. */
-  costCents: z.number().int().nonnegative(),
-  /** Proveedor del nomenclador (obligatorio en alta desde panel). */
-  supplierId: z.string().min(1),
+  /**
+   * Precio de compra al proveedor (CUP, céntimos por unidad).
+   * En panel suele ser obligatorio, pero la APK legacy puede no enviarlo → guardamos NULL.
+   */
+  costCents: z.number().int().nonnegative().nullable().optional(),
+  /**
+   * Proveedor del nomenclador (id). Preferido.
+   * Compat APK legacy: permite `supplierName` y el servidor resuelve/crea.
+   */
+  supplierId: z.string().min(1).optional(),
+  supplierName: z.string().max(120).optional(),
   stockQty: z.number().int().nonnegative().default(0),
   lowStockAt: z.number().int().nonnegative().optional(),
+  /** Compat: algunos clientes envían `active`, pero el servidor controla el alta. */
+  active: z.boolean().optional(),
 });
 
 export async function POST(request: Request) {
@@ -88,17 +97,42 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "SKU_ALLOC_FAILED" }, { status: 503 });
   }
 
-  const supplier = await prisma.supplier.findFirst({
-    where: {
-      id: parsed.data.supplierId,
-      storeId: session.storeId,
-      active: true,
-    },
-  });
-  if (!supplier) {
-    return NextResponse.json({ error: "INVALID_SUPPLIER" }, { status: 400 });
+  const supplierIdRaw = parsed.data.supplierId?.trim() ?? "";
+  const supplierNameRaw = parsed.data.supplierName?.trim() ?? "";
+  const supplier = supplierIdRaw
+    ? await prisma.supplier.findFirst({
+        where: { id: supplierIdRaw, storeId: session.storeId, active: true },
+      })
+    : supplierNameRaw
+      ? await prisma.supplier.findFirst({
+          where: { storeId: session.storeId, name: { equals: supplierNameRaw, mode: "insensitive" } },
+        })
+      : null;
+
+  let supplierIdResolved: string | null = supplier?.id ?? null;
+  let supplierNameResolved: string | null = supplier?.name ?? null;
+
+  if (!supplierIdResolved && supplierNameRaw) {
+    // Si la APK manda supplierName pero no existe, lo creamos para no bloquear el alta.
+    // (En panel, normalmente se usa supplierId del nomenclador.)
+    const created = await prisma.supplier.create({
+      data: {
+        storeId: session.storeId,
+        name: supplierNameRaw.slice(0, 120),
+        active: true,
+      },
+      select: { id: true, name: true },
+    });
+    supplierIdResolved = created.id;
+    supplierNameResolved = created.name;
   }
-  const supplierNameResolved = supplier.name;
+
+  if (!supplierIdResolved) {
+    return NextResponse.json(
+      { error: "INVALID_SUPPLIER", hint: "Envía supplierId o supplierName." },
+      { status: 400 },
+    );
+  }
 
   try {
     const hasUsdCol = await hasProductColumn("priceUsdCents");
@@ -125,9 +159,9 @@ export async function POST(request: Request) {
       if (supports.priceUsdCents) data.priceUsdCents = parsed.data.priceUsdCents;
       if (supports.unitsPerBox) data.unitsPerBox = parsed.data.unitsPerBox;
       if (supports.wholesaleCupCents) data.wholesaleCupCents = parsed.data.wholesaleCupCents ?? null;
-      if (supports.costCents) data.costCents = parsed.data.costCents;
+      if (supports.costCents) data.costCents = parsed.data.costCents ?? null;
       if (supports.supplierId) {
-        data.supplierId = supplier.id;
+        data.supplierId = supplierIdResolved;
         if (supports.supplierName) data.supplierName = supplierNameResolved;
       } else if (supports.supplierName) {
         data.supplierName = supplierNameResolved;
@@ -209,7 +243,7 @@ export async function POST(request: Request) {
         ${sku},
         ${parsed.data.name},
         ${parsed.data.priceCents},
-        ${parsed.data.costCents},
+        ${parsed.data.costCents ?? null},
         ${supplierName},
         ${parsed.data.stockQty},
         ${lowStockAt},
@@ -260,7 +294,7 @@ export async function POST(request: Request) {
         ${sku},
         ${parsed.data.name},
         ${parsed.data.priceCents},
-        ${parsed.data.costCents},
+        ${parsed.data.costCents ?? null},
         ${parsed.data.stockQty},
         ${lowStockAt},
         true

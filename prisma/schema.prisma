@@ -23,6 +23,11 @@ enum EventStatus {
   CORRECTED
 }
 
+enum OwnerName {
+  OSMAR
+  ALEX
+}
+
 model Store {
   id        String   @id @default(cuid())
   name      String
@@ -42,6 +47,7 @@ model Store {
   customers  Customer[]
   events     Event[]
   sales      Sale[]
+  ownerSales OwnerSale[]
   suppliers  Supplier[]
   inventoryMovements InventoryMovement[]
   metricSnapshots MetricSnapshot[]
@@ -120,6 +126,7 @@ model Product {
   updatedAt   DateTime @updatedAt
 
   saleLines SaleLine[]
+  ownerSaleLines OwnerSaleLine[]
   inventoryMovements InventoryMovement[]
 
   @@unique([storeId, sku])
@@ -235,6 +242,35 @@ model SaleLine {
   unitPriceCents Int
   subtotalCents  Int
 
+  @@index([productId])
+}
+
+/// Consumo de los dueños: descuenta stock, pero NO cuenta como ingreso/ganancia.
+model OwnerSale {
+  id        String    @id @default(cuid())
+  storeId   String
+  store     Store     @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  owner     OwnerName
+  totalCents Int      @default(0)
+  createdAt DateTime  @default(now())
+
+  lines OwnerSaleLine[]
+
+  @@index([storeId, createdAt])
+  @@index([storeId, owner, createdAt])
+}
+
+model OwnerSaleLine {
+  id          String    @id @default(cuid())
+  ownerSaleId String
+  ownerSale   OwnerSale @relation(fields: [ownerSaleId], references: [id], onDelete: Cascade)
+  productId   String
+  product     Product   @relation(fields: [productId], references: [id])
+  quantity    Int
+  unitPriceCents Int
+  subtotalCents  Int
+
+  @@index([ownerSaleId])
   @@index([productId])
 }
 

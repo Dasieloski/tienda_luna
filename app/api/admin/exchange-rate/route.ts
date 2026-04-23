@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
+import { cookies } from "next/headers";
 import { getSessionFromRequest, requireAdmin } from "@/lib/auth";
 import { prisma } from "@/lib/db";
 import { isMissingDbColumnError } from "@/lib/db-schema-errors";
@@ -20,6 +21,30 @@ async function hasStoreColumn(columnName: string): Promise<boolean> {
   return rows.length > 0;
 }
 
+function readUsdRateCupCookie(): number | null {
+  try {
+    const v = cookies().get("tl-usdRateCup")?.value ?? null;
+    if (!v) return null;
+    const n = Number(v);
+    if (!Number.isFinite(n) || n <= 0) return null;
+    return Math.round(n);
+  } catch {
+    return null;
+  }
+}
+
+function setUsdRateCupCookie(res: NextResponse, rate: number) {
+  const n = Math.round(rate);
+  // 400 días para evitar problemas con navegadores que capan cookies muy largas
+  res.cookies.set("tl-usdRateCup", String(n), {
+    httpOnly: false,
+    sameSite: "lax",
+    secure: process.env.NODE_ENV === "production",
+    path: "/",
+    maxAge: 60 * 60 * 24 * 400,
+  });
+}
+
 export async function GET(request: Request) {
   const session = await getSessionFromRequest(request);
   if (!session || !requireAdmin(session)) {
@@ -35,7 +60,7 @@ export async function GET(request: Request) {
       store?.usdRateCup ??
       (typeof (store?.dashboardLayout as any)?.usdRateCup === "number"
         ? Number((store?.dashboardLayout as any).usdRateCup)
-        : 250);
+        : readUsdRateCupCookie() ?? 250);
     return NextResponse.json({ usdRateCup });
   } catch (e) {
     if (isMissingDbColumnError(e)) {
@@ -53,7 +78,10 @@ export async function GET(request: Request) {
           const fromLayout =
             layout && typeof layout.usdRateCup === "number" ? Number(layout.usdRateCup) : null;
           return NextResponse.json({
-            usdRateCup: fromLayout ?? Number(process.env.NEXT_PUBLIC_USD_RATE_CUP ?? "250"),
+            usdRateCup:
+              fromLayout ??
+              readUsdRateCupCookie() ??
+              Number(process.env.NEXT_PUBLIC_USD_RATE_CUP ?? "250"),
             meta: {
               schemaLegacy: true as const,
               hint: "BD sin columna Store.usdRateCup: usando dashboardLayout.usdRateCup (si existe) o NEXT_PUBLIC_USD_RATE_CUP.",
@@ -64,7 +92,7 @@ export async function GET(request: Request) {
         // ignore y cae al fallback de env
       }
       return NextResponse.json({
-        usdRateCup: Number(process.env.NEXT_PUBLIC_USD_RATE_CUP ?? "250"),
+        usdRateCup: readUsdRateCupCookie() ?? Number(process.env.NEXT_PUBLIC_USD_RATE_CUP ?? "250"),
         meta: {
           schemaLegacy: true as const,
           hint: "BD legacy: ejecuta prisma/sql/add_store_usd_rate.sql en Supabase o npx prisma db push para persistir en Store.usdRateCup.",
@@ -113,7 +141,9 @@ export async function PATCH(request: Request) {
       });
       return next;
     });
-    return NextResponse.json({ usdRateCup: updated.usdRateCup });
+    const res = NextResponse.json({ usdRateCup: updated.usdRateCup });
+    setUsdRateCupCookie(res, updated.usdRateCup ?? parsed.data.usdRateCup);
+    return res;
   } catch (e) {
     if (isMissingDbColumnError(e)) {
       // Modo legacy: persistimos la tasa dentro de dashboardLayout (si existe) para no bloquear el panel.
@@ -141,7 +171,7 @@ export async function PATCH(request: Request) {
               after: { usdRateCup: parsed.data.usdRateCup, storedIn: "dashboardLayout" } as any,
             },
           });
-          return NextResponse.json({
+          const res = NextResponse.json({
             usdRateCup: parsed.data.usdRateCup,
             meta: {
               schemaLegacy: true as const,
@@ -149,17 +179,27 @@ export async function PATCH(request: Request) {
               hint: "BD sin Store.usdRateCup: guardado en Store.dashboardLayout.usdRateCup. Migra para persistir en la columna dedicada.",
             },
           });
+          setUsdRateCupCookie(res, parsed.data.usdRateCup);
+          return res;
         }
       } catch (err) {
         console.error("[api/admin/exchange-rate legacy PATCH]", err);
       }
-      return NextResponse.json(
+      // Último recurso: persistir en cookie del navegador para que el navbar funcione
+      // aunque la tabla Store sea legacy y no tenga columnas para guardar la tasa.
+      const res = NextResponse.json(
         {
-          error: "DATABASE_SCHEMA_MISMATCH",
-          hint: "La BD no tiene Store.usdRateCup y no se pudo usar dashboardLayout. Ejecuta prisma/sql/add_store_usd_rate.sql en Supabase o npx prisma db push.",
+          usdRateCup: parsed.data.usdRateCup,
+          meta: {
+            schemaLegacy: true as const,
+            storedIn: "cookie" as const,
+            hint: "BD legacy sin Store.usdRateCup ni Store.dashboardLayout: guardado en cookie del navegador. Ejecuta prisma/sql/add_store_usd_rate.sql en Supabase o npx prisma db push para persistir en la BD.",
+          },
         },
-        { status: 503 },
+        { status: 200 },
       );
+      setUsdRateCupCookie(res, parsed.data.usdRateCup);
+      return res;
     }
     console.error("[api/admin/exchange-rate]", e);
     return NextResponse.json({ error: "DB" }, { status: 500 });

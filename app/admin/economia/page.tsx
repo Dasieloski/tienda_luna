@@ -12,6 +12,7 @@ import {
   RefreshCw,
   TrendingDown,
   TrendingUp,
+  Users,
 } from "lucide-react";
 import { AdminShell } from "@/components/admin/admin-shell";
 import { KpiCard } from "@/components/admin/kpi-card";
@@ -137,6 +138,27 @@ type MarginRangePayload = {
     linesWithoutCost: number;
   };
   error?: string;
+};
+
+type OwnerSalesSummaryPayload = {
+  meta: { dbAvailable: boolean; tzOffsetMinutes?: number; note?: string; message?: string };
+  window: { mode: "day" | "month"; key: string } | null;
+  totals: { OSMAR: number; ALEX: number; totalCents: number; count: number };
+  sales: { id: string; owner: "OSMAR" | "ALEX"; totalCents: number; createdAt: string; lineCount: number }[];
+};
+
+type AdminSearchPayload = {
+  meta: { dbAvailable: boolean };
+  q: string;
+  products: {
+    id: string;
+    sku: string;
+    name: string;
+    priceCents: number;
+    stockQty: number;
+    active: boolean;
+    deletedAt: string | null;
+  }[];
 };
 
 type EconomyCalendarDay = {
@@ -284,6 +306,10 @@ function daysInMonth(y: number, m1: number) {
 function isoDow1to7(date: Date) {
   const dow0 = date.getDay(); // 0=Dom..6=Sáb
   return dow0 === 0 ? 7 : dow0;
+}
+
+function ownerLabel(o: "OSMAR" | "ALEX") {
+  return o === "OSMAR" ? "Osmar" : "Álex";
 }
 
 function CalendarDayCell({ day, data }: { day: string; data: EconomyCalendarDay | null }) {
@@ -479,6 +505,19 @@ export default function EconomyPage() {
   const [marginRange, setMarginRange] = useState<MarginRangePayload | null>(null);
   const [marginRangeLoading, setMarginRangeLoading] = useState(false);
   const [marginRangeErr, setMarginRangeErr] = useState<string | null>(null);
+  const [ownerMode, setOwnerMode] = useState<"day" | "month">("day");
+  const [ownerDay, setOwnerDay] = useState(today);
+  const [ownerMonth, setOwnerMonth] = useState(() => today.slice(0, 7));
+  const [ownerSummary, setOwnerSummary] = useState<OwnerSalesSummaryPayload | null>(null);
+  const [ownerLoading, setOwnerLoading] = useState(false);
+  const [ownerErr, setOwnerErr] = useState<string | null>(null);
+  const [ownerModalOpen, setOwnerModalOpen] = useState(false);
+  const [ownerModalWho, setOwnerModalWho] = useState<"OSMAR" | "ALEX">("OSMAR");
+  const [ownerModalQ, setOwnerModalQ] = useState("");
+  const [ownerModalHits, setOwnerModalHits] = useState<AdminSearchPayload["products"]>([]);
+  const [ownerModalLines, setOwnerModalLines] = useState<{ productId: string; sku: string; name: string; unitPriceCents: number; stockQty: number; quantity: number }[]>([]);
+  const [ownerModalBusy, setOwnerModalBusy] = useState(false);
+  const [ownerModalMsg, setOwnerModalMsg] = useState<string | null>(null);
   const [initialLoading, setInitialLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -578,6 +617,30 @@ export default function EconomyPage() {
     }
   }, []);
 
+  const loadOwnerSummary = useCallback(async () => {
+    setOwnerLoading(true);
+    setOwnerErr(null);
+    try {
+      const params = new URLSearchParams();
+      params.set("mode", ownerMode);
+      if (ownerMode === "day") params.set("date", ownerDay);
+      else params.set("month", ownerMonth);
+      const res = await fetch(`/api/admin/owner-sales/summary?${params.toString()}`, { credentials: "include" });
+      const json = (await res.json()) as OwnerSalesSummaryPayload;
+      setOwnerSummary(json);
+      if (!res.ok) {
+        setOwnerErr(json.meta?.message ?? "No se pudo cargar el consumo de dueños.");
+      } else if (json.meta?.dbAvailable === false && json.meta?.message) {
+        setOwnerErr(json.meta.message);
+      }
+    } catch (e) {
+      setOwnerSummary(null);
+      setOwnerErr(e instanceof Error ? e.message : "Error de red al cargar consumo de dueños.");
+    } finally {
+      setOwnerLoading(false);
+    }
+  }, [ownerDay, ownerMode, ownerMonth]);
+
   function applyRangePreset(id: RangePresetId) {
     const r = rangeForPreset(id);
     setRangeFrom(r.from);
@@ -600,6 +663,10 @@ export default function EconomyPage() {
   useEffect(() => {
     void fetchMarginRange(defaultMarginRangeUtc.from, defaultMarginRangeUtc.to);
   }, [fetchMarginRange, defaultMarginRangeUtc.from, defaultMarginRangeUtc.to]);
+
+  useEffect(() => {
+    void loadOwnerSummary();
+  }, [loadOwnerSummary]);
 
   useEffect(() => {
     return () => abortRef.current?.abort();
@@ -936,6 +1003,356 @@ export default function EconomyPage() {
               icon={<DollarSign className="h-5 w-5" aria-hidden />}
             />
           </div>
+        </section>
+
+        {/* Consumo de dueños */}
+        <section className="space-y-4 border-t border-tl-line-subtle pt-10">
+          <EconomySectionHeader
+            title="Consumo de dueños (no cuenta como ingreso)"
+            subtitle="Estas salidas descuentan stock, pero NO aparecen en ingreso del día, ganancia ni analítica. Solo se ven aquí."
+            icon={<Users className="h-5 w-5 text-tl-accent" aria-hidden />}
+          />
+
+          <div className="flex flex-wrap items-end gap-3">
+            <label className="flex flex-col gap-1 text-xs font-semibold uppercase tracking-wider text-tl-muted">
+              Ventana
+              <select
+                className="tl-input h-9 w-[160px] px-3 py-1 text-xs sm:text-sm normal-case font-normal"
+                value={ownerMode}
+                onChange={(e) => setOwnerMode(e.target.value as "day" | "month")}
+              >
+                <option value="day">Diario</option>
+                <option value="month">Mensual</option>
+              </select>
+            </label>
+            {ownerMode === "day" ? (
+              <label className="flex flex-col gap-1 text-xs font-semibold uppercase tracking-wider text-tl-muted">
+                Día
+                <input
+                  type="date"
+                  value={ownerDay}
+                  onChange={(e) => setOwnerDay(e.target.value)}
+                  className="tl-input h-9 w-[160px] px-3 py-1 text-xs sm:text-sm normal-case font-normal"
+                />
+              </label>
+            ) : (
+              <label className="flex flex-col gap-1 text-xs font-semibold uppercase tracking-wider text-tl-muted">
+                Mes
+                <input
+                  type="month"
+                  value={ownerMonth}
+                  onChange={(e) => setOwnerMonth(e.target.value)}
+                  className="tl-input h-9 w-[160px] px-3 py-1 text-xs sm:text-sm normal-case font-normal"
+                />
+              </label>
+            )}
+
+            <button
+              type="button"
+              className="tl-btn tl-btn-secondary tl-interactive tl-hover-lift tl-press tl-focus !px-3 !py-2 text-xs sm:text-sm"
+              onClick={() => void loadOwnerSummary()}
+              disabled={ownerLoading}
+            >
+              {ownerLoading ? "Cargando…" : "Actualizar"}
+            </button>
+
+            <button
+              type="button"
+              className="tl-btn tl-btn-primary tl-interactive tl-hover-lift tl-press tl-focus !px-3 !py-2 text-xs sm:text-sm"
+              onClick={() => {
+                setOwnerModalOpen(true);
+                setOwnerModalMsg(null);
+                setOwnerModalQ("");
+                setOwnerModalHits([]);
+                setOwnerModalLines([]);
+              }}
+            >
+              Registrar consumo
+            </button>
+          </div>
+
+          {ownerErr ? (
+            <div className="rounded-xl border border-tl-warning/20 bg-tl-warning-subtle px-4 py-3 text-sm text-tl-warning">
+              {ownerErr}
+            </div>
+          ) : null}
+
+          {ownerSummary?.meta?.note ? <p className="text-xs text-tl-muted">{ownerSummary.meta.note}</p> : null}
+
+          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+            <KpiCard
+              variant="default"
+              label="Osmar"
+              value={<CupUsdMoney cents={ownerSummary?.totals?.OSMAR ?? 0} />}
+              hint={`${(ownerSummary?.sales ?? []).filter((s) => s.owner === "OSMAR").length} registro(s)`}
+              icon={<Users className="h-5 w-5" aria-hidden />}
+            />
+            <KpiCard
+              variant="default"
+              label="Álex"
+              value={<CupUsdMoney cents={ownerSummary?.totals?.ALEX ?? 0} />}
+              hint={`${(ownerSummary?.sales ?? []).filter((s) => s.owner === "ALEX").length} registro(s)`}
+              icon={<Users className="h-5 w-5" aria-hidden />}
+            />
+            <KpiCard
+              variant="info"
+              label="Total"
+              value={<CupUsdMoney cents={ownerSummary?.totals?.totalCents ?? 0} />}
+              hint={`${ownerSummary?.totals?.count ?? 0} consumo(s)`}
+              icon={<PieChart className="h-5 w-5" aria-hidden />}
+            />
+          </div>
+
+          <div className="mt-3 overflow-x-auto tl-glass rounded-xl">
+            <table className="w-full min-w-[620px] text-left text-sm">
+              <thead className="border-b border-tl-line bg-tl-canvas-inset text-xs uppercase tracking-wide text-tl-muted">
+                <tr>
+                  <th className="px-4 py-3">Fecha</th>
+                  <th className="px-4 py-3">Dueño</th>
+                  <th className="px-4 py-3 text-right">Líneas</th>
+                  <th className="px-4 py-3 text-right">Total (CUP)</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-tl-line-subtle">
+                {(ownerSummary?.sales ?? []).length === 0 ? (
+                  <tr>
+                    <td colSpan={4} className="px-4 py-6 text-center text-sm text-tl-muted">
+                      No hay consumos registrados en esta ventana.
+                    </td>
+                  </tr>
+                ) : (
+                  (ownerSummary?.sales ?? []).map((s) => (
+                    <tr key={s.id}>
+                      <td className="px-4 py-3 tabular-nums text-tl-ink">
+                        {new Date(s.createdAt).toLocaleString("es-ES")}
+                      </td>
+                      <td className="px-4 py-3 text-tl-ink">{ownerLabel(s.owner)}</td>
+                      <td className="px-4 py-3 text-right tabular-nums text-tl-muted">{s.lineCount}</td>
+                      <td className="px-4 py-3 text-right">
+                        <TablePriceCupCell cupCents={s.totalCents} compact />
+                      </td>
+                    </tr>
+                  ))
+                )}
+              </tbody>
+            </table>
+          </div>
+
+          {ownerModalOpen ? (
+            <>
+              <button
+                type="button"
+                className="fixed inset-0 z-50 bg-black/35"
+                onClick={() => setOwnerModalOpen(false)}
+                aria-label="Cerrar modal"
+              />
+              <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+                <div className="w-full max-w-[720px] rounded-2xl border border-tl-line bg-tl-canvas shadow-xl">
+                  <div className="flex items-start justify-between gap-3 border-b border-tl-line px-4 py-3">
+                    <div>
+                      <p className="text-sm font-semibold text-tl-ink">Registrar consumo</p>
+                      <p className="mt-0.5 text-xs text-tl-muted">Se descuenta stock y queda trazabilidad.</p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => setOwnerModalOpen(false)}
+                      className="rounded-lg px-2 py-1 text-xs font-semibold text-tl-muted hover:bg-tl-canvas-subtle"
+                    >
+                      Cerrar
+                    </button>
+                  </div>
+                  <div className="p-4 space-y-4">
+                    <div className="grid gap-3 sm:grid-cols-3">
+                      <label className="flex flex-col gap-1 text-xs font-semibold uppercase tracking-wider text-tl-muted">
+                        Dueño
+                        <select
+                          className="tl-input h-10 normal-case font-normal"
+                          value={ownerModalWho}
+                          onChange={(e) => setOwnerModalWho(e.target.value as "OSMAR" | "ALEX")}
+                          disabled={ownerModalBusy}
+                        >
+                          <option value="OSMAR">Osmar</option>
+                          <option value="ALEX">Álex</option>
+                        </select>
+                      </label>
+                      <label className="sm:col-span-2 flex flex-col gap-1 text-xs font-semibold uppercase tracking-wider text-tl-muted">
+                        Buscar producto
+                        <div className="flex gap-2">
+                          <input
+                            className="tl-input h-10 flex-1 normal-case font-normal"
+                            placeholder="SKU o nombre…"
+                            value={ownerModalQ}
+                            onChange={(e) => setOwnerModalQ(e.target.value)}
+                            disabled={ownerModalBusy}
+                          />
+                          <button
+                            type="button"
+                            className="tl-btn tl-btn-secondary !px-3 !py-2 text-xs"
+                            disabled={ownerModalBusy || !ownerModalQ.trim()}
+                            onClick={async () => {
+                              setOwnerModalMsg(null);
+                              const q = ownerModalQ.trim();
+                              if (!q) return;
+                              try {
+                                const res = await fetch(`/api/admin/search?q=${encodeURIComponent(q)}&limit=10`, {
+                                  credentials: "include",
+                                });
+                                const json = (await res.json()) as AdminSearchPayload;
+                                setOwnerModalHits((json.products ?? []).filter((p) => p.active && !p.deletedAt));
+                              } catch (e) {
+                                setOwnerModalHits([]);
+                                setOwnerModalMsg(e instanceof Error ? e.message : "Error de red al buscar productos.");
+                              }
+                            }}
+                          >
+                            Buscar
+                          </button>
+                        </div>
+                      </label>
+                    </div>
+
+                    {ownerModalMsg ? (
+                      <div className="rounded-xl border border-tl-warning/20 bg-tl-warning-subtle px-3 py-2 text-xs text-tl-warning">
+                        {ownerModalMsg}
+                      </div>
+                    ) : null}
+
+                    {ownerModalHits.length > 0 ? (
+                      <div className="rounded-xl border border-tl-line-subtle bg-tl-canvas-inset p-3">
+                        <p className="text-xs font-semibold uppercase tracking-wider text-tl-muted">Resultados</p>
+                        <div className="mt-2 grid gap-2 sm:grid-cols-2">
+                          {ownerModalHits.map((p) => (
+                            <button
+                              key={p.id}
+                              type="button"
+                              className="rounded-xl border border-tl-line bg-tl-canvas px-3 py-2 text-left hover:bg-tl-canvas-subtle"
+                              onClick={() => {
+                                setOwnerModalLines((prev) => {
+                                  const ix = prev.findIndex((x) => x.productId === p.id);
+                                  if (ix >= 0) {
+                                    const next = [...prev];
+                                    next[ix] = { ...next[ix]!, quantity: next[ix]!.quantity + 1 };
+                                    return next;
+                                  }
+                                  return [
+                                    ...prev,
+                                    {
+                                      productId: p.id,
+                                      sku: p.sku,
+                                      name: p.name,
+                                      unitPriceCents: p.priceCents,
+                                      stockQty: p.stockQty,
+                                      quantity: 1,
+                                    },
+                                  ];
+                                });
+                              }}
+                            >
+                              <p className="truncate text-sm font-semibold text-tl-ink">{p.name}</p>
+                              <p className="mt-0.5 text-xs text-tl-muted">
+                                SKU {p.sku} · stock {p.stockQty} · {formatCup(p.priceCents)}
+                              </p>
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                    ) : null}
+
+                    <div className="rounded-xl border border-tl-line-subtle bg-tl-canvas-inset p-3">
+                      <div className="flex items-center justify-between gap-2">
+                        <p className="text-sm font-semibold text-tl-ink">Líneas</p>
+                        <p className="text-xs text-tl-muted">Total: {formatCup(ownerModalLines.reduce((a, l) => a + l.quantity * l.unitPriceCents, 0))}</p>
+                      </div>
+                      {ownerModalLines.length === 0 ? (
+                        <p className="mt-2 text-sm text-tl-muted">Añade productos desde la búsqueda.</p>
+                      ) : (
+                        <div className="mt-3 space-y-2">
+                          {ownerModalLines.map((l) => (
+                            <div key={l.productId} className="flex flex-col gap-2 rounded-xl border border-tl-line bg-tl-canvas p-3 sm:flex-row sm:items-center sm:justify-between">
+                              <div className="min-w-0">
+                                <p className="truncate text-sm font-semibold text-tl-ink">{l.name}</p>
+                                <p className="text-xs text-tl-muted">
+                                  SKU {l.sku} · stock {l.stockQty} · {formatCup(l.unitPriceCents)} / ud
+                                </p>
+                              </div>
+                              <div className="flex items-center gap-2">
+                                <input
+                                  type="number"
+                                  min={1}
+                                  className="tl-input h-9 w-[100px]"
+                                  value={l.quantity}
+                                  onChange={(e) => {
+                                    const n = Math.max(1, Math.floor(Number(e.target.value) || 1));
+                                    setOwnerModalLines((prev) => prev.map((x) => (x.productId === l.productId ? { ...x, quantity: n } : x)));
+                                  }}
+                                  disabled={ownerModalBusy}
+                                />
+                                <button
+                                  type="button"
+                                  className="tl-btn tl-btn-secondary !px-3 !py-2 text-xs"
+                                  onClick={() => setOwnerModalLines((prev) => prev.filter((x) => x.productId !== l.productId))}
+                                  disabled={ownerModalBusy}
+                                >
+                                  Quitar
+                                </button>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                      <div className="mt-4 flex items-center justify-end gap-2">
+                        <button
+                          type="button"
+                          className="tl-btn tl-btn-secondary !px-3 !py-2 text-xs"
+                          onClick={() => setOwnerModalOpen(false)}
+                          disabled={ownerModalBusy}
+                        >
+                          Cancelar
+                        </button>
+                        <button
+                          type="button"
+                          className="tl-btn tl-btn-primary !px-3 !py-2 text-xs"
+                          disabled={ownerModalBusy || ownerModalLines.length === 0}
+                          onClick={async () => {
+                            setOwnerModalBusy(true);
+                            setOwnerModalMsg(null);
+                            try {
+                              const res = await fetch("/api/admin/owner-sales/create", {
+                                method: "POST",
+                                credentials: "include",
+                                headers: { "content-type": "application/json" },
+                                body: JSON.stringify({
+                                  owner: ownerModalWho,
+                                  lines: ownerModalLines.map((l) => ({ productId: l.productId, quantity: l.quantity })),
+                                }),
+                              });
+                              const json = (await res.json()) as any;
+                              if (!res.ok) {
+                                if (json?.error === "INSUFFICIENT_STOCK") {
+                                  setOwnerModalMsg("Stock insuficiente en uno o más productos. Revisa cantidades.");
+                                } else {
+                                  setOwnerModalMsg(json?.error ?? "No se pudo registrar el consumo.");
+                                }
+                                return;
+                              }
+                              setOwnerModalOpen(false);
+                              await loadOwnerSummary();
+                            } catch (e) {
+                              setOwnerModalMsg(e instanceof Error ? e.message : "Error de red al guardar.");
+                            } finally {
+                              setOwnerModalBusy(false);
+                            }
+                          }}
+                        >
+                          {ownerModalBusy ? "Guardando…" : "Guardar"}
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </>
+          ) : null}
         </section>
 
         <section className="space-y-4 border-t border-tl-line-subtle pt-10">
