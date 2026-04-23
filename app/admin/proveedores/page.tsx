@@ -58,6 +58,25 @@ type SuppliersResponse = {
   };
 };
 
+type SupplierPayableDetailResponse = {
+  meta: { dbAvailable: boolean; message?: string };
+  range?: { from: string; to: string };
+  supplierId?: string;
+  totals: { units: number; revenueCents: number; payableCents: number; linesMissingCost: number } | null;
+  rows: {
+    productId: string;
+    name: string;
+    sku: string;
+    units: number;
+    unitPriceCents: number;
+    costCents: number | null;
+    revenueCents: number;
+    payableCents: number;
+    linesMissingCost: number;
+  }[];
+  note?: string;
+};
+
 type MasterSupplier = {
   id: string;
   name: string;
@@ -121,6 +140,11 @@ export default function SuppliersPage() {
   const [accountsLoading, setAccountsLoading] = useState(false);
   const [accountsError, setAccountsError] = useState<string | null>(null);
   const [accountsQuery, setAccountsQuery] = useState("");
+
+  const [detailSupplierId, setDetailSupplierId] = useState("");
+  const [detailLoading, setDetailLoading] = useState(false);
+  const [detailErr, setDetailErr] = useState<string | null>(null);
+  const [detailData, setDetailData] = useState<SupplierPayableDetailResponse | null>(null);
 
   const loadMasters = useCallback(async () => {
     setMastersLoading(true);
@@ -284,6 +308,12 @@ export default function SuppliersPage() {
     return [...accountsFiltered].sort((a, b) => b.payableCents - a.payableCents);
   }, [accountsFiltered]);
 
+  const detailSupplier = useMemo(() => {
+    const id = detailSupplierId.trim();
+    if (!id) return null;
+    return masters.find((m) => m.id === id) ?? null;
+  }, [detailSupplierId, masters]);
+
   const accTopRevenue = useMemo(() => {
     const s = (accountsData?.suppliers ?? []).slice().sort((a, b) => b.revenueCents - a.revenueCents);
     return s[0] ?? null;
@@ -415,6 +445,37 @@ export default function SuppliersPage() {
       setDeleteBusyId(null);
     }
   }
+
+  const loadDetail = useCallback(async () => {
+    const supplierId = detailSupplierId.trim();
+    if (!supplierId) {
+      setDetailErr("Selecciona un proveedor.");
+      setDetailData(null);
+      return;
+    }
+
+    setDetailLoading(true);
+    setDetailErr(null);
+    try {
+      const params = new URLSearchParams();
+      params.set("supplierId", supplierId);
+      params.set("from", accountsFrom);
+      params.set("to", accountsTo);
+      const res = await fetch(`/api/admin/suppliers/payable-detail?${params.toString()}`, {
+        credentials: "include",
+      });
+      const json = (await res.json()) as SupplierPayableDetailResponse;
+      setDetailData(json);
+      if (!res.ok || json.meta?.dbAvailable === false) {
+        setDetailErr(json.meta?.message ?? "No se pudo calcular el detalle del proveedor.");
+      }
+    } catch (e) {
+      setDetailErr(e instanceof Error ? e.message : "Error de red.");
+      setDetailData(null);
+    } finally {
+      setDetailLoading(false);
+    }
+  }, [accountsFrom, accountsTo, detailSupplierId]);
 
   const masterColumns: Column<MasterSupplier>[] = useMemo(
     () => [
@@ -561,6 +622,86 @@ export default function SuppliersPage() {
         align: "right",
         width: "110px",
         filter: { kind: "numberRange" },
+        render: (row) => (
+          <span className="tabular-nums text-tl-muted">
+            {row.linesMissingCost > 0 ? row.linesMissingCost.toLocaleString("es-ES") : "—"}
+          </span>
+        ),
+      },
+    ],
+    [],
+  );
+
+  const detailColumns: Column<SupplierPayableDetailResponse["rows"][number]>[] = useMemo(
+    () => [
+      {
+        key: "name",
+        label: "Producto",
+        sortable: true,
+        render: (row) => (
+          <div className="min-w-0">
+            <p className="truncate font-medium text-tl-ink">{row.name}</p>
+            <p className="truncate text-xs text-tl-muted">{row.sku || "—"}</p>
+          </div>
+        ),
+      },
+      {
+        key: "units",
+        label: "Cant.",
+        sortable: true,
+        align: "right",
+        width: "110px",
+        render: (row) => <span className="tabular-nums text-tl-ink">{row.units.toLocaleString("es-ES")}</span>,
+      },
+      {
+        key: "unitPriceCents",
+        label: "Precio venta",
+        sortable: true,
+        align: "right",
+        width: "140px",
+        render: (row) => <TablePriceCupCell cupCents={row.unitPriceCents} compact />,
+      },
+      {
+        key: "costCents",
+        label: "Precio prov.",
+        sortable: true,
+        align: "right",
+        width: "140px",
+        render: (row) =>
+          row.costCents == null ? (
+            <span className="text-xs font-semibold text-tl-warning">Sin coste</span>
+          ) : (
+            <span className="text-amber-900 dark:text-amber-100/95">
+              <TablePriceCupCell cupCents={row.costCents} compact />
+            </span>
+          ),
+      },
+      {
+        key: "payableCents",
+        label: "A pagar",
+        sortable: true,
+        align: "right",
+        width: "140px",
+        render: (row) => (
+          <span className="font-medium text-amber-900 dark:text-amber-100/95">
+            <TablePriceCupCell cupCents={row.payableCents ?? 0} compact />
+          </span>
+        ),
+      },
+      {
+        key: "revenueCents",
+        label: "Ingreso",
+        sortable: true,
+        align: "right",
+        width: "140px",
+        render: (row) => <TablePriceCupCell cupCents={row.revenueCents} compact />,
+      },
+      {
+        key: "linesMissingCost",
+        label: "Sin coste",
+        sortable: true,
+        align: "right",
+        width: "110px",
         render: (row) => (
           <span className="tabular-nums text-tl-muted">
             {row.linesMissingCost > 0 ? row.linesMissingCost.toLocaleString("es-ES") : "—"}
@@ -929,6 +1070,11 @@ export default function SuppliersPage() {
                 {accountsError}
               </div>
             ) : null}
+            {detailErr ? (
+              <div className="rounded-xl border border-tl-warning/25 bg-tl-warning-subtle px-4 py-3 text-sm text-tl-warning">
+                {detailErr}
+              </div>
+            ) : null}
 
             <section className="rounded-2xl border border-amber-500/20 bg-gradient-to-br from-amber-500/[0.06] to-tl-canvas-inset p-4 sm:p-5">
               <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
@@ -969,6 +1115,114 @@ export default function SuppliersPage() {
                   </button>
                 </div>
               </div>
+            </section>
+
+            <section className="rounded-2xl border border-tl-line-subtle bg-tl-canvas-inset p-4 shadow-sm sm:p-5">
+              <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
+                <div>
+                  <h2 className="text-sm font-semibold text-tl-ink">Deuda a un proveedor (detalle)</h2>
+                  <p className="mt-1 text-xs text-tl-muted">
+                    Selecciona un proveedor y el rango. Verás los productos exactos vendidos y el total a pagar usando el
+                    precio proveedor.
+                  </p>
+                </div>
+                <div className="flex flex-wrap items-end gap-3">
+                  <label className="flex flex-col gap-1 text-xs font-medium text-tl-muted">
+                    Proveedor
+                    <select
+                      value={detailSupplierId}
+                      onChange={(e) => setDetailSupplierId(e.target.value)}
+                      className="tl-input h-10 min-w-[240px] px-3 text-sm"
+                    >
+                      <option value="">— Selecciona —</option>
+                      {masters
+                        .filter((m) => m.active)
+                        .map((m) => (
+                          <option key={m.id} value={m.id}>
+                            {m.name}
+                          </option>
+                        ))}
+                    </select>
+                  </label>
+                  <button
+                    type="button"
+                    onClick={() => void loadDetail()}
+                    className="tl-btn tl-btn-secondary inline-flex h-10 items-center gap-2 self-end"
+                    disabled={detailLoading}
+                  >
+                    <RefreshCw className={cn("h-4 w-4", detailLoading && "animate-spin")} aria-hidden />
+                    Calcular detalle
+                  </button>
+                </div>
+              </div>
+
+              <div className="mt-4 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+                <KpiCard
+                  label="Proveedor"
+                  value={detailSupplier ? detailSupplier.name : "—"}
+                  hint={detailSupplier ? `${detailSupplier.productCount} producto(s) vinculados` : "Selecciona uno"}
+                  variant="default"
+                  icon={<Truck className="h-4 w-4" />}
+                />
+                <KpiCard
+                  label="Unidades (rango)"
+                  value={detailLoading ? "…" : String(detailData?.totals?.units ?? 0)}
+                  hint="Suma de cantidades vendidas"
+                  variant="warning"
+                  icon={<Package className="h-4 w-4" />}
+                />
+                <KpiCard
+                  label="Ingresos venta (rango)"
+                  value={detailLoading ? "…" : <CupUsdMoney cents={detailData?.totals?.revenueCents ?? 0} compact />}
+                  hint="Solo para referencia"
+                  variant="info"
+                  icon={<TrendingUp className="h-4 w-4" />}
+                />
+                <KpiCard
+                  label="Total a pagar proveedor"
+                  value={detailLoading ? "…" : <CupUsdMoney cents={detailData?.totals?.payableCents ?? 0} compact />}
+                  hint={
+                    (detailData?.totals?.linesMissingCost ?? 0) > 0
+                      ? `${detailData?.totals?.linesMissingCost ?? 0} línea(s) sin coste no suman`
+                      : "coste × unidades"
+                  }
+                  variant="accent"
+                  icon={<Wallet className="h-4 w-4" />}
+                />
+              </div>
+            </section>
+
+            <section className="overflow-hidden rounded-2xl border border-tl-line-subtle bg-tl-canvas-inset shadow-sm">
+              <div className="flex items-center justify-between gap-3 border-b border-tl-line-subtle px-4 py-4 sm:px-6">
+                <div className="flex items-center gap-2">
+                  <FileText className="h-5 w-5 text-amber-600" aria-hidden />
+                  <div>
+                    <h2 className="text-base font-semibold text-tl-ink">Productos vendidos (proveedor)</h2>
+                    <p className="text-xs text-tl-muted">
+                      Agrupado por producto y precio de venta. «A pagar» usa el precio proveedor.
+                    </p>
+                  </div>
+                </div>
+              </div>
+              <div className="px-4 pb-4 sm:px-6">
+                <DataTable
+                  columns={detailColumns}
+                  data={detailData?.rows ?? []}
+                  keyExtractor={(r) => `${r.productId}:${r.unitPriceCents}:${r.costCents ?? "null"}`}
+                  searchable={false}
+                  emptyMessage={
+                    detailSupplierId ? "No hay ventas de ese proveedor en el rango (o faltan datos)." : "Selecciona un proveedor y calcula."
+                  }
+                  loading={detailLoading}
+                  skeletonRows={8}
+                  maxHeight="min(560px, 65vh)"
+                />
+              </div>
+              {detailData?.note ? (
+                <p className="border-t border-tl-line-subtle px-5 py-3 text-xs leading-relaxed text-tl-muted">
+                  {detailData.note}
+                </p>
+              ) : null}
             </section>
 
             <section className="overflow-hidden rounded-2xl border-2 border-amber-500/35 bg-gradient-to-br from-amber-500/10 via-tl-canvas-inset to-tl-canvas p-6 shadow-md sm:p-8">
