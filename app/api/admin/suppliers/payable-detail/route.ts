@@ -6,8 +6,8 @@ import { LOCAL_ADMIN_STORE_ID } from "@/lib/static-admin-auth";
 
 const querySchema = z.object({
   supplierId: z.string().min(1),
-  from: z.string().regex(/^\\d{4}-\\d{2}-\\d{2}$/),
-  to: z.string().regex(/^\\d{4}-\\d{2}-\\d{2}$/),
+  from: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+  to: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
 });
 
 function startOfDay(d: Date) {
