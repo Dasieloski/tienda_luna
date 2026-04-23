@@ -16,7 +16,14 @@ type DeletedSaleSnapshot = {
   soldBy: string | null;
   totalCents: number;
   completedAt: string;
-  lines: { productId: string; sku: string; name: string; quantity: number; unitPriceCents: number; subtotalCents: number }[];
+  lines: {
+    productId: string | null;
+    sku: string;
+    name: string;
+    quantity: number;
+    unitPriceCents: number;
+    subtotalCents: number;
+  }[];
 };
 
 function buildSearch(snapshot: DeletedSaleSnapshot) {
@@ -71,8 +78,8 @@ export async function POST(request: Request) {
           completedAt: s.completedAt.toISOString(),
           lines: s.lines.map((l) => ({
             productId: l.productId,
-            sku: l.product.sku,
-            name: l.product.name,
+            sku: (l as any).product?.sku ?? (l as any).productSku ?? "—",
+            name: (l as any).product?.name ?? (l as any).productName ?? "—",
             quantity: l.quantity,
             unitPriceCents: l.unitPriceCents,
             subtotalCents: l.subtotalCents,
@@ -81,6 +88,7 @@ export async function POST(request: Request) {
 
         // Restaurar stock (sin crear movimientos: la única evidencia debe ser Historial/AuditLog).
         for (const l of s.lines) {
+          if (!l.productId) continue;
           await tx.product.update({
             where: { id: l.productId },
             data: { stockQty: { increment: l.quantity } },
