@@ -21,9 +21,10 @@ async function hasStoreColumn(columnName: string): Promise<boolean> {
   return rows.length > 0;
 }
 
-function readUsdRateCupCookie(): number | null {
+async function readUsdRateCupCookie(): Promise<number | null> {
   try {
-    const v = cookies().get("tl-usdRateCup")?.value ?? null;
+    const jar = await cookies();
+    const v = jar.get("tl-usdRateCup")?.value ?? null;
     if (!v) return null;
     const n = Number(v);
     if (!Number.isFinite(n) || n <= 0) return null;
@@ -56,11 +57,12 @@ export async function GET(request: Request) {
       where: { id: session.storeId },
       select: { usdRateCup: true, dashboardLayout: true },
     });
+    const cookieRate = await readUsdRateCupCookie();
     const usdRateCup =
       store?.usdRateCup ??
       (typeof (store?.dashboardLayout as any)?.usdRateCup === "number"
         ? Number((store?.dashboardLayout as any).usdRateCup)
-        : readUsdRateCupCookie() ?? 250);
+        : cookieRate ?? 250);
     return NextResponse.json({ usdRateCup });
   } catch (e) {
     if (isMissingDbColumnError(e)) {
@@ -77,10 +79,11 @@ export async function GET(request: Request) {
           const layout = rows[0]?.dashboardLayout ?? null;
           const fromLayout =
             layout && typeof layout.usdRateCup === "number" ? Number(layout.usdRateCup) : null;
+          const cookieRate = await readUsdRateCupCookie();
           return NextResponse.json({
             usdRateCup:
               fromLayout ??
-              readUsdRateCupCookie() ??
+              cookieRate ??
               Number(process.env.NEXT_PUBLIC_USD_RATE_CUP ?? "250"),
             meta: {
               schemaLegacy: true as const,
@@ -91,8 +94,9 @@ export async function GET(request: Request) {
       } catch {
         // ignore y cae al fallback de env
       }
+      const cookieRate = await readUsdRateCupCookie();
       return NextResponse.json({
-        usdRateCup: readUsdRateCupCookie() ?? Number(process.env.NEXT_PUBLIC_USD_RATE_CUP ?? "250"),
+        usdRateCup: cookieRate ?? Number(process.env.NEXT_PUBLIC_USD_RATE_CUP ?? "250"),
         meta: {
           schemaLegacy: true as const,
           hint: "BD legacy: ejecuta prisma/sql/add_store_usd_rate.sql en Supabase o npx prisma db push para persistir en Store.usdRateCup.",
