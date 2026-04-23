@@ -99,7 +99,7 @@ export async function GET(request: Request) {
       totalsByOwner.set(String(r.owner), { totalCents: Number(r.total_cents ?? BigInt(0)), count: Number(r.cnt ?? BigInt(0)) });
     }
 
-    const sales = await (prisma as any).ownerSale.findMany({
+    const sales: OwnerSaleRow[] = await (prisma as any).ownerSale.findMany({
       where:
         mode === "day"
           ? {
@@ -119,7 +119,7 @@ export async function GET(request: Request) {
       select: { id: true, owner: true, totalCents: true, createdAt: true, lines: { select: { id: true } } },
     });
 
-    const inWindow: OwnerSaleRow[] = sales.filter((s) => {
+    const inWindow: OwnerSaleRow[] = sales.filter((s: OwnerSaleRow) => {
       // Aplicar mismo criterio de "día/mes local tienda" que el SQL.
       const local = new Date(s.createdAt.getTime() + offsetMinutes * 60_000);
       const y = local.getUTCFullYear();
