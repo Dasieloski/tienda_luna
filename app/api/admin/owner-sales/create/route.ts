@@ -86,6 +86,8 @@ export async function POST(request: Request) {
         totalCents += subtotalCents;
         return {
           productId: p.id,
+          productName: p.name,
+          productSku: p.sku,
           quantity: c.quantity,
           unitPriceCents,
           subtotalCents,
@@ -98,10 +100,12 @@ export async function POST(request: Request) {
         const before = p.stockQty;
         const after = before - c.quantity;
         await tx.product.update({ where: { id: p.id }, data: { stockQty: after } });
-        await tx.inventoryMovement.create({
+        await (tx.inventoryMovement as any).create({
           data: {
             storeId,
             productId: p.id,
+            productName: p.name,
+            productSku: p.sku,
             delta: -c.quantity,
             beforeQty: before,
             afterQty: after,

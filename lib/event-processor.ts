@@ -465,9 +465,13 @@ export async function processBatch(
 
           if (movementDrafts.length > 0) {
             await tx.inventoryMovement.createMany({
-              data: movementDrafts.map((m) => ({
+              data: movementDrafts.map((m) => {
+                const p = productById.get(m.productId);
+                return {
                 storeId: params.storeId,
                 productId: m.productId,
+                productName: p?.name ?? m.productId,
+                productSku: p?.sku ?? "—",
                 delta: m.delta,
                 beforeQty: m.beforeQty,
                 afterQty: m.afterQty,
@@ -475,7 +479,8 @@ export async function processBatch(
                 actorType: "DEVICE",
                 actorId: params.deviceId,
                 eventId: main.serverEventId,
-              })),
+                };
+              }),
             });
           }
 
@@ -492,12 +497,17 @@ export async function processBatch(
               lines: {
                 create: resolvedLines
                   .filter((l) => l.fulfilled > 0)
-                  .map((l) => ({
+                  .map((l) => {
+                    const p = productById.get(l.productId);
+                    return {
                     productId: l.productId,
+                    productName: p?.name ?? l.productId,
+                    productSku: p?.sku ?? "—",
                     quantity: l.fulfilled,
                     unitPriceCents: l.unitPriceCents,
                     subtotalCents: l.fulfilled * l.unitPriceCents,
-                  })),
+                    };
+                  }),
               },
             },
           });

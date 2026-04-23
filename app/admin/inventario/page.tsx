@@ -182,23 +182,25 @@ export default function InventoryPage() {
   async function deleteProduct(p: ProductRow) {
     if (
       !window.confirm(
-        `¿Archivar "${p.name}"?\n\nLas ventas e historial se conservan. Dejará de mostrarse en caja y el SKU se archivará para poder reutilizarlo.`,
+        `¿Eliminar DEFINITIVAMENTE "${p.name}"?\n\nSe borrará de la base de datos.\nEl historial se conservará por snapshot (ventas/movimientos), pero el producto ya no existirá en catálogo.\n\n¿Continuar?`,
       )
     ) {
       return;
     }
     setDeleteBusyId(p.id);
     try {
-      const res = await fetch(`/api/products/${encodeURIComponent(p.id)}`, {
-        method: "DELETE",
+      const res = await fetch(`/api/admin/products/hard-delete`, {
+        method: "POST",
         credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ productId: p.id }),
       });
       if (!res.ok) {
         const j = (await res.json().catch(() => ({}))) as { error?: string; hint?: string };
         window.alert(
           j.error === "DATABASE_SCHEMA_MISMATCH"
-            ? "Falta la columna de archivado en la base de datos. Ejecuta la migración (deletedAt en Product)."
-            : "No se pudo archivar el producto.",
+            ? "La BD no tiene las columnas necesarias para conservar historial por snapshot. Ejecuta migraciones o npx prisma db push."
+            : "No se pudo eliminar el producto.",
         );
         return;
       }

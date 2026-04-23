@@ -152,8 +152,8 @@ export async function GET(request: Request) {
         quantity: l.quantity,
         unitPriceCents: l.unitPriceCents,
         subtotalCents: l.subtotalCents,
-        productName: l.product.name,
-        sku: l.product.sku,
+        productName: (l as any).product?.name ?? (l as any).productName ?? "—",
+        sku: (l as any).product?.sku ?? (l as any).productSku ?? "—",
       })),
       __search: "",
     }));

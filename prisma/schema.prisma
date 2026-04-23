@@ -140,8 +140,11 @@ model InventoryMovement {
   id        String   @id @default(cuid())
   storeId   String
   store     Store    @relation(fields: [storeId], references: [id], onDelete: Cascade)
-  productId String
-  product   Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
+  productId String?
+  product   Product? @relation(fields: [productId], references: [id], onDelete: SetNull)
+  /// Snapshot para conservar historial si el producto se borra
+  productName String?
+  productSku  String?
 
   /// Diferencia aplicada al stock (positivo = entrada, negativo = salida)
   delta     Int
@@ -236,8 +239,11 @@ model SaleLine {
   id             String  @id @default(cuid())
   saleId         String
   sale           Sale    @relation(fields: [saleId], references: [id], onDelete: Cascade)
-  productId      String
-  product        Product @relation(fields: [productId], references: [id])
+  productId      String?
+  product        Product? @relation(fields: [productId], references: [id], onDelete: SetNull)
+  /// Snapshot para conservar historial si el producto se borra
+  productName    String?
+  productSku     String?
   quantity       Int
   unitPriceCents Int
   subtotalCents  Int
@@ -264,8 +270,11 @@ model OwnerSaleLine {
   id          String    @id @default(cuid())
   ownerSaleId String
   ownerSale   OwnerSale @relation(fields: [ownerSaleId], references: [id], onDelete: Cascade)
-  productId   String
-  product     Product   @relation(fields: [productId], references: [id])
+  productId   String?
+  product     Product?   @relation(fields: [productId], references: [id], onDelete: SetNull)
+  /// Snapshot para conservar historial si el producto se borra
+  productName String?
+  productSku  String?
   quantity    Int
   unitPriceCents Int
   subtotalCents  Int
