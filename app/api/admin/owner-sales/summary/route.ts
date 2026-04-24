@@ -19,12 +19,22 @@ const querySchema = z.object({
 
 type OwnerAggRow = { owner: "OSMAR" | "ALEX"; total_cents: bigint; cnt: bigint };
 
+type OwnerSaleLineRow = {
+  id: string;
+  productId: string | null;
+  productName: string | null;
+  productSku: string | null;
+  quantity: number;
+  unitPriceCents: number;
+  subtotalCents: number;
+};
+
 type OwnerSaleRow = {
   id: string;
   owner: "OSMAR" | "ALEX";
   totalCents: number;
   createdAt: Date;
-  lines: { id: string }[];
+  lines: OwnerSaleLineRow[];
 };
 
 export async function GET(request: Request) {
@@ -116,7 +126,24 @@ export async function GET(request: Request) {
             },
       orderBy: { createdAt: "desc" },
       take: mode === "day" ? 80 : 250,
-      select: { id: true, owner: true, totalCents: true, createdAt: true, lines: { select: { id: true } } },
+      select: {
+        id: true,
+        owner: true,
+        totalCents: true,
+        createdAt: true,
+        lines: {
+          orderBy: { id: "asc" },
+          select: {
+            id: true,
+            productId: true,
+            productName: true,
+            productSku: true,
+            quantity: true,
+            unitPriceCents: true,
+            subtotalCents: true,
+          },
+        },
+      },
     });
 
     const inWindow: OwnerSaleRow[] = sales.filter((s: OwnerSaleRow) => {
@@ -153,6 +180,15 @@ export async function GET(request: Request) {
         totalCents: s.totalCents,
         createdAt: s.createdAt.toISOString(),
         lineCount: s.lines.length,
+        lines: s.lines.map((l: OwnerSaleLineRow) => ({
+          id: l.id,
+          productId: l.productId,
+          productName: l.productName,
+          productSku: l.productSku,
+          quantity: l.quantity,
+          unitPriceCents: l.unitPriceCents,
+          subtotalCents: l.subtotalCents,
+        })),
       })),
     });
   } catch (err) {

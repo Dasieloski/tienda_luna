@@ -140,11 +140,28 @@ type MarginRangePayload = {
   error?: string;
 };
 
+type OwnerSaleLineDto = {
+  id: string;
+  productId: string | null;
+  productName: string | null;
+  productSku: string | null;
+  quantity: number;
+  unitPriceCents: number;
+  subtotalCents: number;
+};
+
 type OwnerSalesSummaryPayload = {
   meta: { dbAvailable: boolean; tzOffsetMinutes?: number; note?: string; message?: string };
   window: { mode: "day" | "month"; key: string } | null;
   totals: { OSMAR: number; ALEX: number; totalCents: number; count: number };
-  sales: { id: string; owner: "OSMAR" | "ALEX"; totalCents: number; createdAt: string; lineCount: number }[];
+  sales: {
+    id: string;
+    owner: "OSMAR" | "ALEX";
+    totalCents: number;
+    createdAt: string;
+    lineCount: number;
+    lines: OwnerSaleLineDto[];
+  }[];
 };
 
 type AdminSearchPayload = {
@@ -959,35 +976,76 @@ export default function EconomyPage() {
               </div>
 
               <div className="mt-3 overflow-x-auto tl-glass rounded-xl">
-                <table className="w-full min-w-[620px] text-left text-sm">
+                <table className="w-full min-w-[880px] text-left text-sm">
                   <thead className="border-b border-tl-line bg-tl-canvas-inset text-xs uppercase tracking-wide text-tl-muted">
                     <tr>
                       <th className="px-4 py-3">Fecha</th>
                       <th className="px-4 py-3">Dueño</th>
                       <th className="px-4 py-3 text-right">Líneas</th>
+                      <th className="px-4 py-3 min-w-[280px]">Productos</th>
                       <th className="px-4 py-3 text-right">Total (CUP)</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-tl-line-subtle">
                     {(ownerSummary?.sales ?? []).length === 0 ? (
                       <tr>
-                        <td colSpan={4} className="px-4 py-6 text-center text-sm text-tl-muted">
+                        <td colSpan={5} className="px-4 py-6 text-center text-sm text-tl-muted">
                           No hay consumos registrados en esta ventana.
                         </td>
                       </tr>
                     ) : (
-                      (ownerSummary?.sales ?? []).map((s) => (
-                        <tr key={s.id}>
-                          <td className="px-4 py-3 tabular-nums text-tl-ink">
-                            {new Date(s.createdAt).toLocaleString("es-ES")}
-                          </td>
-                          <td className="px-4 py-3 text-tl-ink">{ownerLabel(s.owner)}</td>
-                          <td className="px-4 py-3 text-right tabular-nums text-tl-muted">{s.lineCount}</td>
-                          <td className="px-4 py-3 text-right">
-                            <TablePriceCupCell cupCents={s.totalCents} compact />
-                          </td>
-                        </tr>
-                      ))
+                      (ownerSummary?.sales ?? []).map((s) => {
+                        const detailLines = s.lines ?? [];
+                        return (
+                          <tr key={s.id}>
+                            <td className="px-4 py-3 tabular-nums text-tl-ink align-top">
+                              {new Date(s.createdAt).toLocaleString("es-ES")}
+                            </td>
+                            <td className="px-4 py-3 text-tl-ink align-top">{ownerLabel(s.owner)}</td>
+                            <td className="px-4 py-3 text-right tabular-nums text-tl-muted align-top">{s.lineCount}</td>
+                            <td className="px-4 py-3 align-top text-tl-ink-secondary">
+                              {detailLines.length === 0 ? (
+                                <span className="text-xs text-tl-muted">Sin detalle de líneas en BD.</span>
+                              ) : (
+                                <details className="group max-w-md">
+                                  <summary className="cursor-pointer list-none text-xs font-semibold text-tl-accent hover:underline [&::-webkit-details-marker]:hidden">
+                                    Ver {detailLines.length} producto{detailLines.length === 1 ? "" : "s"}
+                                  </summary>
+                                  <ul className="mt-2 space-y-2 rounded-lg border border-tl-line-subtle bg-tl-canvas-inset p-3 text-xs">
+                                    {detailLines.map((l) => {
+                                      const name = l.productName?.trim() || "Sin nombre en registro";
+                                      const sku = l.productSku?.trim() || "—";
+                                      return (
+                                        <li
+                                          key={l.id}
+                                          className="border-b border-tl-line-subtle/60 pb-2 last:border-0 last:pb-0"
+                                        >
+                                          <div className="font-medium text-tl-ink">{name}</div>
+                                          <div className="mt-0.5 flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1">
+                                            <span className="font-mono text-tl-muted">SKU {sku}</span>
+                                            <span className="tabular-nums text-tl-muted">
+                                              {l.quantity} ud × {formatCup(l.unitPriceCents)}
+                                            </span>
+                                          </div>
+                                          <div className="mt-1 text-right tabular-nums text-tl-ink">
+                                            Subtotal: <TablePriceCupCell cupCents={l.subtotalCents} compact />
+                                          </div>
+                                          {!l.productName?.trim() && !l.productSku?.trim() && l.productId ? (
+                                            <div className="mt-1 font-mono text-[10px] text-tl-muted">id: {l.productId}</div>
+                                          ) : null}
+                                        </li>
+                                      );
+                                    })}
+                                  </ul>
+                                </details>
+                              )}
+                            </td>
+                            <td className="px-4 py-3 text-right align-top">
+                              <TablePriceCupCell cupCents={s.totalCents} compact />
+                            </td>
+                          </tr>
+                        );
+                      })
                     )}
                   </tbody>
                 </table>
