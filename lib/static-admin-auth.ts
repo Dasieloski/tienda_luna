@@ -3,3 +3,9 @@
  * No puede ser cadena vacía: el JWT lo rechazaría y el middleware te devolvería al login.
  */
 export const LOCAL_ADMIN_STORE_ID = "__local_sin_bd__";
+
+/**
+ * `sub` del JWT del admin estático (flujo histórico / documentación).
+ * Los `InventoryMovement.actorId` guardados con esa sesión muestran este valor.
+ */
+export const STATIC_ADMIN_JWT_SUB = "static-admin";

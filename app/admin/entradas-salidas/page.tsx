@@ -18,6 +18,10 @@ type MovementRow = {
   reason: string;
   actorType: "USER" | "DEVICE";
   actorId: string;
+  /** Correo (USER), etiqueta del terminal (DEVICE) o texto legible para admin legacy. */
+  actorLabel?: string;
+  /** Texto multilínea para tooltip (fecha, terminal si aplica, límites de lo guardado en BD). */
+  actorHover?: string;
   eventId: string | null;
 };
 
@@ -319,13 +323,17 @@ function InventoryMovementsPageClient() {
         key: "actorId",
         label: "Quién",
         sortable: true,
-        width: "180px",
+        width: "220px",
         filter: { kind: "text", placeholder: "Filtrar actorId…" },
-        render: (r) => (
-          <span className="truncate font-mono text-xs text-tl-muted" title={r.actorId}>
-            {r.actorId}
-          </span>
-        ),
+        render: (r) => {
+          const label = r.actorLabel?.trim() || r.actorId;
+          const title = r.actorHover?.trim() || (label !== r.actorId ? `${label}\n${r.actorId}` : r.actorId);
+          return (
+            <span className="max-w-[220px] cursor-help truncate text-xs text-tl-ink-secondary" title={title}>
+              {label}
+            </span>
+          );
+        },
       },
       {
         key: "productId",
