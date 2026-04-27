@@ -1441,26 +1441,71 @@ export default function SuppliersPage() {
                 <div className="flex items-center gap-2">
                   <FileText className="h-5 w-5 text-amber-600" aria-hidden />
                   <div>
-                    <h2 className="text-base font-semibold text-tl-ink">Productos vendidos (proveedor)</h2>
+                    <h2 className="text-base font-semibold text-tl-ink">Resumen del proveedor (rango)</h2>
                     <p className="text-xs text-tl-muted">
-                      Agrupado por producto y precio de venta. «A pagar» usa el precio proveedor.
+                      Aquí queda bien claro cuánto se debe a este proveedor en el periodo seleccionado. El detalle por producto queda debajo.
                     </p>
                   </div>
                 </div>
               </div>
               <div className="px-4 pb-4 sm:px-6">
-                <DataTable
-                  columns={detailColumns}
-                  data={detailData?.rows ?? []}
-                  keyExtractor={(r) => `${r.productId}:${r.unitPriceCents}:${r.costCents ?? "null"}`}
-                  searchable={false}
-                  emptyMessage={
-                    detailSupplierId ? "No hay ventas de ese proveedor en el rango (o faltan datos)." : "Selecciona un proveedor y calcula."
-                  }
-                  loading={detailLoading}
-                  skeletonRows={8}
-                  maxHeight="min(560px, 65vh)"
-                />
+                <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+                  <KpiCard
+                    label="Rango"
+                    value={accountsPeriodLabel}
+                    hint="Fechas seleccionadas"
+                    variant="default"
+                    icon={<Calendar className="h-4 w-4" />}
+                  />
+                  <KpiCard
+                    label="Ventas (PVP)"
+                    value={detailLoading ? "…" : <CupUsdMoney cents={detailData?.totals?.revenueCents ?? 0} compact />}
+                    hint="Ingresos por venta en el rango"
+                    variant="info"
+                    icon={<TrendingUp className="h-4 w-4" />}
+                  />
+                  <KpiCard
+                    label="A pagar en el rango"
+                    value={detailLoading ? "…" : <CupUsdMoney cents={detailData?.totals?.payableCents ?? 0} compact />}
+                    hint="Costo proveedor × unidades (rango)"
+                    variant="accent"
+                    icon={<Wallet className="h-4 w-4" />}
+                  />
+                  <KpiCard
+                    label="Saldo pendiente (acumulado)"
+                    value={
+                      debtLoading ? "…" : (
+                        <CupUsdMoney
+                          cents={(debtData?.suppliers ?? []).find((x) => x.supplierId === detailSupplierId)?.pendingCents ?? 0}
+                          compact
+                        />
+                      )
+                    }
+                    hint="Ventas a costo − pagos − retiros"
+                    variant="warning"
+                    icon={<Banknote className="h-4 w-4" />}
+                  />
+                </div>
+
+                <details className="mt-4 tl-glass rounded-xl">
+                  <summary className="cursor-pointer list-none px-4 py-3 text-sm font-semibold text-tl-accent hover:underline [&::-webkit-details-marker]:hidden">
+                    Ver detalle por producto (precio proveedor, cantidades y a pagar)
+                  </summary>
+                  <div className="px-4 pb-4">
+                    <DataTable
+                      columns={detailColumns}
+                      data={detailData?.rows ?? []}
+                      keyExtractor={(r) => `${r.productId}:${r.unitPriceCents}:${r.costCents ?? "null"}`}
+                      searchable={false}
+                      emptyMessage={
+                        detailSupplierId ? "No hay ventas de ese proveedor en el rango (o faltan datos)." : "Selecciona un proveedor y calcula."
+                      }
+                      loading={detailLoading}
+                      skeletonRows={8}
+                      maxHeight="min(560px, 65vh)"
+                    />
+                  </div>
+                </details>
               </div>
               {detailData?.note ? (
                 <p className="border-t border-tl-line-subtle px-5 py-3 text-xs leading-relaxed text-tl-muted">

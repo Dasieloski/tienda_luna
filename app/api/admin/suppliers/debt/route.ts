@@ -61,13 +61,13 @@ export async function GET(request: Request) {
   };
 
   // Pendiente (rolling) = ventas a costo - pagos - retiros a costo
-  // Nota: ventas a costo usan snapshot SaleLine.unitCostCents.
+  // Nota: ventas a costo usan snapshot SaleLine.unitCostCents y, si falta (ventas antiguas), Product.costCents.
   const rows = await prisma.$queryRaw<Row[]>`
     WITH sales AS (
       SELECT
         p."supplierId" AS supplier_id,
         COALESCE(su.name, p."supplierName", 'Sin proveedor') AS supplier_name,
-        COALESCE(SUM(CASE WHEN sl."unitCostCents" IS NULL THEN 0 ELSE sl."unitCostCents" * sl.quantity END),0)::bigint AS sales_cost_cents,
+        COALESCE(SUM(CASE WHEN COALESCE(sl."unitCostCents", p."costCents") IS NULL THEN 0 ELSE COALESCE(sl."unitCostCents", p."costCents") * sl.quantity END),0)::bigint AS sales_cost_cents,
         COALESCE(SUM(sl."subtotalCents"),0)::bigint AS sales_retail_cents
       FROM "Sale" s
       JOIN "SaleLine" sl ON sl."saleId" = s.id
@@ -106,7 +106,7 @@ export async function GET(request: Request) {
     balance AS (
       SELECT
         p."supplierId" AS supplier_id,
-        COALESCE(SUM(CASE WHEN sl."unitCostCents" IS NULL THEN 0 ELSE sl."unitCostCents" * sl.quantity END),0)::bigint
+        COALESCE(SUM(CASE WHEN COALESCE(sl."unitCostCents", p."costCents") IS NULL THEN 0 ELSE COALESCE(sl."unitCostCents", p."costCents") * sl.quantity END),0)::bigint
         - COALESCE((SELECT SUM(dp."amountCents") FROM "SupplierDebtPayment" dp WHERE dp."storeId"=${storeId} AND dp."supplierId"=p."supplierId"),0)::bigint
         - COALESCE((SELECT SUM(w."totalCostCents") FROM "SupplierWithdrawal" w WHERE w."storeId"=${storeId} AND w."supplierId"=p."supplierId"),0)::bigint
         AS balance_pending_cents

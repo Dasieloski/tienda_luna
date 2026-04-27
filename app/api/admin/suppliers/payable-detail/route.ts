@@ -73,7 +73,7 @@ export async function GET(request: Request) {
           p.name AS name,
           p.sku AS sku,
           sl."unitPriceCents" AS unit_price_cents,
-          sl."unitCostCents" AS cost_cents,
+          COALESCE(sl."unitCostCents", p."costCents") AS cost_cents,
           sl.quantity AS quantity,
           sl."subtotalCents" AS revenue_cents
         FROM "Sale" s
@@ -130,7 +130,7 @@ export async function GET(request: Request) {
       totals,
       rows: outRows,
       note:
-        "A pagar = costCents (precio proveedor) × unidades. costCents se toma de la ficha actual del producto; si falta, esa línea no suma.",
+        "A pagar = costo proveedor × unidades. Se usa el snapshot de coste en la venta (SaleLine.unitCostCents) y, si falta (ventas antiguas), se usa el coste actual del producto (Product.costCents).",
     });
   } catch (err) {
     console.error("[api/admin/suppliers/payable-detail]", err);
