@@ -73,7 +73,7 @@ export async function GET(request: Request) {
           p.name AS name,
           p.sku AS sku,
           sl."unitPriceCents" AS unit_price_cents,
-          p."costCents" AS cost_cents,
+          sl."unitCostCents" AS cost_cents,
           sl.quantity AS quantity,
           sl."subtotalCents" AS revenue_cents
         FROM "Sale" s

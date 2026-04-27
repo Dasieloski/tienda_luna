@@ -13,6 +13,7 @@ import {
   TrendingDown,
   TrendingUp,
   Users,
+  Wallet,
 } from "lucide-react";
 import { AdminShell } from "@/components/admin/admin-shell";
 import { KpiCard } from "@/components/admin/kpi-card";
@@ -133,6 +134,7 @@ type MarginRangePayload = {
     supplierCostCents: number;
     marginCents: number;
     marginPct: number | null;
+    grossPlusHalfProfitCents?: number;
     salesCount: number;
     linesWithCost: number;
     linesWithoutCost: number;
@@ -1630,6 +1632,19 @@ export default function EconomyPage() {
                   value={marginRange.totals.marginPct != null ? `${marginRange.totals.marginPct.toFixed(1)} %` : "—"}
                   hint={`${marginRange.totals.salesCount.toLocaleString("es-ES")} ventas en el periodo`}
                   icon={<ReceiptText className="h-5 w-5" aria-hidden />}
+                />
+                <KpiCard
+                  variant="accent"
+                  label="Bruto + 50% ganancia"
+                  value={
+                    marginRange.totals.grossPlusHalfProfitCents != null ? (
+                      <CupUsdMoney cents={marginRange.totals.grossPlusHalfProfitCents} />
+                    ) : (
+                      "—"
+                    )
+                  }
+                  hint="Bruto (con coste) + mitad de la ganancia"
+                  icon={<Wallet className="h-5 w-5" aria-hidden />}
                 />
               </div>
               <p className="text-xs text-tl-muted">

@@ -19,6 +19,7 @@ import {
   Settings,
   Store,
   Truck,
+  Users,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -40,6 +41,7 @@ const NAV_ITEMS = [
       { href: "/admin/productos", label: "Productos", icon: Boxes },
       { href: "/admin/analitica", label: "Analítica", icon: BarChart3 },
       { href: "/admin/economia", label: "Economía", icon: Landmark },
+      { href: "/admin/duenos", label: "Dueños", icon: Users },
       { href: "/admin/control-diario", label: "Control diario", icon: ClipboardList },
     ],
   },

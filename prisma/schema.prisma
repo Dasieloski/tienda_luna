@@ -49,6 +49,8 @@ model Store {
   sales      Sale[]
   ownerSales OwnerSale[]
   suppliers  Supplier[]
+  supplierDebtPayments SupplierDebtPayment[]
+  supplierWithdrawals SupplierWithdrawal[]
   inventoryMovements InventoryMovement[]
   metricSnapshots MetricSnapshot[]
   auditLogs AuditLog[]
@@ -67,9 +69,63 @@ model Supplier {
   updatedAt DateTime @updatedAt
 
   products Product[]
+  debtPayments SupplierDebtPayment[]
+  withdrawals SupplierWithdrawal[]
 
   @@unique([storeId, name])
   @@index([storeId, active])
+}
+
+model SupplierDebtPayment {
+  id         String   @id @default(cuid())
+  storeId    String
+  store      Store    @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  supplierId String
+  supplier   Supplier @relation(fields: [supplierId], references: [id], onDelete: Cascade)
+  amountCents Int
+  paidAt     DateTime @default(now())
+  method     String?
+  note       String?
+  actorUserId String
+
+  @@index([storeId, supplierId, paidAt])
+  @@index([storeId, paidAt])
+}
+
+model SupplierWithdrawal {
+  id          String   @id @default(cuid())
+  storeId     String
+  store       Store    @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  supplierId  String
+  supplier    Supplier @relation(fields: [supplierId], references: [id], onDelete: Cascade)
+  totalCostCents   Int @default(0)
+  totalRetailCents Int @default(0)
+  note        String?
+  actorUserId String
+  createdAt   DateTime @default(now())
+
+  lines SupplierWithdrawalLine[]
+
+  @@index([storeId, supplierId, createdAt])
+  @@index([storeId, createdAt])
+}
+
+model SupplierWithdrawalLine {
+  id            String   @id @default(cuid())
+  withdrawalId  String
+  withdrawal    SupplierWithdrawal @relation(fields: [withdrawalId], references: [id], onDelete: Cascade)
+  productId     String?
+  product       Product? @relation(fields: [productId], references: [id], onDelete: SetNull)
+  productName   String?
+  productSku    String?
+  quantity      Int
+  unitCostCents Int
+  unitRetailCents Int
+  subtotalCostCents Int
+  subtotalRetailCents Int
+
+  @@index([withdrawalId])
+  @@index([productId])
 }
 
 model User {
@@ -132,6 +188,7 @@ model Product {
   saleLines SaleLine[]
   ownerSaleLines OwnerSaleLine[]
   inventoryMovements InventoryMovement[]
+  supplierWithdrawalLines SupplierWithdrawalLine[]
 
   @@unique([storeId, sku])
   @@index([storeId])
@@ -251,6 +308,9 @@ model SaleLine {
   quantity       Int
   unitPriceCents Int
   subtotalCents  Int
+  /// Snapshot del costo proveedor en el momento de la venta (si existe).
+  unitCostCents  Int?
+  subtotalCostCents Int?
 
   @@index([productId])
 }

@@ -499,6 +499,7 @@ export async function processBatch(
                   .filter((l) => l.fulfilled > 0)
                   .map((l) => {
                     const p = productById.get(l.productId);
+                    const unitCostCents = p?.costCents ?? null;
                     return {
                     productId: l.productId,
                     productName: p?.name ?? l.productId,
@@ -506,6 +507,8 @@ export async function processBatch(
                     quantity: l.fulfilled,
                     unitPriceCents: l.unitPriceCents,
                     subtotalCents: l.fulfilled * l.unitPriceCents,
+                    unitCostCents,
+                    subtotalCostCents: unitCostCents == null ? null : l.fulfilled * unitCostCents,
                     };
                   }),
               },

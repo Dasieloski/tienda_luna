@@ -79,13 +79,12 @@ export async function GET(request: Request) {
     const [marginRows, saleCount] = await Promise.all([
       prisma.$queryRaw<MarginAggRow[]>`
         SELECT
-          COALESCE(SUM(CASE WHEN p."costCents" IS NOT NULL THEN sl."subtotalCents" ELSE 0 END), 0)::bigint AS revenue,
-          COALESCE(SUM(CASE WHEN p."costCents" IS NOT NULL THEN p."costCents" * sl."quantity" ELSE 0 END), 0)::bigint AS cost,
-          COALESCE(SUM(CASE WHEN p."costCents" IS NOT NULL THEN 1 ELSE 0 END), 0)::bigint AS lines_with_cost,
-          COALESCE(SUM(CASE WHEN p."costCents" IS NULL THEN 1 ELSE 0 END), 0)::bigint AS lines_without_cost
+          COALESCE(SUM(CASE WHEN sl."unitCostCents" IS NOT NULL THEN sl."subtotalCents" ELSE 0 END), 0)::bigint AS revenue,
+          COALESCE(SUM(CASE WHEN sl."unitCostCents" IS NOT NULL THEN sl."unitCostCents" * sl."quantity" ELSE 0 END), 0)::bigint AS cost,
+          COALESCE(SUM(CASE WHEN sl."unitCostCents" IS NOT NULL THEN 1 ELSE 0 END), 0)::bigint AS lines_with_cost,
+          COALESCE(SUM(CASE WHEN sl."unitCostCents" IS NULL THEN 1 ELSE 0 END), 0)::bigint AS lines_without_cost
         FROM "SaleLine" sl
         INNER JOIN "Sale" s ON s."id" = sl."saleId"
-        INNER JOIN "Product" p ON p."id" = sl."productId"
         WHERE s."storeId" = ${storeId}
           AND s."status" = 'COMPLETED'
           AND s."completedAt" >= ${fromStart}
@@ -105,6 +104,7 @@ export async function GET(request: Request) {
     const supplierCostCents = Number(row?.cost ?? 0);
     const marginCents = soldRevenueCents - supplierCostCents;
     const marginPct = soldRevenueCents > 0 ? (marginCents / soldRevenueCents) * 100 : null;
+    const grossPlusHalfProfitCents = Math.round(soldRevenueCents + 0.5 * marginCents);
 
     return NextResponse.json({
       meta: {
@@ -120,6 +120,7 @@ export async function GET(request: Request) {
         supplierCostCents,
         marginCents,
         marginPct,
+        grossPlusHalfProfitCents,
         salesCount: saleCount,
         linesWithCost: Number(row?.lines_with_cost ?? 0),
         linesWithoutCost: Number(row?.lines_without_cost ?? 0),

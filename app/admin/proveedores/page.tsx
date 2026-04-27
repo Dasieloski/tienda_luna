@@ -77,6 +77,31 @@ type SupplierPayableDetailResponse = {
   note?: string;
 };
 
+type SupplierDebtResponse = {
+  meta: { dbAvailable: boolean; message?: string };
+  range: { from: string; to: string } | null;
+  supplierId: string | null;
+  suppliers: {
+    supplierId: string | null;
+    supplierName: string;
+    window: {
+      salesCostCents: number;
+      salesRetailCents: number;
+      paymentsCents: number;
+      withdrawalsCostCents: number;
+      withdrawalsRetailCents: number;
+    };
+    pendingCents: number;
+  }[];
+};
+
+type SupplierPaymentsResponse = {
+  meta: { dbAvailable: boolean; message?: string };
+  range?: { from: string; to: string };
+  supplierId?: string;
+  payments: { id: string; amountCents: number; paidAt: string; method: string | null; note: string | null }[];
+};
+
 type MasterSupplier = {
   id: string;
   name: string;
@@ -139,6 +164,17 @@ export default function SuppliersPage() {
   const [accountsData, setAccountsData] = useState<SuppliersResponse | null>(null);
   const [accountsLoading, setAccountsLoading] = useState(false);
   const [accountsError, setAccountsError] = useState<string | null>(null);
+
+  const [debtData, setDebtData] = useState<SupplierDebtResponse | null>(null);
+  const [debtLoading, setDebtLoading] = useState(false);
+  const [debtError, setDebtError] = useState<string | null>(null);
+  const [payAmount, setPayAmount] = useState<string>("");
+  const [payMethod, setPayMethod] = useState<string>("Efectivo");
+  const [payNote, setPayNote] = useState<string>("");
+  const [payBusy, setPayBusy] = useState(false);
+  const [paymentsData, setPaymentsData] = useState<SupplierPaymentsResponse | null>(null);
+  const [paymentsLoading, setPaymentsLoading] = useState(false);
+  const [paymentsError, setPaymentsError] = useState<string | null>(null);
   const [accountsQuery, setAccountsQuery] = useState("");
 
   const [detailSupplierId, setDetailSupplierId] = useState("");
@@ -237,6 +273,43 @@ export default function SuppliersPage() {
       setAccountsLoading(false);
     }
   }, [accountsFrom, accountsTo]);
+
+  const loadDebt = useCallback(async () => {
+    setDebtLoading(true);
+    setDebtError(null);
+    try {
+      const params = new URLSearchParams({ from: accountsFrom, to: accountsTo });
+      if (detailSupplierId?.trim()) params.set("supplierId", detailSupplierId.trim());
+      const res = await fetch(`/api/admin/suppliers/debt?${params.toString()}`, { credentials: "include" });
+      const json = (await res.json()) as SupplierDebtResponse;
+      setDebtData(json);
+      if (!res.ok) setDebtError((json as any)?.error ?? "No se pudo cargar la deuda.");
+      else if (json.meta?.dbAvailable === false && json.meta?.message) setDebtError(json.meta.message);
+    } catch (e) {
+      setDebtError(e instanceof Error ? e.message : "Error de red al cargar la deuda.");
+      setDebtData(null);
+    } finally {
+      setDebtLoading(false);
+    }
+  }, [accountsFrom, accountsTo, detailSupplierId]);
+
+  const loadPayments = useCallback(async () => {
+    if (!detailSupplierId?.trim()) return;
+    setPaymentsLoading(true);
+    setPaymentsError(null);
+    try {
+      const params = new URLSearchParams({ supplierId: detailSupplierId.trim(), from: accountsFrom, to: accountsTo });
+      const res = await fetch(`/api/admin/suppliers/payments?${params.toString()}`, { credentials: "include" });
+      const json = (await res.json()) as SupplierPaymentsResponse;
+      setPaymentsData(json);
+      if (!res.ok) setPaymentsError((json as any)?.error ?? "No se pudo cargar el historial.");
+    } catch (e) {
+      setPaymentsError(e instanceof Error ? e.message : "Error de red al cargar pagos.");
+      setPaymentsData(null);
+    } finally {
+      setPaymentsLoading(false);
+    }
+  }, [accountsFrom, accountsTo, detailSupplierId]);
 
   useEffect(() => {
     if (pageTab !== "cuentas") return;
@@ -1076,6 +1149,16 @@ export default function SuppliersPage() {
                 {detailErr}
               </div>
             ) : null}
+            {debtError ? (
+              <div className="rounded-xl border border-tl-warning/25 bg-tl-warning-subtle px-4 py-3 text-sm text-tl-warning">
+                {debtError}
+              </div>
+            ) : null}
+            {paymentsError ? (
+              <div className="rounded-xl border border-tl-warning/25 bg-tl-warning-subtle px-4 py-3 text-sm text-tl-warning">
+                {paymentsError}
+              </div>
+            ) : null}
 
             <section className="rounded-2xl border border-amber-500/20 bg-gradient-to-br from-amber-500/[0.06] to-tl-canvas-inset p-4 sm:p-5">
               <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
@@ -1154,6 +1237,19 @@ export default function SuppliersPage() {
                     <RefreshCw className={cn("h-4 w-4", detailLoading && "animate-spin")} aria-hidden />
                     Calcular detalle
                   </button>
+                  <button
+                    type="button"
+                    onClick={async () => {
+                      await loadDebt();
+                      await loadPayments();
+                    }}
+                    className="tl-btn tl-btn-primary inline-flex h-10 items-center gap-2 self-end"
+                    disabled={debtLoading || paymentsLoading}
+                    title="Cargar saldo pendiente y pagos"
+                  >
+                    <Wallet className={cn("h-4 w-4", (debtLoading || paymentsLoading) && "animate-pulse")} aria-hidden />
+                    Saldo y pagos
+                  </button>
                 </div>
               </div>
 
@@ -1190,6 +1286,153 @@ export default function SuppliersPage() {
                   variant="accent"
                   icon={<Wallet className="h-4 w-4" />}
                 />
+                <KpiCard
+                  label="Saldo pendiente (acumulado)"
+                  value={
+                    debtLoading ? "…" : (
+                      <CupUsdMoney
+                        cents={(debtData?.suppliers ?? []).find((x) => x.supplierId === detailSupplierId)?.pendingCents ?? 0}
+                        compact
+                      />
+                    )
+                  }
+                  hint="Ventas a costo − pagos − retiros"
+                  variant="warning"
+                  icon={<Banknote className="h-4 w-4" />}
+                />
+              </div>
+            </section>
+
+            <section className="rounded-2xl border border-tl-line-subtle bg-tl-canvas-inset p-4 shadow-sm sm:p-5">
+              <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
+                <div>
+                  <h2 className="text-sm font-semibold text-tl-ink">Pagar deuda (parcial o total)</h2>
+                  <p className="mt-1 text-xs text-tl-muted">
+                    Registra un pago que descuenta el saldo pendiente del proveedor. Se guarda historial.
+                  </p>
+                </div>
+                <div className="flex flex-wrap items-end gap-3">
+                  <label className="flex flex-col gap-1 text-xs font-medium text-tl-muted">
+                    Monto (CUP)
+                    <input
+                      className="tl-input h-10 w-[160px] px-3 text-sm"
+                      value={payAmount}
+                      onChange={(e) => setPayAmount(e.target.value)}
+                      placeholder="1000"
+                      inputMode="decimal"
+                    />
+                  </label>
+                  <label className="flex flex-col gap-1 text-xs font-medium text-tl-muted">
+                    Método
+                    <input
+                      className="tl-input h-10 w-[160px] px-3 text-sm"
+                      value={payMethod}
+                      onChange={(e) => setPayMethod(e.target.value)}
+                      placeholder="Efectivo"
+                    />
+                  </label>
+                  <label className="flex flex-col gap-1 text-xs font-medium text-tl-muted">
+                    Nota
+                    <input
+                      className="tl-input h-10 w-[220px] px-3 text-sm"
+                      value={payNote}
+                      onChange={(e) => setPayNote(e.target.value)}
+                      placeholder="Opcional…"
+                    />
+                  </label>
+                  <button
+                    type="button"
+                    className="tl-btn tl-btn-primary inline-flex h-10 items-center gap-2 self-end"
+                    disabled={payBusy || !detailSupplierId || !payAmount.trim()}
+                    onClick={async () => {
+                      const supplierId = detailSupplierId?.trim();
+                      if (!supplierId) {
+                        setDebtError("Selecciona un proveedor.");
+                        return;
+                      }
+                      const n = Number(String(payAmount).replace(",", "."));
+                      if (!Number.isFinite(n) || n <= 0) {
+                        setDebtError("Monto inválido.");
+                        return;
+                      }
+                      const cents = Math.round(n * 100);
+                      setPayBusy(true);
+                      setDebtError(null);
+                      try {
+                        const res = await fetch("/api/admin/suppliers/pay", {
+                          method: "POST",
+                          credentials: "include",
+                          headers: { "content-type": "application/json", "x-tl-csrf": "1" },
+                          body: JSON.stringify({
+                            supplierId,
+                            amountCents: cents,
+                            method: payMethod.trim() || null,
+                            note: payNote.trim() || null,
+                          }),
+                        });
+                        const j = (await res.json().catch(() => ({}))) as any;
+                        if (!res.ok) {
+                          setDebtError(j?.error ?? "No se pudo registrar el pago.");
+                          return;
+                        }
+                        setPayAmount("");
+                        setPayNote("");
+                        await loadDebt();
+                        await loadPayments();
+                      } catch (e) {
+                        setDebtError(e instanceof Error ? e.message : "Error de red al pagar.");
+                      } finally {
+                        setPayBusy(false);
+                      }
+                    }}
+                  >
+                    {payBusy ? "Guardando…" : "Pagar"}
+                  </button>
+                </div>
+              </div>
+            </section>
+
+            <section className="overflow-hidden rounded-2xl border border-tl-line-subtle bg-tl-canvas-inset shadow-sm">
+              <div className="flex items-center justify-between gap-3 border-b border-tl-line-subtle px-4 py-4 sm:px-6">
+                <div className="flex items-center gap-2">
+                  <BookMarked className="h-5 w-5 text-amber-600" aria-hidden />
+                  <div>
+                    <h2 className="text-base font-semibold text-tl-ink">Historial de pagos</h2>
+                    <p className="text-xs text-tl-muted">Pagos registrados en el rango seleccionado.</p>
+                  </div>
+                </div>
+              </div>
+              <div className="px-4 pb-4 sm:px-6">
+                {(paymentsData?.payments ?? []).length === 0 ? (
+                  <div className="py-6 text-sm text-tl-muted">
+                    {detailSupplierId ? (paymentsLoading ? "Cargando…" : "No hay pagos en este rango.") : "Selecciona un proveedor."}
+                  </div>
+                ) : (
+                  <div className="overflow-x-auto">
+                    <table className="w-full min-w-[720px] text-left text-sm">
+                      <thead className="border-b border-tl-line bg-tl-canvas-inset text-xs uppercase tracking-wide text-tl-muted">
+                        <tr>
+                          <th className="px-4 py-3">Fecha</th>
+                          <th className="px-4 py-3 text-right">Monto</th>
+                          <th className="px-4 py-3">Método</th>
+                          <th className="px-4 py-3">Nota</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-tl-line-subtle">
+                        {(paymentsData?.payments ?? []).map((p) => (
+                          <tr key={p.id}>
+                            <td className="px-4 py-3 tabular-nums text-tl-muted">{new Date(p.paidAt).toLocaleString("es-ES")}</td>
+                            <td className="px-4 py-3 text-right tabular-nums text-tl-ink">
+                              <TablePriceCupCell cupCents={p.amountCents} compact />
+                            </td>
+                            <td className="px-4 py-3 text-tl-ink-secondary">{p.method ?? "—"}</td>
+                            <td className="px-4 py-3 text-tl-ink-secondary">{p.note ?? "—"}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
               </div>
             </section>
 

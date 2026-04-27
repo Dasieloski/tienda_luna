@@ -25,6 +25,8 @@ type BucketRow = {
   total_cents: bigint;
 };
 
+type DayMarginRow = { revenue: bigint; cost: bigint };
+
 export async function GET(request: Request) {
   const session = await getSessionFromRequest(request);
   if (!session || !requireAdmin(session)) {
@@ -106,6 +108,29 @@ export async function GET(request: Request) {
         `,
     );
 
+    const marginRows = await cacheGetOrSet(
+      `economy-summary-margin:${session.storeId}:${dayYmd}:tz${offsetMinutes}:v1`,
+      30_000,
+      () =>
+        prisma.$queryRaw<DayMarginRow[]>`
+          WITH day_sales AS (
+            SELECT s.id
+            FROM "Sale" s
+            WHERE s."storeId" = ${session.storeId}
+              AND s."status" = 'COMPLETED'
+              AND to_char(
+                date_trunc('day', (s."completedAt" + (${offsetInterval}::interval))),
+                'YYYY-MM-DD'
+              ) = ${dayYmd}
+          )
+          SELECT
+            COALESCE(SUM(CASE WHEN sl."unitCostCents" IS NOT NULL THEN sl."subtotalCents" ELSE 0 END), 0)::bigint AS revenue,
+            COALESCE(SUM(CASE WHEN sl."unitCostCents" IS NOT NULL THEN sl."unitCostCents" * sl.quantity ELSE 0 END), 0)::bigint AS cost
+          FROM "SaleLine" sl
+          INNER JOIN day_sales ds ON ds.id = sl."saleId"
+        `,
+    );
+
     const buckets: EconomyBucket[] = rows.map((r) => ({
       method: r.method ?? "desconocido",
       ventas: Number(r.ventas ?? BigInt(0)),
@@ -130,6 +155,12 @@ export async function GET(request: Request) {
     const totalCents = buckets.reduce((acc, b) => acc + b.totalCents, 0);
     const ventas = buckets.reduce((acc, b) => acc + b.ventas, 0);
 
+    const mr = marginRows[0];
+    const soldRevenueWithCostCents = Number(mr?.revenue ?? BigInt(0));
+    const supplierCostCents = Number(mr?.cost ?? BigInt(0));
+    const marginCents = soldRevenueWithCostCents - supplierCostCents;
+    const grossPlusHalfProfitCents = Math.round(soldRevenueWithCostCents + 0.5 * marginCents);
+
     return NextResponse.json({
       meta: {
         dbAvailable: true as const,
@@ -145,6 +176,10 @@ export async function GET(request: Request) {
         efectivoCents,
         transferenciaCents,
         usdCents,
+        soldRevenueWithCostCents,
+        supplierCostCents,
+        marginCents,
+        grossPlusHalfProfitCents,
       },
       buckets,
     });

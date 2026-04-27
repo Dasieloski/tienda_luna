@@ -122,10 +122,10 @@ export async function GET(request: Request) {
             p.id AS product_id,
             p.name,
             p.sku,
-            p."costCents" AS cost_cents,
             sl.quantity,
             sl."unitPriceCents" AS unit_price_cents,
-            sl."subtotalCents" AS revenue_cents
+            sl."subtotalCents" AS revenue_cents,
+            sl."unitCostCents" AS cost_cents
           FROM "Sale" s
           JOIN "SaleLine" sl ON sl."saleId" = s.id
           JOIN "Product" p ON p.id = sl."productId"
