@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
-import { getSessionFromRequest, requireAdmin } from "@/lib/auth";
+import { requireAdminRequest } from "@/lib/admin-auth";
 import { prisma } from "@/lib/db";
 import { LOCAL_ADMIN_STORE_ID } from "@/lib/static-admin-auth";
 
@@ -14,12 +14,10 @@ const patchSchema = z.object({
 type RouteCtx = { params: Promise<{ id: string }> };
 
 export async function PATCH(request: Request, ctx: RouteCtx) {
-  const session = await getSessionFromRequest(request);
-  if (!session || !requireAdmin(session)) {
-    return NextResponse.json({ error: "FORBIDDEN" }, { status: 403 });
-  }
+  const guard = await requireAdminRequest(request, { csrf: true });
+  if (!guard.ok) return guard.res;
 
-  if (session.storeId === LOCAL_ADMIN_STORE_ID) {
+  if (guard.session.storeId === LOCAL_ADMIN_STORE_ID) {
     return NextResponse.json({ error: "DB_NOT_AVAILABLE" }, { status: 400 });
   }
 
@@ -35,7 +33,7 @@ export async function PATCH(request: Request, ctx: RouteCtx) {
   }
 
   const existing = await prisma.supplier.findFirst({
-    where: { id, storeId: session.storeId },
+    where: { id, storeId: guard.session.storeId },
   });
   if (!existing) {
     return NextResponse.json({ error: "NOT_FOUND" }, { status: 404 });
@@ -61,12 +59,12 @@ export async function PATCH(request: Request, ctx: RouteCtx) {
 
     if (name !== undefined) {
       await prisma.product.updateMany({
-        where: { storeId: session.storeId, supplierId: id },
+        where: { storeId: guard.session.storeId, supplierId: id },
         data: { supplierName: s.name },
       });
     }
 
-    const count = await prisma.product.count({ where: { supplierId: id } });
+    const count = await prisma.product.count({ where: { storeId: guard.session.storeId, supplierId: id } });
     return NextResponse.json({
       supplier: {
         id: s.id,
@@ -85,12 +83,10 @@ export async function PATCH(request: Request, ctx: RouteCtx) {
 }
 
 export async function DELETE(request: Request, ctx: RouteCtx) {
-  const session = await getSessionFromRequest(request);
-  if (!session || !requireAdmin(session)) {
-    return NextResponse.json({ error: "FORBIDDEN" }, { status: 403 });
-  }
+  const guard = await requireAdminRequest(request, { csrf: true });
+  if (!guard.ok) return guard.res;
 
-  if (session.storeId === LOCAL_ADMIN_STORE_ID) {
+  if (guard.session.storeId === LOCAL_ADMIN_STORE_ID) {
     return NextResponse.json({ error: "DB_NOT_AVAILABLE" }, { status: 400 });
   }
 
@@ -100,7 +96,7 @@ export async function DELETE(request: Request, ctx: RouteCtx) {
   }
 
   const existing = await prisma.supplier.findFirst({
-    where: { id, storeId: session.storeId },
+    where: { id, storeId: guard.session.storeId },
     include: { _count: { select: { products: true } } },
   });
   if (!existing) {

@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
-import { getSessionFromRequest, requireAdmin } from "@/lib/auth";
+import { requireAdminRequest } from "@/lib/admin-auth";
 import { prisma } from "@/lib/db";
 import { LOCAL_ADMIN_STORE_ID } from "@/lib/static-admin-auth";
 
@@ -11,12 +11,10 @@ const createSchema = z.object({
 });
 
 export async function GET(request: Request) {
-  const session = await getSessionFromRequest(request);
-  if (!session || !requireAdmin(session)) {
-    return NextResponse.json({ error: "FORBIDDEN" }, { status: 403 });
-  }
+  const guard = await requireAdminRequest(request);
+  if (!guard.ok) return guard.res;
 
-  if (session.storeId === LOCAL_ADMIN_STORE_ID) {
+  if (guard.session.storeId === LOCAL_ADMIN_STORE_ID) {
     return NextResponse.json({ suppliers: [], meta: { dbAvailable: false } });
   }
 
@@ -28,7 +26,7 @@ export async function GET(request: Request) {
   try {
     const suppliers = await prisma.supplier.findMany({
       where: {
-        storeId: session.storeId,
+        storeId: guard.session.storeId,
         ...(includeInactive ? {} : { active: true }),
       },
       orderBy: [{ active: "desc" }, { name: "asc" }],
@@ -73,12 +71,10 @@ export async function GET(request: Request) {
 }
 
 export async function POST(request: Request) {
-  const session = await getSessionFromRequest(request);
-  if (!session || !requireAdmin(session)) {
-    return NextResponse.json({ error: "FORBIDDEN" }, { status: 403 });
-  }
+  const guard = await requireAdminRequest(request, { csrf: true });
+  if (!guard.ok) return guard.res;
 
-  if (session.storeId === LOCAL_ADMIN_STORE_ID) {
+  if (guard.session.storeId === LOCAL_ADMIN_STORE_ID) {
     return NextResponse.json({ error: "DB_NOT_AVAILABLE" }, { status: 400 });
   }
 
@@ -95,7 +91,7 @@ export async function POST(request: Request) {
   try {
     const s = await prisma.supplier.create({
       data: {
-        storeId: session.storeId,
+        storeId: guard.session.storeId,
         name,
         phone,
         notes,

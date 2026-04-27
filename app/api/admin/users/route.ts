@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { hash } from "bcryptjs";
-import { getSessionFromRequest, requireAdmin } from "@/lib/auth";
+import { requireAdminRequest } from "@/lib/admin-auth";
 import { prisma } from "@/lib/db";
 
 const createSchema = z.object({
@@ -11,13 +11,11 @@ const createSchema = z.object({
 });
 
 export async function GET(request: Request) {
-  const session = await getSessionFromRequest(request);
-  if (!session || !requireAdmin(session)) {
-    return NextResponse.json({ error: "FORBIDDEN" }, { status: 403 });
-  }
+  const guard = await requireAdminRequest(request);
+  if (!guard.ok) return guard.res;
 
   const users = await prisma.user.findMany({
-    where: { storeId: session.storeId },
+    where: { storeId: guard.session.storeId },
     orderBy: { createdAt: "desc" },
     select: { id: true, email: true, role: true, createdAt: true },
   });
@@ -32,10 +30,8 @@ export async function GET(request: Request) {
 }
 
 export async function POST(request: Request) {
-  const session = await getSessionFromRequest(request);
-  if (!session || !requireAdmin(session)) {
-    return NextResponse.json({ error: "FORBIDDEN" }, { status: 403 });
-  }
+  const guard = await requireAdminRequest(request, { csrf: true });
+  if (!guard.ok) return guard.res;
 
   const json = await request.json().catch(() => null);
   const parsed = createSchema.safeParse(json);
@@ -47,7 +43,7 @@ export async function POST(request: Request) {
   try {
     const created = await prisma.user.create({
       data: {
-        storeId: session.storeId,
+        storeId: guard.session.storeId,
         email: parsed.data.email.toLowerCase(),
         passwordHash,
         role: parsed.data.role,

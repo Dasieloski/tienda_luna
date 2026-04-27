@@ -80,6 +80,10 @@ model User {
   storeId      String
   store        Store    @relation(fields: [storeId], references: [id], onDelete: Cascade)
   createdAt    DateTime @default(now())
+  /// 2FA TOTP (panel admin). Se guarda el secreto cifrado.
+  totpEnabled  Boolean  @default(false)
+  totpSecret   String?
+  totpVerifiedAt DateTime?
 
   @@index([storeId])
 }
@@ -257,13 +261,20 @@ model OwnerSale {
   storeId   String
   store     Store     @relation(fields: [storeId], references: [id], onDelete: Cascade)
   owner     OwnerName
+  /// Deuda calculada a precio de costo proveedor (snapshot en líneas).
   totalCents Int      @default(0)
+  status    OwnerSaleStatus @default(PENDING_PAYMENT)
   createdAt DateTime  @default(now())
+  paidAt    DateTime?
+  /// Venta normal creada al pagar (para cuadre/analítica).
+  paidSaleId String?
 
   lines OwnerSaleLine[]
 
   @@index([storeId, createdAt])
   @@index([storeId, owner, createdAt])
+  @@index([storeId, status, createdAt])
+  @@index([storeId, paidAt])
 }
 
 model OwnerSaleLine {
@@ -276,11 +287,17 @@ model OwnerSaleLine {
   productName String?
   productSku  String?
   quantity    Int
-  unitPriceCents Int
+  /// Snapshot de costo proveedor en el momento del consumo.
+  unitCostCents Int      @default(0)
   subtotalCents  Int
 
   @@index([ownerSaleId])
   @@index([productId])
+}
+
+enum OwnerSaleStatus {
+  PENDING_PAYMENT
+  PAID
 }
 
 /// Snapshots diarios agregados (para analítica histórica rápida).

@@ -18,6 +18,7 @@ const querySchema = z.object({
 });
 
 type OwnerAggRow = { owner: "OSMAR" | "ALEX"; total_cents: bigint; cnt: bigint };
+type StatusAggRow = { status: "PENDING_PAYMENT" | "PAID"; total_cents: bigint; cnt: bigint };
 
 type OwnerSaleLineRow = {
   id: string;
@@ -25,7 +26,7 @@ type OwnerSaleLineRow = {
   productName: string | null;
   productSku: string | null;
   quantity: number;
-  unitPriceCents: number;
+  unitCostCents: number;
   subtotalCents: number;
 };
 
@@ -34,6 +35,9 @@ type OwnerSaleRow = {
   owner: "OSMAR" | "ALEX";
   totalCents: number;
   createdAt: Date;
+  status: "PENDING_PAYMENT" | "PAID";
+  paidAt: Date | null;
+  paidSaleId: string | null;
   lines: OwnerSaleLineRow[];
 };
 
@@ -95,6 +99,7 @@ export async function GET(request: Request) {
         COUNT(*)::bigint AS cnt
       FROM "OwnerSale" os
       WHERE os."storeId" = ${storeId}
+        AND os."status" = 'PENDING_PAYMENT'
         AND (
           CASE
             WHEN ${mode} = 'day' THEN to_char(date_trunc('day', (os."createdAt" + (${offsetInterval}::interval))), 'YYYY-MM-DD') = ${key}
@@ -104,9 +109,45 @@ export async function GET(request: Request) {
       GROUP BY 1
     `;
 
+    const statusAggWindow = await prisma.$queryRaw<StatusAggRow[]>`
+      SELECT
+        os.status::text AS status,
+        COALESCE(SUM(os."totalCents"), 0)::bigint AS total_cents,
+        COUNT(*)::bigint AS cnt
+      FROM "OwnerSale" os
+      WHERE os."storeId" = ${storeId}
+        AND (
+          CASE
+            WHEN ${mode} = 'day' THEN to_char(date_trunc('day', (os."createdAt" + (${offsetInterval}::interval))), 'YYYY-MM-DD') = ${key}
+            ELSE to_char(date_trunc('month', (os."createdAt" + (${offsetInterval}::interval))), 'YYYY-MM') = ${key}
+          END
+        )
+      GROUP BY 1
+    `;
+
+    const statusAggAll = await prisma.$queryRaw<StatusAggRow[]>`
+      SELECT
+        os.status::text AS status,
+        COALESCE(SUM(os."totalCents"), 0)::bigint AS total_cents,
+        COUNT(*)::bigint AS cnt
+      FROM "OwnerSale" os
+      WHERE os."storeId" = ${storeId}
+      GROUP BY 1
+    `;
+
     const totalsByOwner = new Map<string, { totalCents: number; count: number }>();
     for (const r of ownerAgg) {
       totalsByOwner.set(String(r.owner), { totalCents: Number(r.total_cents ?? BigInt(0)), count: Number(r.cnt ?? BigInt(0)) });
+    }
+
+    const windowByStatus = new Map<string, { totalCents: number; count: number }>();
+    for (const r of statusAggWindow) {
+      windowByStatus.set(String(r.status), { totalCents: Number(r.total_cents ?? BigInt(0)), count: Number(r.cnt ?? BigInt(0)) });
+    }
+
+    const allByStatus = new Map<string, { totalCents: number; count: number }>();
+    for (const r of statusAggAll) {
+      allByStatus.set(String(r.status), { totalCents: Number(r.total_cents ?? BigInt(0)), count: Number(r.cnt ?? BigInt(0)) });
     }
 
     const sales: OwnerSaleRow[] = await (prisma as any).ownerSale.findMany({
@@ -130,6 +171,9 @@ export async function GET(request: Request) {
         id: true,
         owner: true,
         totalCents: true,
+        status: true,
+        paidAt: true,
+        paidSaleId: true,
         createdAt: true,
         lines: {
           orderBy: { id: "asc" },
@@ -139,7 +183,7 @@ export async function GET(request: Request) {
             productName: true,
             productSku: true,
             quantity: true,
-            unitPriceCents: true,
+            unitCostCents: true,
             subtotalCents: true,
           },
         },
@@ -165,7 +209,7 @@ export async function GET(request: Request) {
       meta: {
         dbAvailable: true as const,
         tzOffsetMinutes: offsetMinutes,
-        note: "Este apartado descuenta stock pero NO se incluye en ingresos/ganancia. Ventana calculada en ‘hora local tienda’ (TL_TZ_OFFSET_MINUTES).",
+        note: "Deudas de dueños: descuenta stock al crear. Mientras está PENDIENTE no cuenta en ingresos/ganancia/cuadre. Al pagar, se crea una Sale normal a costo (sin tocar stock). Ventana calculada en ‘hora local tienda’ (TL_TZ_OFFSET_MINUTES).",
       },
       window: { mode, key },
       totals: {
@@ -174,11 +218,28 @@ export async function GET(request: Request) {
         totalCents: osmar + alex,
         count,
       },
+      ledger: {
+        window: {
+          pendingCents: windowByStatus.get("PENDING_PAYMENT")?.totalCents ?? 0,
+          pendingCount: windowByStatus.get("PENDING_PAYMENT")?.count ?? 0,
+          paidCents: windowByStatus.get("PAID")?.totalCents ?? 0,
+          paidCount: windowByStatus.get("PAID")?.count ?? 0,
+        },
+        all: {
+          pendingCents: allByStatus.get("PENDING_PAYMENT")?.totalCents ?? 0,
+          pendingCount: allByStatus.get("PENDING_PAYMENT")?.count ?? 0,
+          paidCents: allByStatus.get("PAID")?.totalCents ?? 0,
+          paidCount: allByStatus.get("PAID")?.count ?? 0,
+        },
+      },
       sales: inWindow.map((s) => ({
         id: s.id,
         owner: s.owner,
+        status: s.status,
         totalCents: s.totalCents,
         createdAt: s.createdAt.toISOString(),
+        paidAt: s.paidAt ? s.paidAt.toISOString() : null,
+        paidSaleId: s.paidSaleId ?? null,
         lineCount: s.lines.length,
         lines: s.lines.map((l: OwnerSaleLineRow) => ({
           id: l.id,
@@ -186,7 +247,7 @@ export async function GET(request: Request) {
           productName: l.productName,
           productSku: l.productSku,
           quantity: l.quantity,
-          unitPriceCents: l.unitPriceCents,
+          unitCostCents: l.unitCostCents,
           subtotalCents: l.subtotalCents,
         })),
       })),

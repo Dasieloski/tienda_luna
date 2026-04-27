@@ -8,6 +8,7 @@ import { signUserSession } from "@/lib/jwt";
 const bodySchema = z.object({
   email: z.string().email(),
   password: z.string().min(1),
+  totpCode: z.string().trim().min(6).max(10).optional(),
 });
 
 type RateLimitState = { count: number; firstAt: number; blockedUntil: number };
@@ -62,7 +63,7 @@ export async function POST(request: Request) {
     // Usuarios reales en BD
     const user = await prisma.user.findUnique({
       where: { email: emailNorm },
-      select: { id: true, passwordHash: true, role: true, storeId: true },
+      select: { id: true, passwordHash: true, role: true, storeId: true, totpEnabled: true, totpSecret: true },
     });
     if (!user) {
       return NextResponse.json({ error: "INVALID_CREDENTIALS" }, { status: 401 });
@@ -72,10 +73,31 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "INVALID_CREDENTIALS" }, { status: 401 });
     }
 
+    // 2FA (TOTP) si está habilitado para este usuario.
+    if (user.totpEnabled) {
+      const code = parsed.data.totpCode?.trim() || "";
+      if (!code) {
+        return NextResponse.json({ error: "TOTP_REQUIRED" }, { status: 401 });
+      }
+      if (!user.totpSecret) {
+        return NextResponse.json({ error: "TOTP_MISCONFIGURED" }, { status: 409 });
+      }
+      const { verifyTotpCode } = await import("@/lib/totp");
+      const totpOk = verifyTotpCode(user.totpSecret, code);
+      if (!totpOk) {
+        return NextResponse.json({ error: "INVALID_TOTP" }, { status: 401 });
+      }
+    }
+
     // Éxito: limpia contador para este par (ip+email)
     store.delete(key);
 
-    const token = await signUserSession(user.id, user.storeId, user.role);
+    const nowMs = Date.now();
+    const token = await signUserSession(user.id, user.storeId, user.role, {
+      mfaRequired: Boolean(user.totpEnabled),
+      mfa: user.totpEnabled ? true : undefined,
+      mfaAt: user.totpEnabled ? nowMs : undefined,
+    });
     const res = NextResponse.json({
       token,
       role: user.role,

@@ -192,7 +192,7 @@ export default function InventoryPage() {
       const res = await fetch(`/api/admin/products/hard-delete`, {
         method: "POST",
         credentials: "include",
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json", "x-tl-csrf": "1" },
         body: JSON.stringify({ productId: p.id }),
       });
       if (!res.ok) {
@@ -216,7 +216,7 @@ export default function InventoryPage() {
       const res = await fetch(`/api/products/${encodeURIComponent(id)}`, {
         method: "PATCH",
         credentials: "include",
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json", "x-tl-csrf": "1" },
         body: JSON.stringify({ restore: true }),
       });
       if (!res.ok) {
@@ -235,7 +235,7 @@ export default function InventoryPage() {
       const res = await fetch(`/api/products/${encodeURIComponent(id)}`, {
         method: "PATCH",
         credentials: "include",
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json", "x-tl-csrf": "1" },
         body: JSON.stringify({ active: true }),
       });
       if (!res.ok) {

@@ -4,6 +4,7 @@ import type { Prisma } from "@prisma/client";
 import { getSessionFromRequest, requireAdmin } from "@/lib/auth";
 import { prisma } from "@/lib/db";
 import { LOCAL_ADMIN_STORE_ID, STATIC_ADMIN_JWT_SUB } from "@/lib/static-admin-auth";
+import { auditRequestMeta } from "@/lib/audit-meta";
 
 const querySchema = z.object({
   page: z.coerce.number().int().min(1).default(1),
@@ -252,7 +253,8 @@ export async function GET(request: Request) {
         const mail = emailByUserId.get(actorId);
         if (mail) return mail;
         if (actorId === STATIC_ADMIN_JWT_SUB) {
-          return staticAdminEmail ?? "Administrador (sesión legacy)";
+          // No mostrar un "email" como si fuera un usuario real: esto es un marcador legacy.
+          return staticAdminEmail ? `${staticAdminEmail} (legacy)` : "Administrador (legacy)";
         }
         return actorId;
       }
@@ -304,6 +306,7 @@ export async function GET(request: Request) {
             event: eventPayload,
             eventDeviceLabel: eventDevLabel,
           }),
+          auditMeta: auditRequestMeta(request),
           eventId: r.eventId ?? null,
         };
       }),

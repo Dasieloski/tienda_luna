@@ -43,6 +43,12 @@ export default function SettingsPage() {
   const [sessionMe, setSessionMe] = useState<SessionMe | null>(null);
   const [copyMsg, setCopyMsg] = useState<string | null>(null);
   const [refreshing, setRefreshing] = useState(false);
+  const [twoFaBusy, setTwoFaBusy] = useState(false);
+  const [twoFaMsg, setTwoFaMsg] = useState<string | null>(null);
+  const [twoFaSetup, setTwoFaSetup] = useState<{ secret: string; otpauth: string } | null>(null);
+  const [twoFaCode, setTwoFaCode] = useState("");
+  const [twoFaDisablePassword, setTwoFaDisablePassword] = useState("");
+  const [twoFaDisableCode, setTwoFaDisableCode] = useState("");
 
   const loadData = useCallback(async () => {
     setRefreshing(true);
@@ -239,6 +245,172 @@ export default function SettingsPage() {
             </p>
           </div>
         )}
+
+        {/* 2FA (TOTP) */}
+        {sessionMe?.typ === "user" && sessionMe.role === "ADMIN" ? (
+          <div className="tl-glass rounded-xl p-5">
+            <h2 className="text-sm font-semibold text-tl-ink">Seguridad (2FA)</h2>
+            <p className="mt-1 text-xs text-tl-muted">
+              Activa 2FA (código temporal) para proteger el panel. Requiere definir{" "}
+              <code className="font-mono">TOTP_ENC_KEY</code> (base64, 32 bytes) en el entorno.
+            </p>
+
+            {twoFaMsg ? (
+              <div className="mt-3 rounded-lg border border-tl-warning/20 bg-tl-warning-subtle px-3 py-2 text-xs text-tl-warning">
+                {twoFaMsg}
+              </div>
+            ) : null}
+
+            <div className="mt-4 flex flex-wrap items-center gap-2">
+              <button
+                type="button"
+                className="tl-btn tl-btn-primary tl-interactive !px-3 !py-2 text-xs"
+                disabled={twoFaBusy}
+                onClick={async () => {
+                  setTwoFaBusy(true);
+                  setTwoFaMsg(null);
+                  try {
+                    const res = await fetch("/api/admin/2fa/setup", {
+                      method: "POST",
+                      credentials: "include",
+                      headers: { "x-tl-csrf": "1" },
+                    });
+                    const json = (await res.json()) as any;
+                    if (!res.ok) {
+                      setTwoFaMsg(json?.error ?? "No se pudo iniciar la configuración de 2FA.");
+                      return;
+                    }
+                    setTwoFaSetup({ secret: json.setup.secret, otpauth: json.setup.otpauth });
+                  } catch (e) {
+                    setTwoFaMsg(e instanceof Error ? e.message : "Error de red al configurar 2FA.");
+                  } finally {
+                    setTwoFaBusy(false);
+                  }
+                }}
+              >
+                Configurar 2FA
+              </button>
+            </div>
+
+            {twoFaSetup ? (
+              <div className="mt-4 rounded-xl border border-tl-line-subtle bg-tl-canvas-inset p-4">
+                <p className="text-xs font-semibold uppercase tracking-wider text-tl-muted">Secreto</p>
+                <code className="mt-2 block break-all rounded-lg bg-tl-canvas px-3 py-2 font-mono text-xs text-tl-ink">
+                  {twoFaSetup.secret}
+                </code>
+                <p className="mt-2 text-[11px] text-tl-muted">
+                  Si tu app lo permite, también puedes usar el enlace <span className="font-mono">otpauth</span>.
+                </p>
+                <code className="mt-1 block break-all rounded-lg bg-tl-canvas px-3 py-2 font-mono text-[10px] text-tl-muted">
+                  {twoFaSetup.otpauth}
+                </code>
+
+                <div className="mt-3 flex flex-wrap items-end gap-2">
+                  <label className="flex flex-col gap-1 text-xs font-semibold uppercase tracking-wider text-tl-muted">
+                    Código
+                    <input
+                      className="tl-input h-9 w-[160px] px-3 py-1 text-sm"
+                      value={twoFaCode}
+                      onChange={(e) => setTwoFaCode(e.target.value)}
+                      placeholder="123456"
+                      disabled={twoFaBusy}
+                    />
+                  </label>
+                  <button
+                    type="button"
+                    className="tl-btn tl-btn-secondary tl-interactive !px-3 !py-2 text-xs"
+                    disabled={twoFaBusy || !twoFaCode.trim()}
+                    onClick={async () => {
+                      setTwoFaBusy(true);
+                      setTwoFaMsg(null);
+                      try {
+                        const res = await fetch("/api/admin/2fa/verify", {
+                          method: "POST",
+                          credentials: "include",
+                          headers: { "content-type": "application/json", "x-tl-csrf": "1" },
+                          body: JSON.stringify({ code: twoFaCode.trim() }),
+                        });
+                        const json = (await res.json()) as any;
+                        if (!res.ok) {
+                          setTwoFaMsg(json?.error ?? "Código inválido.");
+                          return;
+                        }
+                        setTwoFaMsg("2FA activado. En el próximo inicio de sesión se pedirá el código.");
+                        setTwoFaSetup(null);
+                        setTwoFaCode("");
+                      } catch (e) {
+                        setTwoFaMsg(e instanceof Error ? e.message : "Error de red al verificar 2FA.");
+                      } finally {
+                        setTwoFaBusy(false);
+                      }
+                    }}
+                  >
+                    Activar
+                  </button>
+                </div>
+              </div>
+            ) : null}
+
+            <details className="mt-4 rounded-xl border border-tl-line-subtle bg-tl-canvas-inset p-4">
+              <summary className="cursor-pointer list-none text-xs font-semibold text-tl-accent hover:underline [&::-webkit-details-marker]:hidden">
+                Desactivar 2FA
+              </summary>
+              <div className="mt-3 flex flex-wrap items-end gap-2">
+                <label className="flex flex-col gap-1 text-xs font-semibold uppercase tracking-wider text-tl-muted">
+                  Password
+                  <input
+                    type="password"
+                    className="tl-input h-9 w-[220px] px-3 py-1 text-sm"
+                    value={twoFaDisablePassword}
+                    onChange={(e) => setTwoFaDisablePassword(e.target.value)}
+                    disabled={twoFaBusy}
+                  />
+                </label>
+                <label className="flex flex-col gap-1 text-xs font-semibold uppercase tracking-wider text-tl-muted">
+                  Código
+                  <input
+                    className="tl-input h-9 w-[160px] px-3 py-1 text-sm"
+                    value={twoFaDisableCode}
+                    onChange={(e) => setTwoFaDisableCode(e.target.value)}
+                    placeholder="123456"
+                    disabled={twoFaBusy}
+                  />
+                </label>
+                <button
+                  type="button"
+                  className="tl-btn tl-btn-secondary tl-interactive !px-3 !py-2 text-xs"
+                  disabled={twoFaBusy || !twoFaDisablePassword.trim() || !twoFaDisableCode.trim()}
+                  onClick={async () => {
+                    setTwoFaBusy(true);
+                    setTwoFaMsg(null);
+                    try {
+                      const res = await fetch("/api/admin/2fa/disable", {
+                        method: "POST",
+                        credentials: "include",
+                        headers: { "content-type": "application/json", "x-tl-csrf": "1" },
+                        body: JSON.stringify({ password: twoFaDisablePassword, code: twoFaDisableCode.trim() }),
+                      });
+                      const json = (await res.json()) as any;
+                      if (!res.ok) {
+                        setTwoFaMsg(json?.error ?? "No se pudo desactivar 2FA.");
+                        return;
+                      }
+                      setTwoFaMsg("2FA desactivado.");
+                      setTwoFaDisablePassword("");
+                      setTwoFaDisableCode("");
+                    } catch (e) {
+                      setTwoFaMsg(e instanceof Error ? e.message : "Error de red al desactivar 2FA.");
+                    } finally {
+                      setTwoFaBusy(false);
+                    }
+                  }}
+                >
+                  Desactivar
+                </button>
+              </div>
+            </details>
+          </div>
+        ) : null}
 
         {/* Dashboard layout */}
         <div className="tl-glass rounded-xl p-5">

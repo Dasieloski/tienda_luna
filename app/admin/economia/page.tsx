@@ -146,7 +146,7 @@ type OwnerSaleLineDto = {
   productName: string | null;
   productSku: string | null;
   quantity: number;
-  unitPriceCents: number;
+  unitCostCents: number;
   subtotalCents: number;
 };
 
@@ -154,11 +154,18 @@ type OwnerSalesSummaryPayload = {
   meta: { dbAvailable: boolean; tzOffsetMinutes?: number; note?: string; message?: string };
   window: { mode: "day" | "month"; key: string } | null;
   totals: { OSMAR: number; ALEX: number; totalCents: number; count: number };
+  ledger?: {
+    window: { pendingCents: number; pendingCount: number; paidCents: number; paidCount: number };
+    all: { pendingCents: number; pendingCount: number; paidCents: number; paidCount: number };
+  };
   sales: {
     id: string;
     owner: "OSMAR" | "ALEX";
+    status: "PENDING_PAYMENT" | "PAID";
     totalCents: number;
     createdAt: string;
+    paidAt: string | null;
+    paidSaleId: string | null;
     lineCount: number;
     lines: OwnerSaleLineDto[];
   }[];
@@ -172,6 +179,7 @@ type AdminSearchPayload = {
     sku: string;
     name: string;
     priceCents: number;
+    costCents: number | null;
     stockQty: number;
     active: boolean;
     deletedAt: string | null;
@@ -951,26 +959,45 @@ export default function EconomyPage() {
 
               {ownerSummary?.meta?.note ? <p className="text-xs text-tl-muted">{ownerSummary.meta.note}</p> : null}
 
+              {ownerSummary?.ledger ? (
+                <div className="rounded-xl border border-tl-line-subtle bg-tl-canvas-inset px-4 py-3 text-xs text-tl-muted">
+                  <div className="flex flex-wrap gap-x-6 gap-y-2">
+                    <span className="tabular-nums">
+                      Pendiente (ventana): <span className="font-semibold text-tl-ink">{formatCup(ownerSummary.ledger.window.pendingCents)}</span>{" "}
+                      · {ownerSummary.ledger.window.pendingCount} registro(s)
+                    </span>
+                    <span className="tabular-nums">
+                      Pagado (ventana): <span className="font-semibold text-tl-ink">{formatCup(ownerSummary.ledger.window.paidCents)}</span>{" "}
+                      · {ownerSummary.ledger.window.paidCount} registro(s)
+                    </span>
+                    <span className="tabular-nums">
+                      Pendiente (total): <span className="font-semibold text-tl-ink">{formatCup(ownerSummary.ledger.all.pendingCents)}</span>{" "}
+                      · {ownerSummary.ledger.all.pendingCount} registro(s)
+                    </span>
+                  </div>
+                </div>
+              ) : null}
+
               <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
                 <KpiCard
                   variant="default"
                   label="Osmar"
                   value={<CupUsdMoney cents={ownerSummary?.totals?.OSMAR ?? 0} />}
-                  hint={`${(ownerSummary?.sales ?? []).filter((s) => s.owner === "OSMAR").length} registro(s)`}
+                  hint={`${(ownerSummary?.sales ?? []).filter((s) => s.owner === "OSMAR" && s.status === "PENDING_PAYMENT").length} pendiente(s)`}
                   icon={<Users className="h-5 w-5" aria-hidden />}
                 />
                 <KpiCard
                   variant="default"
                   label="Álex"
                   value={<CupUsdMoney cents={ownerSummary?.totals?.ALEX ?? 0} />}
-                  hint={`${(ownerSummary?.sales ?? []).filter((s) => s.owner === "ALEX").length} registro(s)`}
+                  hint={`${(ownerSummary?.sales ?? []).filter((s) => s.owner === "ALEX" && s.status === "PENDING_PAYMENT").length} pendiente(s)`}
                   icon={<Users className="h-5 w-5" aria-hidden />}
                 />
                 <KpiCard
                   variant="info"
                   label="Total"
                   value={<CupUsdMoney cents={ownerSummary?.totals?.totalCents ?? 0} />}
-                  hint={`${ownerSummary?.totals?.count ?? 0} consumo(s)`}
+                  hint={`${ownerSummary?.totals?.count ?? 0} deuda(s) pendiente(s)`}
                   icon={<PieChart className="h-5 w-5" aria-hidden />}
                 />
               </div>
@@ -980,26 +1007,46 @@ export default function EconomyPage() {
                   <thead className="border-b border-tl-line bg-tl-canvas-inset text-xs uppercase tracking-wide text-tl-muted">
                     <tr>
                       <th className="px-4 py-3">Fecha</th>
+                      <th className="px-4 py-3">Estado</th>
                       <th className="px-4 py-3">Dueño</th>
                       <th className="px-4 py-3 text-right">Líneas</th>
                       <th className="px-4 py-3 min-w-[280px]">Productos</th>
                       <th className="px-4 py-3 text-right">Total (CUP)</th>
+                      <th className="px-4 py-3 text-right">Pago</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-tl-line-subtle">
                     {(ownerSummary?.sales ?? []).length === 0 ? (
                       <tr>
-                        <td colSpan={5} className="px-4 py-6 text-center text-sm text-tl-muted">
+                        <td colSpan={7} className="px-4 py-6 text-center text-sm text-tl-muted">
                           No hay consumos registrados en esta ventana.
                         </td>
                       </tr>
                     ) : (
                       (ownerSummary?.sales ?? []).map((s) => {
                         const detailLines = s.lines ?? [];
+                        const isPending = s.status === "PENDING_PAYMENT";
                         return (
                           <tr key={s.id}>
                             <td className="px-4 py-3 tabular-nums text-tl-ink align-top">
                               {new Date(s.createdAt).toLocaleString("es-ES")}
+                            </td>
+                            <td className="px-4 py-3 align-top">
+                              <span
+                                className={cn(
+                                  "inline-flex items-center rounded-full px-2 py-0.5 text-xs font-semibold",
+                                  isPending
+                                    ? "bg-tl-warning-subtle text-tl-warning border border-tl-warning/20"
+                                    : "bg-tl-success-subtle text-tl-success border border-tl-success/20",
+                                )}
+                              >
+                                {isPending ? "Pendiente" : "Pagada"}
+                              </span>
+                              {!isPending && s.paidAt ? (
+                                <div className="mt-1 text-[11px] tabular-nums text-tl-muted">
+                                  {new Date(s.paidAt).toLocaleString("es-ES")}
+                                </div>
+                              ) : null}
                             </td>
                             <td className="px-4 py-3 text-tl-ink align-top">{ownerLabel(s.owner)}</td>
                             <td className="px-4 py-3 text-right tabular-nums text-tl-muted align-top">{s.lineCount}</td>
@@ -1024,7 +1071,7 @@ export default function EconomyPage() {
                                           <div className="mt-0.5 flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1">
                                             <span className="font-mono text-tl-muted">SKU {sku}</span>
                                             <span className="tabular-nums text-tl-muted">
-                                              {l.quantity} ud × {formatCup(l.unitPriceCents)}
+                                              {l.quantity} ud × {formatCup(l.unitCostCents)}
                                             </span>
                                           </div>
                                           <div className="mt-1 text-right tabular-nums text-tl-ink">
@@ -1042,6 +1089,37 @@ export default function EconomyPage() {
                             </td>
                             <td className="px-4 py-3 text-right align-top">
                               <TablePriceCupCell cupCents={s.totalCents} compact />
+                            </td>
+                            <td className="px-4 py-3 text-right align-top">
+                              {isPending ? (
+                                <button
+                                  type="button"
+                                  className="tl-btn tl-btn-primary !px-3 !py-2 text-xs"
+                                  onClick={async () => {
+                                    setOwnerErr(null);
+                                    try {
+                                      const res = await fetch("/api/admin/owner-sales/pay", {
+                                        method: "POST",
+                                        credentials: "include",
+                                        headers: { "content-type": "application/json", "x-tl-csrf": "1" },
+                                        body: JSON.stringify({ ownerSaleId: s.id }),
+                                      });
+                                      const json = (await res.json()) as any;
+                                      if (!res.ok) {
+                                        setOwnerErr(json?.error ?? "No se pudo marcar como pagada.");
+                                        return;
+                                      }
+                                      await loadOwnerSummary();
+                                    } catch (e) {
+                                      setOwnerErr(e instanceof Error ? e.message : "Error de red al pagar.");
+                                    }
+                                  }}
+                                >
+                                  Pagar
+                                </button>
+                              ) : (
+                                <span className="text-xs text-tl-muted">{s.paidSaleId ? "Registrada" : "—"}</span>
+                              )}
                             </td>
                           </tr>
                         );
@@ -1154,7 +1232,7 @@ export default function EconomyPage() {
                                           productId: p.id,
                                           sku: p.sku,
                                           name: p.name,
-                                          unitPriceCents: p.priceCents,
+                                          unitPriceCents: p.costCents ?? 0,
                                           stockQty: p.stockQty,
                                           quantity: 1,
                                         },
@@ -1164,7 +1242,7 @@ export default function EconomyPage() {
                                 >
                                   <p className="truncate text-sm font-semibold text-tl-ink">{p.name}</p>
                                   <p className="mt-0.5 text-xs text-tl-muted">
-                                    SKU {p.sku} · stock {p.stockQty} · {formatCup(p.priceCents)}
+                                    SKU {p.sku} · stock {p.stockQty} · costo {formatCup(p.costCents ?? 0)}
                                   </p>
                                 </button>
                               ))}
@@ -1191,7 +1269,7 @@ export default function EconomyPage() {
                                   <div className="min-w-0">
                                     <p className="truncate text-sm font-semibold text-tl-ink">{l.name}</p>
                                     <p className="text-xs text-tl-muted">
-                                      SKU {l.sku} · stock {l.stockQty} · {formatCup(l.unitPriceCents)} / ud
+                                      SKU {l.sku} · stock {l.stockQty} · costo {formatCup(l.unitPriceCents)} / ud
                                     </p>
                                   </div>
                                   <div className="flex items-center gap-2">
@@ -1243,7 +1321,7 @@ export default function EconomyPage() {
                                   const res = await fetch("/api/admin/owner-sales/create", {
                                     method: "POST",
                                     credentials: "include",
-                                    headers: { "content-type": "application/json" },
+                                    headers: { "content-type": "application/json", "x-tl-csrf": "1" },
                                     body: JSON.stringify({
                                       owner: ownerModalWho,
                                       lines: ownerModalLines.map((l) => ({ productId: l.productId, quantity: l.quantity })),
@@ -1253,6 +1331,8 @@ export default function EconomyPage() {
                                   if (!res.ok) {
                                     if (json?.error === "INSUFFICIENT_STOCK") {
                                       setOwnerModalMsg("Stock insuficiente en uno o más productos. Revisa cantidades.");
+                                    } else if (json?.error === "MISSING_COST") {
+                                      setOwnerModalMsg("Falta el costo proveedor en uno o más productos. Actualiza el costo antes de registrar la deuda.");
                                     } else {
                                       setOwnerModalMsg(json?.error ?? "No se pudo registrar el consumo.");
                                     }

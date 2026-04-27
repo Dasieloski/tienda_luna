@@ -6,6 +6,12 @@ export type SessionClaims = {
   storeId: string;
   role?: UserRole;
   typ: "user" | "device";
+  /** MFA pasado (p. ej. TOTP) para esta sesión. */
+  mfa?: boolean;
+  /** Epoch ms: momento en que se validó MFA. */
+  mfaAt?: number;
+  /** Indica que este usuario requiere MFA; el token debe llevar mfa=true. */
+  mfaRequired?: boolean;
 };
 
 /** Solo desarrollo: permite arrancar sin .env; en producción exige JWT_SECRET. */
@@ -23,8 +29,13 @@ function getSecretBytes(): Uint8Array {
   throw new Error("JWT_SECRET debe tener al menos 16 caracteres (obligatorio en producción)");
 }
 
-export async function signUserSession(userId: string, storeId: string, role: UserRole) {
-  return new SignJWT({ typ: "user", storeId, role })
+export async function signUserSession(
+  userId: string,
+  storeId: string,
+  role: UserRole,
+  extra?: { mfa?: boolean; mfaAt?: number; mfaRequired?: boolean },
+) {
+  return new SignJWT({ typ: "user", storeId, role, ...(extra ?? {}) })
     .setProtectedHeader({ alg: "HS256" })
     .setSubject(userId)
     .setIssuedAt()
@@ -49,7 +60,11 @@ export async function verifySessionToken(token: string): Promise<SessionClaims |
     const typ = payload.typ === "device" || payload.typ === "user" ? payload.typ : null;
     if (!sub || !storeId || !typ) return null;
     const role = payload.role === "ADMIN" || payload.role === "CASHIER" ? payload.role : undefined;
-    return { sub, storeId, role, typ };
+    const mfa = typeof (payload as any).mfa === "boolean" ? ((payload as any).mfa as boolean) : undefined;
+    const mfaAt = typeof (payload as any).mfaAt === "number" ? ((payload as any).mfaAt as number) : undefined;
+    const mfaRequired =
+      typeof (payload as any).mfaRequired === "boolean" ? ((payload as any).mfaRequired as boolean) : undefined;
+    return { sub, storeId, role, typ, mfa, mfaAt, mfaRequired };
   } catch {
     return null;
   }

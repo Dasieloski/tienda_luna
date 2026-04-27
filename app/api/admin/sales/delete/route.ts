@@ -1,9 +1,10 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
-import { getSessionFromRequest, requireAdmin } from "@/lib/auth";
+import { requireAdminRequest } from "@/lib/admin-auth";
 import { prisma } from "@/lib/db";
 import { LOCAL_ADMIN_STORE_ID } from "@/lib/static-admin-auth";
 import { upsertDailySnapshot } from "@/services/snapshot-service";
+import { auditRequestMeta } from "@/lib/audit-meta";
 
 const bodySchema = z.object({
   ids: z.array(z.string().min(1)).min(1).max(200),
@@ -39,11 +40,9 @@ function buildSearch(snapshot: DeletedSaleSnapshot) {
 }
 
 export async function POST(request: Request) {
-  const session = await getSessionFromRequest(request);
-  if (!session || !requireAdmin(session)) {
-    return NextResponse.json({ error: "FORBIDDEN" }, { status: 403 });
-  }
-  if (session.storeId === LOCAL_ADMIN_STORE_ID) {
+  const guard = await requireAdminRequest(request, { csrf: true });
+  if (!guard.ok) return guard.res;
+  if (guard.session.storeId === LOCAL_ADMIN_STORE_ID) {
     return NextResponse.json({ error: "NO_DB" }, { status: 503 });
   }
 
@@ -53,7 +52,7 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "INVALID_BODY" }, { status: 400 });
   }
 
-  const storeId = session.storeId;
+  const storeId = guard.session.storeId;
   const ids = Array.from(new Set(parsed.data.ids));
 
   try {
@@ -113,13 +112,13 @@ export async function POST(request: Request) {
           data: {
             storeId,
             actorType: "USER",
-            actorId: session.sub,
+            actorId: guard.session.sub,
             action: "SALE_DELETED_ADMIN",
             entityType: "Sale",
             entityId: s.id,
             before: snapshot as any,
             after: { deleted: true } as any,
-            meta: { search: buildSearch(snapshot) } as any,
+            meta: { search: buildSearch(snapshot), ...auditRequestMeta(request) } as any,
           },
         });
 

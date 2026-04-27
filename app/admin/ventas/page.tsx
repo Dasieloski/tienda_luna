@@ -305,7 +305,7 @@ export default function SalesPage() {
       const res = await fetch("/api/admin/sales/delete", {
         method: "POST",
         credentials: "include",
-        headers: { "content-type": "application/json" },
+        headers: { "content-type": "application/json", "x-tl-csrf": "1" },
         body: JSON.stringify({ ids }),
       });
       const json = (await res.json().catch(() => null)) as any;

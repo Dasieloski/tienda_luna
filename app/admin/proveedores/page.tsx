@@ -344,7 +344,7 @@ export default function SuppliersPage() {
       const res = await fetch("/api/admin/suppliers", {
         method: "POST",
         credentials: "include",
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json", "x-tl-csrf": "1" },
         body: JSON.stringify({
           name,
           phone: mPhone.trim() || null,
@@ -381,7 +381,7 @@ export default function SuppliersPage() {
       const res = await fetch(`/api/admin/suppliers/${encodeURIComponent(editMaster.id)}`, {
         method: "PATCH",
         credentials: "include",
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json", "x-tl-csrf": "1" },
         body: JSON.stringify({
           name,
           phone: eMPhone.trim() || null,
@@ -404,7 +404,7 @@ export default function SuppliersPage() {
     const res = await fetch(`/api/admin/suppliers/${encodeURIComponent(s.id)}`, {
       method: "PATCH",
       credentials: "include",
-      headers: { "Content-Type": "application/json" },
+      headers: { "Content-Type": "application/json", "x-tl-csrf": "1" },
       body: JSON.stringify({ active: !s.active }),
     });
     if (!res.ok) {
@@ -428,6 +428,7 @@ export default function SuppliersPage() {
       const res = await fetch(`/api/admin/suppliers/${encodeURIComponent(s.id)}`, {
         method: "DELETE",
         credentials: "include",
+        headers: { "x-tl-csrf": "1" },
       });
       const j = (await res.json().catch(() => ({}))) as { error?: string; productCount?: number };
       if (res.status === 409 && j.error === "SUPPLIER_IN_USE") {

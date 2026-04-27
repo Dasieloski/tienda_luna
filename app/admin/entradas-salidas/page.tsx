@@ -22,6 +22,7 @@ type MovementRow = {
   actorLabel?: string;
   /** Texto multilínea para tooltip (fecha, terminal si aplica, límites de lo guardado en BD). */
   actorHover?: string;
+  auditMeta?: unknown;
   eventId: string | null;
 };
 
@@ -65,6 +66,7 @@ function InventoryMovementsPageClient() {
 
   const [sorting, setSorting] = useState<DataTableSorting>({ key: "createdAt", dir: "desc" });
   const [filters, setFilters] = useState<DataTableFilters>({});
+  const [revertBusyId, setRevertBusyId] = useState<string | null>(null);
 
   type SavedView = {
     id: string;
@@ -345,8 +347,59 @@ function InventoryMovementsPageClient() {
           </span>
         ),
       },
+      {
+        key: "revert",
+        label: "",
+        width: "120px",
+        render: (r) => {
+          const can = r.reason === "MANUAL_ADJUST" && r.actorType === "USER";
+          if (!can) return null;
+          const busy = revertBusyId === r.id;
+          return (
+            <button
+              type="button"
+              className={cn(
+                "tl-btn tl-btn-secondary tl-interactive !px-3 !py-2 text-xs",
+                busy && "opacity-60 pointer-events-none",
+              )}
+              title="Revertir este ajuste manual"
+              onClick={async () => {
+                if (
+                  !window.confirm(
+                    "¿Revertir este ajuste manual de stock? Esto creará un nuevo movimiento y dejará auditoría.",
+                  )
+                ) {
+                  return;
+                }
+                setRevertBusyId(r.id);
+                setError(null);
+                try {
+                  const res = await fetch("/api/admin/inventory/revert-manual-adjust", {
+                    method: "POST",
+                    credentials: "include",
+                    headers: { "content-type": "application/json", "x-tl-csrf": "1" },
+                    body: JSON.stringify({ movementId: r.id }),
+                  });
+                  const j = (await res.json().catch(() => ({}))) as any;
+                  if (!res.ok) {
+                    setError(j?.error ?? "No se pudo revertir.");
+                    return;
+                  }
+                  await load();
+                } catch (e) {
+                  setError(e instanceof Error ? e.message : "Error de red al revertir.");
+                } finally {
+                  setRevertBusyId(null);
+                }
+              }}
+            >
+              {busy ? "Revirtiendo…" : "Revertir"}
+            </button>
+          );
+        },
+      },
     ],
-    [],
+    [load, revertBusyId],
   );
 
   return (

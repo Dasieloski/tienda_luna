@@ -1,8 +1,10 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
-import { getSessionFromRequest, requireAdmin } from "@/lib/auth";
+import { requireAdminRequest } from "@/lib/admin-auth";
 import { isMissingDbColumnError } from "@/lib/db-schema-errors";
 import { prisma } from "@/lib/db";
+import { getClientIp, rateLimitOrThrow } from "@/lib/rate-limit";
+import { auditRequestMeta } from "@/lib/audit-meta";
 
 async function hasProductColumn(columnName: string): Promise<boolean> {
   const rows = await prisma.$queryRaw<{ ok: number }[]>`
@@ -38,10 +40,8 @@ const patchSchema = z
 type RouteCtx = { params: Promise<{ id: string }> };
 
 export async function PATCH(request: Request, ctx: RouteCtx) {
-  const session = await getSessionFromRequest(request);
-  if (!session || !requireAdmin(session)) {
-    return NextResponse.json({ error: "FORBIDDEN" }, { status: 403 });
-  }
+  const guard = await requireAdminRequest(request, { csrf: true });
+  if (!guard.ok) return guard.res;
 
   const { id } = await ctx.params;
   if (!id) {
@@ -55,7 +55,7 @@ export async function PATCH(request: Request, ctx: RouteCtx) {
   }
 
   const existing = await prisma.product.findFirst({
-    where: { id, storeId: session.storeId },
+    where: { id, storeId: guard.session.storeId },
   });
   if (!existing) {
     return NextResponse.json({ error: "NOT_FOUND" }, { status: 404 });
@@ -72,7 +72,7 @@ export async function PATCH(request: Request, ctx: RouteCtx) {
       supplierNameFromId = null;
     } else {
       const sup = await prisma.supplier.findFirst({
-        where: { id: data.supplierId, storeId: session.storeId },
+        where: { id: data.supplierId, storeId: guard.session.storeId },
       });
       if (!sup) {
         return NextResponse.json({ error: "INVALID_SUPPLIER" }, { status: 400 });
@@ -88,6 +88,22 @@ export async function PATCH(request: Request, ctx: RouteCtx) {
   const restoring = data.restore === true && existing.deletedAt != null;
   const nextStockQty = data.stockQty !== undefined ? data.stockQty : existing.stockQty;
   const stockChanged = data.stockQty !== undefined && data.stockQty !== existing.stockQty;
+  if (stockChanged) {
+    const ip = getClientIp(request);
+    const rl = rateLimitOrThrow({
+      key: `manualAdjust:${guard.session.storeId}:${guard.session.sub}:${ip}`,
+      max: 12,
+      windowMs: 10 * 60_000,
+      blockMs: 15 * 60_000,
+    });
+    if (!rl.ok) {
+      return NextResponse.json({ error: "RATE_LIMITED", retryAfterSec: rl.retryAfterSec }, { status: 429 });
+    }
+    // Step-up: si el token indica MFA requerido pero no está presente, bloquear ajustes manuales.
+    if (guard.session.mfaRequired === true && guard.session.mfa !== true) {
+      return NextResponse.json({ error: "MFA_REQUIRED" }, { status: 401 });
+    }
+  }
 
   try {
     const product = await prisma.$transaction(async (tx) => {
@@ -117,14 +133,14 @@ export async function PATCH(request: Request, ctx: RouteCtx) {
       if (stockChanged) {
         await tx.inventoryMovement.create({
           data: {
-            storeId: session.storeId,
+            storeId: guard.session.storeId,
             productId: updated.id,
             delta: nextStockQty - existing.stockQty,
             beforeQty: existing.stockQty,
             afterQty: nextStockQty,
             reason: "MANUAL_ADJUST",
             actorType: "USER",
-            actorId: session.sub,
+            actorId: guard.session.sub,
             eventId: null,
           },
         });
@@ -166,15 +182,15 @@ export async function PATCH(request: Request, ctx: RouteCtx) {
 
       await tx.auditLog.create({
         data: {
-          storeId: session.storeId,
+          storeId: guard.session.storeId,
           actorType: "USER",
-          actorId: session.sub,
+          actorId: guard.session.sub,
           action: restoring ? "PRODUCT_RESTORE" : stockChanged ? "PRODUCT_UPDATE_STOCK" : "PRODUCT_UPDATE",
           entityType: "Product",
           entityId: updated.id,
           before: before as any,
           after: after as any,
-          meta: { changedKeys } as any,
+          meta: { changedKeys, ...auditRequestMeta(request) } as any,
         },
       });
 
@@ -243,7 +259,7 @@ export async function PATCH(request: Request, ctx: RouteCtx) {
         }
 
         // Condición final: producto debe pertenecer a la tienda del admin.
-        const whereStoreId = session.storeId;
+        const whereStoreId = guard.session.storeId;
         const idParam = id;
         const sql = `
           UPDATE "Product"
@@ -263,14 +279,14 @@ export async function PATCH(request: Request, ctx: RouteCtx) {
           try {
             await prisma.inventoryMovement.create({
               data: {
-                storeId: session.storeId,
+                storeId: guard.session.storeId,
                 productId: updated.id,
                 delta: nextStockQty - existing.stockQty,
                 beforeQty: existing.stockQty,
                 afterQty: nextStockQty,
                 reason: "MANUAL_ADJUST",
                 actorType: "USER",
-                actorId: session.sub,
+                actorId: guard.session.sub,
                 eventId: null,
               },
             });
@@ -283,9 +299,9 @@ export async function PATCH(request: Request, ctx: RouteCtx) {
         try {
           await prisma.auditLog.create({
             data: {
-              storeId: session.storeId,
+              storeId: guard.session.storeId,
               actorType: "USER",
-              actorId: session.sub,
+              actorId: guard.session.sub,
               action: restoring
                 ? "PRODUCT_RESTORE"
                 : stockChanged
@@ -326,10 +342,8 @@ export async function PATCH(request: Request, ctx: RouteCtx) {
 
 /** Borrado lógico: conserva fila y relaciones con ventas; libera SKU para nuevos productos. */
 export async function DELETE(request: Request, ctx: RouteCtx) {
-  const session = await getSessionFromRequest(request);
-  if (!session || !requireAdmin(session)) {
-    return NextResponse.json({ error: "FORBIDDEN" }, { status: 403 });
-  }
+  const guard = await requireAdminRequest(request, { csrf: true });
+  if (!guard.ok) return guard.res;
 
   const { id } = await ctx.params;
   if (!id) {
@@ -337,7 +351,7 @@ export async function DELETE(request: Request, ctx: RouteCtx) {
   }
 
   const existing = await prisma.product.findFirst({
-    where: { id, storeId: session.storeId },
+    where: { id, storeId: guard.session.storeId },
   });
   if (!existing) {
     return NextResponse.json({ error: "NOT_FOUND" }, { status: 404 });
@@ -371,9 +385,9 @@ export async function DELETE(request: Request, ctx: RouteCtx) {
     };
     await prisma.auditLog.create({
       data: {
-        storeId: session.storeId,
+        storeId: guard.session.storeId,
         actorType: "USER",
-        actorId: session.sub,
+        actorId: guard.session.sub,
         action: "PRODUCT_ARCHIVE",
         entityType: "Product",
         entityId: existing.id,

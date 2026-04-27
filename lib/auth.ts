@@ -1,6 +1,7 @@
 import { compare } from "bcryptjs";
 import type { UserRole } from "@prisma/client";
 import { prisma } from "@/lib/db";
+import { LOCAL_ADMIN_STORE_ID, STATIC_ADMIN_JWT_SUB } from "@/lib/static-admin-auth";
 import {
   type SessionClaims,
   signDeviceSession,
@@ -55,7 +56,11 @@ export function requireStoreMatch(claims: SessionClaims, storeId: string) {
 }
 
 export function requireAdmin(claims: SessionClaims) {
-  return claims.typ === "user" && claims.role === "ADMIN";
+  if (!(claims.typ === "user" && claims.role === "ADMIN")) return false;
+  // Endurecer seguridad: bloquear el "admin estático" legacy en tiendas reales.
+  // Si aparece, suele indicar un token forjado o un flujo antiguo.
+  if (claims.sub === STATIC_ADMIN_JWT_SUB && claims.storeId !== LOCAL_ADMIN_STORE_ID) return false;
+  return true;
 }
 
 export function canSync(claims: SessionClaims) {

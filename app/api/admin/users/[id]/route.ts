@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { hash } from "bcryptjs";
-import { getSessionFromRequest, requireAdmin } from "@/lib/auth";
+import { requireAdminRequest } from "@/lib/admin-auth";
 import { prisma } from "@/lib/db";
 
 const patchSchema = z.object({
@@ -10,10 +10,8 @@ const patchSchema = z.object({
 });
 
 export async function PATCH(request: Request, ctx: { params: Promise<{ id: string }> }) {
-  const session = await getSessionFromRequest(request);
-  if (!session || !requireAdmin(session)) {
-    return NextResponse.json({ error: "FORBIDDEN" }, { status: 403 });
-  }
+  const guard = await requireAdminRequest(request, { csrf: true });
+  if (!guard.ok) return guard.res;
 
   const { id } = await ctx.params;
   const json = await request.json().catch(() => null);
@@ -26,7 +24,7 @@ export async function PATCH(request: Request, ctx: { params: Promise<{ id: strin
     where: { id },
     select: { id: true, storeId: true },
   });
-  if (!existing || existing.storeId !== session.storeId) {
+  if (!existing || existing.storeId !== guard.session.storeId) {
     return NextResponse.json({ error: "NOT_FOUND" }, { status: 404 });
   }
 
@@ -41,10 +39,8 @@ export async function PATCH(request: Request, ctx: { params: Promise<{ id: strin
 }
 
 export async function DELETE(request: Request, ctx: { params: Promise<{ id: string }> }) {
-  const session = await getSessionFromRequest(request);
-  if (!session || !requireAdmin(session)) {
-    return NextResponse.json({ error: "FORBIDDEN" }, { status: 403 });
-  }
+  const guard = await requireAdminRequest(request, { csrf: true });
+  if (!guard.ok) return guard.res;
 
   const { id } = await ctx.params;
 
@@ -52,12 +48,12 @@ export async function DELETE(request: Request, ctx: { params: Promise<{ id: stri
     where: { id },
     select: { id: true, storeId: true },
   });
-  if (!existing || existing.storeId !== session.storeId) {
+  if (!existing || existing.storeId !== guard.session.storeId) {
     return NextResponse.json({ error: "NOT_FOUND" }, { status: 404 });
   }
 
   // Evita borrarte a ti mismo si estás autenticado con un usuario real.
-  if (session.typ === "user" && session.sub === id) {
+  if (guard.session.typ === "user" && guard.session.sub === id) {
     return NextResponse.json({ error: "CANNOT_DELETE_SELF" }, { status: 400 });
   }
 

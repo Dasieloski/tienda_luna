@@ -1,8 +1,9 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
-import { getSessionFromRequest, requireAdmin } from "@/lib/auth";
+import { requireAdminRequest } from "@/lib/admin-auth";
 import { prisma } from "@/lib/db";
 import { LOCAL_ADMIN_STORE_ID } from "@/lib/static-admin-auth";
+import { auditRequestMeta } from "@/lib/audit-meta";
 
 const bodySchema = z.object({
   owner: z.enum(["OSMAR", "ALEX"]),
@@ -18,12 +19,10 @@ const bodySchema = z.object({
 });
 
 export async function POST(request: Request) {
-  const session = await getSessionFromRequest(request);
-  if (!session || !requireAdmin(session)) {
-    return NextResponse.json({ error: "FORBIDDEN" }, { status: 403 });
-  }
+  const guard = await requireAdminRequest(request, { csrf: true });
+  if (!guard.ok) return guard.res;
 
-  if (session.storeId === LOCAL_ADMIN_STORE_ID) {
+  if (guard.session.storeId === LOCAL_ADMIN_STORE_ID) {
     return NextResponse.json({ error: "NO_DB" }, { status: 503 });
   }
 
@@ -33,7 +32,7 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "INVALID_BODY" }, { status: 400 });
   }
 
-  const storeId = session.storeId;
+  const storeId = guard.session.storeId;
   const owner = parsed.data.owner;
   const lines = parsed.data.lines;
 
@@ -48,12 +47,13 @@ export async function POST(request: Request) {
     const out = await prisma.$transaction(async (tx) => {
       const products = await tx.product.findMany({
         where: { storeId, id: { in: compact.map((c) => c.productId) }, active: true, deletedAt: null },
-        select: { id: true, name: true, sku: true, stockQty: true, priceCents: true },
+        select: { id: true, name: true, sku: true, stockQty: true, costCents: true },
       });
       const pById = new Map(products.map((p) => [p.id, p]));
 
       const missing: string[] = [];
       const insufficient: { productId: string; name: string; requested: number; stock: number }[] = [];
+      const missingCost: { productId: string; name: string; sku: string }[] = [];
 
       for (const c of compact) {
         const p = pById.get(c.productId);
@@ -69,6 +69,9 @@ export async function POST(request: Request) {
             stock: p.stockQty,
           });
         }
+        if (p.costCents == null) {
+          missingCost.push({ productId: p.id, name: p.name, sku: p.sku });
+        }
       }
 
       if (missing.length > 0) {
@@ -77,19 +80,22 @@ export async function POST(request: Request) {
       if (insufficient.length > 0) {
         return { ok: false as const, code: "INSUFFICIENT_STOCK" as const, insufficient };
       }
+      if (missingCost.length > 0) {
+        return { ok: false as const, code: "MISSING_COST" as const, missingCost };
+      }
 
       let totalCents = 0;
       const saleLines = compact.map((c) => {
         const p = pById.get(c.productId)!;
-        const unitPriceCents = p.priceCents;
-        const subtotalCents = unitPriceCents * c.quantity;
+        const unitCostCents = p.costCents!;
+        const subtotalCents = unitCostCents * c.quantity;
         totalCents += subtotalCents;
         return {
           productId: p.id,
           productName: p.name,
           productSku: p.sku,
           quantity: c.quantity,
-          unitPriceCents,
+          unitCostCents,
           subtotalCents,
         };
       });
@@ -111,7 +117,7 @@ export async function POST(request: Request) {
             afterQty: after,
             reason: "OWNER_SALE",
             actorType: "USER",
-            actorId: session.sub,
+            actorId: guard.session.sub,
           },
         });
       }
@@ -121,6 +127,7 @@ export async function POST(request: Request) {
           storeId,
           owner,
           totalCents,
+          status: "PENDING_PAYMENT",
           lines: { create: saleLines },
         },
         select: { id: true, owner: true, totalCents: true, createdAt: true, lines: { select: { id: true } } },
@@ -130,15 +137,22 @@ export async function POST(request: Request) {
         data: {
           storeId,
           actorType: "USER",
-          actorId: session.sub,
+          actorId: guard.session.sub,
           action: "OWNER_SALE_CREATE",
           entityType: "OwnerSale",
           entityId: created.id,
           after: {
             owner,
             totalCents,
-            lines: saleLines.map((l) => ({ productId: l.productId, quantity: l.quantity, subtotalCents: l.subtotalCents })),
+            status: "PENDING_PAYMENT",
+            lines: saleLines.map((l) => ({
+              productId: l.productId,
+              quantity: l.quantity,
+              unitCostCents: l.unitCostCents,
+              subtotalCents: l.subtotalCents,
+            })),
           } as any,
+          meta: auditRequestMeta(request) as any,
         },
       });
 
@@ -151,6 +165,9 @@ export async function POST(request: Request) {
       }
       if (out.code === "INSUFFICIENT_STOCK") {
         return NextResponse.json({ error: out.code, insufficient: out.insufficient }, { status: 409 });
+      }
+      if (out.code === "MISSING_COST") {
+        return NextResponse.json({ error: out.code, missingCost: out.missingCost }, { status: 409 });
       }
       return NextResponse.json({ error: "UNKNOWN" }, { status: 400 });
     }
