@@ -57,6 +57,8 @@ export default function SalesPage() {
   const [selectedIds, setSelectedIds] = useState<Set<string>>(() => new Set());
   const [deleteBusy, setDeleteBusy] = useState(false);
   const [deleteMsg, setDeleteMsg] = useState<string | null>(null);
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(25);
 
   const loadSales = useCallback(async (opts?: { initial?: boolean; manual?: boolean }) => {
     if (inFlightRef.current) return;
@@ -141,6 +143,10 @@ export default function SalesPage() {
     }
     return out;
   }, [visibleSales]);
+
+  useEffect(() => {
+    setPage(1);
+  }, [fromDay, toDay, searchQuery]);
 
   const columns: Column<RecentSale>[] = [
     {
@@ -463,9 +469,22 @@ export default function SalesPage() {
           onSearchQueryChange={setSearchQuery}
           onVisibleRowsChange={setVisibleSales}
           emptyMessage="No hay ventas recientes"
-          maxHeight="calc(100vh - 400px)"
+          maxHeight="calc(100vh - 300px)"
           loading={loading}
           skeletonRows={10}
+          pagination={{
+            kind: "client",
+            page,
+            totalPages: 1,
+            onPageChange: setPage,
+            pageSize,
+            pageSizeOptions: [10, 25, 50, 100, 200],
+            onPageSizeChange: (n) => {
+              setPage(1);
+              setPageSize(n);
+            },
+            summary: `${visibleSales.length.toLocaleString("es-ES")} ventas (filtradas) · página ${page}`,
+          }}
           footer={
             <div className="flex flex-wrap items-center justify-between gap-3 px-4 py-3">
               <div className="text-xs font-semibold uppercase tracking-wider text-tl-muted">

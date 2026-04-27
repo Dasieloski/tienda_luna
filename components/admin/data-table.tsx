@@ -59,9 +59,15 @@ export interface Column<T> {
 }
 
 export type DataTablePagination = {
+  /** server: el padre controla totalPages y trae data paginada; client: DataTable pagina `data` en memoria */
+  kind?: "server" | "client";
   page: number;
   totalPages: number;
   onPageChange: (page: number) => void;
+  /** Tamaño de página (opcional). Si se provee, se muestra selector. */
+  pageSize?: number;
+  pageSizeOptions?: number[];
+  onPageSizeChange?: (next: number) => void;
   /** Texto opcional entre botones */
   summary?: string;
 };
@@ -271,6 +277,20 @@ export function DataTable<T extends Record<string, unknown>>({
     if (!onVisibleRowsChange) return;
     onVisibleRowsChange(visibleRows);
   }, [onVisibleRowsChange, visibleRows, loading]);
+
+  const paginationKind = pagination?.kind ?? "server";
+  const pageSizeOptions = pagination?.pageSizeOptions ?? [10, 25, 50, 100, 200];
+  const pageSize = pagination?.pageSize ?? pageSizeOptions[1] ?? 25;
+  const totalPagesClient =
+    paginationKind === "client" ? Math.max(1, Math.ceil(sortedData.length / Math.max(1, pageSize))) : 1;
+  const totalPagesEffective =
+    paginationKind === "client" ? totalPagesClient : Math.max(1, pagination?.totalPages ?? 1);
+  const pageSafe = pagination ? Math.min(Math.max(1, pagination.page), totalPagesEffective) : 1;
+
+  const displayRows =
+    pagination && paginationKind === "client" && !loading
+      ? sortedData.slice((pageSafe - 1) * pageSize, (pageSafe - 1) * pageSize + pageSize)
+      : sortedData;
 
   const handleSort = (key: string) => {
     if (sortKey === key) {
@@ -589,7 +609,7 @@ export function DataTable<T extends Record<string, unknown>>({
                 </td>
               </tr>
             ) : (
-              sortedData.map((row, index) => {
+              displayRows.map((row, index) => {
                 const k = keyExtractor(row);
                 return (
                   <tr
@@ -641,7 +661,7 @@ export function DataTable<T extends Record<string, unknown>>({
         ) : sortedData.length === 0 ? (
           <div className="px-4 py-10 text-center text-tl-muted">{emptyMessage}</div>
         ) : (
-          sortedData.map((row, index) => {
+          displayRows.map((row, index) => {
             const k = keyExtractor(row);
             const clickable = Boolean(onRowClick) && !loading;
             return (
@@ -686,14 +706,34 @@ export function DataTable<T extends Record<string, unknown>>({
       {pagination && !loading && (
         <div className="tl-table-pagination">
           <p className="text-xs text-tl-muted">
-            {pagination.summary ?? `Página ${pagination.page} de ${Math.max(1, pagination.totalPages)}`}
+            {pagination.summary ?? `Página ${pageSafe} de ${totalPagesEffective}`}
           </p>
           <div className="flex items-center gap-2">
+            {pagination.onPageSizeChange && pagination.pageSize != null ? (
+              <label className="flex items-center gap-2 text-xs text-tl-muted">
+                <span className="hidden sm:inline">Filas</span>
+                <select
+                  className="tl-input !h-9 !py-0 text-xs"
+                  value={String(pageSize)}
+                  onChange={(e) => {
+                    const n = Number(e.target.value);
+                    if (!Number.isFinite(n) || n <= 0) return;
+                    pagination.onPageSizeChange?.(n);
+                  }}
+                >
+                  {pageSizeOptions.map((n) => (
+                    <option key={n} value={String(n)}>
+                      {n}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            ) : null}
             <button
               type="button"
               className="tl-table-pagination__btn"
-              onClick={() => pagination.onPageChange(Math.max(1, pagination.page - 1))}
-              disabled={pagination.page <= 1}
+              onClick={() => pagination.onPageChange(Math.max(1, pageSafe - 1))}
+              disabled={pageSafe <= 1}
               aria-label="Página anterior"
             >
               <ChevronLeft className="h-4 w-4" aria-hidden />
@@ -704,10 +744,10 @@ export function DataTable<T extends Record<string, unknown>>({
               className="tl-table-pagination__btn"
               onClick={() =>
                 pagination.onPageChange(
-                  Math.min(Math.max(1, pagination.totalPages || 1), pagination.page + 1),
+                  Math.min(totalPagesEffective, pageSafe + 1),
                 )
               }
-              disabled={pagination.page >= Math.max(1, pagination.totalPages || 1)}
+              disabled={pageSafe >= totalPagesEffective}
               aria-label="Página siguiente"
             >
               Siguiente

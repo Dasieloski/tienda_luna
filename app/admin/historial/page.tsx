@@ -60,7 +60,7 @@ function SalesHistoryPageClient() {
   const [selected, setSelected] = useState<HistorySale | null>(null);
 
   const [page, setPage] = useState(1);
-  const [limit] = useState(25);
+  const [limit, setLimit] = useState(25);
   const [totalPages, setTotalPages] = useState(1);
   const [total, setTotal] = useState(0);
 
@@ -468,15 +468,22 @@ function SalesHistoryPageClient() {
               keyExtractor={(row) => row.id}
               searchable={false}
               emptyMessage="No hay ventas en el rango seleccionado"
-              maxHeight="calc(100vh - 430px)"
+              maxHeight="calc(100vh - 300px)"
               loading={loading}
               skeletonRows={12}
               selectedKey={selected?.id ?? null}
               onRowClick={(row) => setSelected(row)}
               pagination={{
+                kind: "server",
                 page,
                 totalPages,
                 onPageChange: setPage,
+                pageSize: limit,
+                pageSizeOptions: [10, 25, 50, 100, 200],
+                onPageSizeChange: (n) => {
+                  setPage(1);
+                  setLimit(n);
+                },
                 summary: `${total.toLocaleString("es-ES")} ventas · página ${page} de ${totalPages}`,
               }}
             />
