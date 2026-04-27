@@ -6,10 +6,12 @@ import {
   AlertTriangle,
   Boxes,
   Clock,
+  ClipboardList,
   Cpu,
   DollarSign,
   Package,
   ShoppingCart,
+  ShieldAlert,
   TrendingUp,
   Users,
 } from "lucide-react";
@@ -167,6 +169,46 @@ export default function AdminOverviewPage() {
   return (
     <AdminShell>
       <div className="space-y-8">
+        {/* Accesos rápidos (primero visible) */}
+        <section className="rounded-2xl border border-tl-line-subtle bg-tl-canvas-inset p-4 shadow-sm sm:p-5">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <div>
+              <p className="text-sm font-semibold text-tl-ink">Accesos rápidos</p>
+              <p className="mt-1 text-xs text-tl-muted">Atajos directos a los módulos más usados.</p>
+            </div>
+            <div className="flex flex-wrap gap-2">
+              <Link
+                href="/admin/inventario"
+                className="tl-btn tl-btn-secondary tl-interactive tl-hover-lift tl-press tl-focus !px-3 !py-2 text-xs sm:text-sm no-underline"
+              >
+                <Boxes className="h-4 w-4" aria-hidden />
+                Inventario
+              </Link>
+              <Link
+                href="/admin/control-diario"
+                className="tl-btn tl-btn-secondary tl-interactive tl-hover-lift tl-press tl-focus !px-3 !py-2 text-xs sm:text-sm no-underline"
+              >
+                <ClipboardList className="h-4 w-4" aria-hidden />
+                Control diario
+              </Link>
+              <Link
+                href="/admin/ventas"
+                className="tl-btn tl-btn-secondary tl-interactive tl-hover-lift tl-press tl-focus !px-3 !py-2 text-xs sm:text-sm no-underline"
+              >
+                <ShoppingCart className="h-4 w-4" aria-hidden />
+                Ventas
+              </Link>
+              <Link
+                href="/admin/economia/cuadre"
+                className="tl-btn tl-btn-primary tl-interactive tl-hover-lift tl-press tl-focus !px-3 !py-2 text-xs sm:text-sm no-underline"
+              >
+                <ShieldAlert className="h-4 w-4" aria-hidden />
+                Cuadre
+              </Link>
+            </div>
+          </div>
+        </section>
+
         {/* Welcome header - Crextio style */}
         <div className="flex flex-col gap-6 lg:flex-row lg:items-start lg:justify-between">
           <div>
