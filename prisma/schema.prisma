@@ -53,6 +53,10 @@ model Store {
   supplierWithdrawals SupplierWithdrawal[]
   inventoryMovements InventoryMovement[]
   metricSnapshots MetricSnapshot[]
+  cashClosingDays CashClosingDay[]
+  cashClosingRevisions CashClosingRevision[]
+  cashClosingNotes CashClosingNote[]
+  cashClosingFindings CashClosingFinding[]
   auditLogs AuditLog[]
 }
 
@@ -387,6 +391,124 @@ model MetricSnapshot {
 
   @@unique([storeId, day])
   @@index([storeId, day])
+}
+
+/// Estado diario del cuadre de caja + auditoría.
+model CashClosingDay {
+  id       String @id @default(cuid())
+  storeId  String
+  store    Store  @relation(fields: [storeId], references: [id], onDelete: Cascade)
+
+  /// Día local de la tienda en formato YYYY-MM-DD (evita ambigüedad de TZ).
+  dayYmd   String
+
+  status   CashClosingStatus
+
+  /// Valores contados (lo que hay físicamente).
+  cashCountedCents        Int @default(0)
+  transferCountedCents    Int @default(0)
+  usdChannelCountedCents  Int @default(0)
+
+  /// Valores esperados (snapshot al momento de validar).
+  cashExpectedCents       Int @default(0)
+  transferExpectedCents   Int @default(0)
+  usdChannelExpectedCents Int @default(0)
+
+  /// Diferencia total (contado - esperado) guardada para consultas rápidas.
+  diffTotalCents          Int @default(0)
+
+  /// Categoría principal (obligatoria si status=INCORRECT).
+  category CashClosingCategory?
+
+  /// Observación actual (obligatoria si status=INCORRECT).
+  observation String?
+
+  /// Quién validó/actualizó por última vez.
+  validatedByUserId String
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  notes     CashClosingNote[]
+  revisions CashClosingRevision[]
+  findings  CashClosingFinding[]
+
+  @@unique([storeId, dayYmd])
+  @@index([storeId, dayYmd])
+  @@index([storeId, status, dayYmd])
+}
+
+/// Historial inmutable de cambios del cuadre.
+model CashClosingRevision {
+  id            String @id @default(cuid())
+  storeId       String
+  store         Store  @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  cashClosingDayId String
+  day           CashClosingDay @relation(fields: [cashClosingDayId], references: [id], onDelete: Cascade)
+
+  actorUserId   String
+  action        String // CREATE | UPDATE | SYSTEM_RECALC
+  before        Json?
+  after         Json?
+  meta          Json?
+  createdAt     DateTime @default(now())
+
+  @@index([storeId, createdAt])
+  @@index([cashClosingDayId, createdAt])
+}
+
+/// Notas y seguimiento (historial por día).
+model CashClosingNote {
+  id            String @id @default(cuid())
+  storeId       String
+  store         Store  @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  cashClosingDayId String
+  day           CashClosingDay @relation(fields: [cashClosingDayId], references: [id], onDelete: Cascade)
+
+  category      CashClosingCategory?
+  message       String
+  actorUserId   String
+  createdAt     DateTime @default(now())
+
+  @@index([cashClosingDayId, createdAt])
+  @@index([storeId, createdAt])
+}
+
+/// Hallazgos detectados automáticamente (y sus sugerencias).
+model CashClosingFinding {
+  id            String @id @default(cuid())
+  storeId       String
+  store         Store  @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  cashClosingDayId String
+  day           CashClosingDay @relation(fields: [cashClosingDayId], references: [id], onDelete: Cascade)
+
+  code          String // SYNC_LAG | POSSIBLE_DUPLICATE | MISSING_SALE | TZ_DRIFT | MANUAL_ADJUST
+  severity      String // INFO | WARN | ERROR
+  title         String
+  detail        String
+  suggestion    String?
+  evidence      Json?
+
+  createdAt DateTime @default(now())
+
+  @@index([cashClosingDayId, createdAt])
+  @@index([storeId, createdAt])
+  @@index([storeId, code, createdAt])
+}
+
+enum CashClosingStatus {
+  CORRECT
+  INCORRECT
+}
+
+enum CashClosingCategory {
+  CASH_SHORT
+  CASH_OVER
+  HUMAN_ERROR
+  SYSTEM_BUG
+  DESYNC
+  TZ_DRIFT
+  OTHER
 }
 
 /// Auditoría de acciones sensibles (cambios de producto, stock, ajustes, configuraciones).
