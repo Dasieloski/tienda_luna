@@ -462,7 +462,7 @@ export default function InventoryPage() {
     const res = await fetch(`/api/products/${editId}`, {
       method: "PATCH",
       credentials: "include",
-      headers: { "Content-Type": "application/json" },
+      headers: { "Content-Type": "application/json", "x-tl-csrf": "1" },
       body: JSON.stringify({
         sku: eSku.trim(),
         name: eName.trim(),
@@ -1318,7 +1318,7 @@ export default function InventoryPage() {
                       const res = await fetch(`/api/products/${encodeURIComponent(editId)}`, {
                         method: "PATCH",
                         credentials: "include",
-                        headers: { "Content-Type": "application/json" },
+                        headers: { "Content-Type": "application/json", "x-tl-csrf": "1" },
                         body: JSON.stringify({ restore: true }),
                       });
                       setEditBusy(false);

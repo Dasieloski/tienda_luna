@@ -351,7 +351,7 @@ export function Topbar({
       const res = await fetch("/api/admin/users", {
         method: "POST",
         credentials: "include",
-        headers: { "content-type": "application/json" },
+        headers: { "content-type": "application/json", "x-tl-csrf": "1" },
         body: JSON.stringify({ email: newEmail, password: newPassword, role: newRole }),
       });
       const json = (await res.json()) as any;
@@ -373,6 +373,7 @@ export function Topbar({
       const res = await fetch(`/api/admin/users/${encodeURIComponent(id)}`, {
         method: "DELETE",
         credentials: "include",
+        headers: { "x-tl-csrf": "1" },
       });
       const json = (await res.json()) as any;
       if (!res.ok) {

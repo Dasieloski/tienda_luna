@@ -6,7 +6,7 @@ import { LOCAL_ADMIN_STORE_ID } from "@/lib/static-admin-auth";
 
 const querySchema = z.object({
   page: z.coerce.number().int().min(1).max(500).optional().default(1),
-  limit: z.coerce.number().int().min(1).max(100).optional().default(50),
+  limit: z.coerce.number().int().min(1).max(200).optional().default(50),
   q: z.string().trim().min(1).max(200).optional(),
   from: z.string().datetime().optional(),
   to: z.string().datetime().optional(),
