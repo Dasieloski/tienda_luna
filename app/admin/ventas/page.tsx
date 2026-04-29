@@ -1,10 +1,11 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { RefreshCw, Trash2, WifiOff } from "lucide-react";
+import { PencilLine, Plus, RefreshCw, Search, Trash2, WifiOff } from "lucide-react";
 import { AdminShell } from "@/components/admin/admin-shell";
 import { DataTable, type Column } from "@/components/admin/data-table";
 import { cn } from "@/lib/utils";
+import { formatCup } from "@/lib/money";
 import { CupUsdMoney } from "@/components/admin/cup-usd-money";
 import { TablePriceCupCell } from "@/components/admin/table-price-cup-cell";
 
@@ -72,6 +73,81 @@ function ymdLocal(d: Date) {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 }
 
+type SearchProductHit = {
+  id: string;
+  sku: string;
+  name: string;
+  active: boolean;
+  deletedAt: string | null;
+  priceCents: number;
+  stockQty: number;
+};
+
+type SaleLineDraft = {
+  key: string;
+  productId: string;
+  productName: string;
+  sku: string;
+  quantity: number;
+  unitPriceCupCents: number;
+};
+
+function newDraftKey() {
+  return typeof crypto !== "undefined" && "randomUUID" in crypto ? crypto.randomUUID() : `row-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+}
+
+function parseCupMajorToCents(raw: string): number | null {
+  const s = raw.trim().replace(",", ".").replace(/[^\d.]/g, "");
+  if (!s) return null;
+  const n = Number(s);
+  if (!Number.isFinite(n) || n < 0) return null;
+  return Math.round(n * 100);
+}
+
+function centsToCupMajorInput(cents: number) {
+  return (cents / 100).toFixed(2);
+}
+
+function buildEditPayloadLines(
+  draft: SaleLineDraft[],
+): { ok: true; lines: { productId: string; quantity: number; unitPriceCupCentsOverride: number }[] } | { ok: false; error: string } {
+  const valid = draft.filter((l) => l.productId && l.quantity > 0);
+  if (valid.length === 0) return { ok: false, error: "Añade al menos una línea con producto y cantidad mayor que cero." };
+
+  const byPid = new Map<string, { qty: number; unit: number }>();
+  for (const l of valid) {
+    const cur = byPid.get(l.productId);
+    if (!cur) byPid.set(l.productId, { qty: l.quantity, unit: l.unitPriceCupCents });
+    else {
+      if (cur.unit !== l.unitPriceCupCents) {
+        return {
+          ok: false,
+          error:
+            "El mismo producto aparece con distintos precios unitarios. Deja una sola línea por producto o iguala el precio.",
+        };
+      }
+      cur.qty += l.quantity;
+    }
+  }
+
+  return {
+    ok: true,
+    lines: [...byPid.entries()].map(([productId, { qty, unit }]) => ({
+      productId,
+      quantity: qty,
+      unitPriceCupCentsOverride: unit,
+    })),
+  };
+}
+
+function previewPaymentStatusLabel(paidCents: number, totalCents: number) {
+  if (paidCents === 0) return "CREDIT_OPEN";
+  const bal = totalCents - paidCents;
+  if (bal === 0) return "PAID";
+  if (bal > 0) return "PARTIAL";
+  return "OVERPAID";
+}
+
 export default function SalesPage() {
   const [sales, setSales] = useState<RecentSale[]>([]);
   const [visibleSales, setVisibleSales] = useState<RecentSale[]>([]);
@@ -104,6 +180,132 @@ export default function SalesPage() {
     () => (selectedSaleId ? sales.find((s) => s.id === selectedSaleId) ?? null : null),
     [selectedSaleId, sales],
   );
+
+  const [saleLinesEditOpen, setSaleLinesEditOpen] = useState(false);
+  const [saleEditLines, setSaleEditLines] = useState<SaleLineDraft[]>([]);
+  const [saleEditNote, setSaleEditNote] = useState("");
+  const [saleEditBusy, setSaleEditBusy] = useState(false);
+  const [saleEditErr, setSaleEditErr] = useState<string | null>(null);
+  const [productSearchQ, setProductSearchQ] = useState("");
+  const [productSearchHits, setProductSearchHits] = useState<SearchProductHit[]>([]);
+  const [productSearchLoading, setProductSearchLoading] = useState(false);
+  /** null = no hay sustitución activa; "ADD" = el siguiente resultado se añade como línea */
+  const [productPickTarget, setProductPickTarget] = useState<string | "ADD" | null>(null);
+  const searchDebounceRef = useRef<number | null>(null);
+
+  useEffect(() => {
+    setSaleLinesEditOpen(false);
+    setSaleEditLines([]);
+    setSaleEditNote("");
+    setSaleEditErr(null);
+    setProductSearchQ("");
+    setProductSearchHits([]);
+    setProductPickTarget(null);
+  }, [selectedSaleId]);
+
+  const beginSaleLinesEdit = useCallback(() => {
+    if (!selectedSale) return;
+    if (selectedSale.status !== "COMPLETED") {
+      window.alert("Solo se pueden editar líneas de ventas en estado COMPLETED.");
+      return;
+    }
+    setSaleEditErr(null);
+    setSaleEditNote("");
+    setProductSearchQ("");
+    setProductSearchHits([]);
+    setProductPickTarget(null);
+    const withPid = selectedSale.lines.filter((l) => l.productId);
+    const skipped = selectedSale.lines.length - withPid.length;
+    if (skipped > 0) {
+      window.alert(
+        `Esta venta tiene ${skipped} línea(s) sin producto enlazado; no se pueden editar aquí y no se incluirán al guardar.`,
+      );
+    }
+    setSaleEditLines(
+      withPid.map((l) => ({
+        key: newDraftKey(),
+        productId: l.productId as string,
+        productName: l.productName,
+        sku: l.sku,
+        quantity: l.quantity,
+        unitPriceCupCents: l.unitPriceCents,
+      })),
+    );
+    setSaleLinesEditOpen(true);
+  }, [selectedSale]);
+
+  const cancelSaleLinesEdit = useCallback(() => {
+    setSaleLinesEditOpen(false);
+    setSaleEditErr(null);
+    setProductSearchQ("");
+    setProductSearchHits([]);
+    setProductPickTarget(null);
+  }, []);
+
+  useEffect(() => {
+    if (!saleLinesEditOpen) return;
+    const q = productSearchQ.trim();
+    if (q.length < 2) {
+      setProductSearchHits([]);
+      setProductSearchLoading(false);
+      return;
+    }
+    if (searchDebounceRef.current != null) window.clearTimeout(searchDebounceRef.current);
+    searchDebounceRef.current = window.setTimeout(() => {
+      void (async () => {
+        setProductSearchLoading(true);
+        try {
+          const res = await fetch(`/api/admin/search?q=${encodeURIComponent(q)}&limit=15`, { credentials: "include" });
+          const json = (await res.json()) as { products?: SearchProductHit[]; meta?: { dbAvailable?: boolean } };
+          if (!res.ok || json.meta?.dbAvailable === false) {
+            setProductSearchHits([]);
+            return;
+          }
+          setProductSearchHits(json.products ?? []);
+        } catch {
+          setProductSearchHits([]);
+        } finally {
+          setProductSearchLoading(false);
+        }
+      })();
+    }, 280);
+    return () => {
+      if (searchDebounceRef.current != null) window.clearTimeout(searchDebounceRef.current);
+    };
+  }, [productSearchQ, saleLinesEditOpen]);
+
+  const applyProductPick = useCallback((p: SearchProductHit) => {
+    if (productPickTarget === "ADD") {
+      setSaleEditLines((prev) => [
+        ...prev,
+        {
+          key: newDraftKey(),
+          productId: p.id,
+          productName: p.name,
+          sku: p.sku,
+          quantity: 1,
+          unitPriceCupCents: p.priceCents,
+        },
+      ]);
+    } else if (productPickTarget) {
+      setSaleEditLines((prev) =>
+        prev.map((row) =>
+          row.key === productPickTarget
+            ? {
+                ...row,
+                productId: p.id,
+                productName: p.name,
+                sku: p.sku,
+                unitPriceCupCents: row.unitPriceCupCents,
+              }
+            : row,
+        ),
+      );
+    }
+    setProductPickTarget(null);
+    setProductSearchQ("");
+    setProductSearchHits([]);
+  }, [productPickTarget]);
 
   const loadSales = useCallback(async (opts?: { initial?: boolean; manual?: boolean }) => {
     if (inFlightRef.current) return;
@@ -151,6 +353,45 @@ export default function SalesPage() {
       inFlightRef.current = false;
     }
   }, [fromDay, toDay]);
+
+  const saleEditPreviewTotal = useMemo(
+    () => saleEditLines.reduce((acc, l) => acc + l.quantity * l.unitPriceCupCents, 0),
+    [saleEditLines],
+  );
+
+  const submitSaleLinesEdit = useCallback(async () => {
+    if (!selectedSale) return;
+    const built = buildEditPayloadLines(saleEditLines);
+    if (!built.ok) {
+      setSaleEditErr(built.error);
+      return;
+    }
+    setSaleEditBusy(true);
+    setSaleEditErr(null);
+    try {
+      const res = await fetch("/api/admin/sales/edit", {
+        method: "POST",
+        credentials: "include",
+        headers: { "content-type": "application/json", "x-tl-csrf": "1" },
+        body: JSON.stringify({
+          saleId: selectedSale.id,
+          lines: built.lines,
+          note: saleEditNote.trim() ? saleEditNote.trim() : null,
+        }),
+      });
+      const j = (await res.json().catch(() => null)) as { error?: string } | null;
+      if (!res.ok) {
+        setSaleEditErr(j?.error ?? `Error HTTP ${res.status}`);
+        return;
+      }
+      setSaleLinesEditOpen(false);
+      await loadSales({ manual: true });
+    } catch (e) {
+      setSaleEditErr(e instanceof Error ? e.message : "Error de red.");
+    } finally {
+      setSaleEditBusy(false);
+    }
+  }, [selectedSale, saleEditLines, saleEditNote, loadSales]);
 
   // Initial load
   useEffect(() => {
@@ -604,10 +845,13 @@ export default function SalesPage() {
             className="fixed inset-0 z-50 flex items-end justify-center bg-black/40 p-4 md:items-center"
             role="dialog"
             aria-modal="true"
-            onClick={() => setSelectedSaleId(null)}
+            onClick={() => {
+              if (saleEditBusy) return;
+              setSelectedSaleId(null);
+            }}
           >
             <div
-              className="tl-glass w-full max-w-3xl rounded-2xl p-4 md:p-6"
+              className="tl-glass max-h-[min(92vh,900px)] w-full max-w-4xl overflow-y-auto rounded-2xl p-4 md:p-6"
               onClick={(e) => e.stopPropagation()}
             >
               <div className="flex items-start justify-between gap-4">
@@ -646,6 +890,35 @@ export default function SalesPage() {
                   </div>
                 </div>
               </div>
+
+              {saleLinesEditOpen ? (
+                <div className="mt-4 rounded-xl border border-tl-accent/25 bg-gradient-to-br from-tl-accent/8 to-tl-canvas-inset p-4">
+                  <p className="text-xs font-semibold uppercase tracking-wider text-tl-accent">Vista previa (sin guardar)</p>
+                  <div className="mt-2 flex flex-wrap items-center gap-x-6 gap-y-2 text-sm">
+                    <span className="text-tl-muted">
+                      Nuevo total:{" "}
+                      <span className="font-semibold text-tl-ink">
+                        <CupUsdMoney cents={saleEditPreviewTotal} compact />
+                      </span>
+                    </span>
+                    <span className="text-tl-muted">
+                      Nuevo saldo:{" "}
+                      <span className="font-semibold text-tl-ink">
+                        <CupUsdMoney cents={saleEditPreviewTotal - (selectedSale.paidTotalCents ?? 0)} compact />
+                      </span>
+                    </span>
+                    <span className="text-tl-muted">
+                      Pago (estim.):{" "}
+                      <span className="font-mono text-xs font-semibold text-tl-ink">
+                        {previewPaymentStatusLabel(selectedSale.paidTotalCents ?? 0, saleEditPreviewTotal)}
+                      </span>
+                    </span>
+                  </div>
+                  <p className="mt-2 text-xs text-tl-muted">
+                    Al confirmar, el servidor ajusta stock, totales de la venta, fiado/saldo y el snapshot del día de la venta (cuadre y métricas).
+                  </p>
+                </div>
+              ) : null}
 
               <div className="mt-4 grid gap-4 md:grid-cols-2">
                 <div>
@@ -707,52 +980,37 @@ export default function SalesPage() {
                 <div className="flex flex-wrap items-center justify-between gap-2">
                   <div className="text-xs font-semibold uppercase tracking-wider text-tl-muted">Acciones</div>
                   <div className="flex flex-wrap gap-2">
-                    <button
-                      type="button"
-                      className="tl-btn tl-btn-secondary !px-3 !py-2 text-xs"
-                      onClick={async () => {
-                        const raw = window.prompt(
-                          "Pega JSON de líneas: [{\"productId\":\"...\",\"quantity\":1,\"unitPriceCupCentsOverride\":4500}]",
-                          JSON.stringify(
-                            selectedSale.lines.map((l) => ({
-                              productId: l.productId ?? "",
-                              quantity: l.quantity,
-                              unitPriceCupCentsOverride: l.unitPriceCents,
-                            })),
-                            null,
-                            2,
-                          ),
-                        );
-                        if (!raw) return;
-                        let parsedLines: unknown;
-                        try {
-                          parsedLines = JSON.parse(raw);
-                        } catch {
-                          window.alert("JSON inválido.");
-                          return;
-                        }
-                        if (!Array.isArray(parsedLines)) {
-                          window.alert("Formato inválido: debe ser un array de líneas.");
-                          return;
-                        }
-                        const note = window.prompt("Nota de auditoría (opcional)", "") ?? "";
-                        const res = await fetch("/api/admin/sales/edit", {
-                          method: "POST",
-                          credentials: "include",
-                          headers: { "content-type": "application/json", "x-tl-csrf": "1" },
-                          body: JSON.stringify({ saleId: selectedSale.id, lines: parsedLines, note: note.trim() || null }),
-                        });
-                        const j = await res.json().catch(() => null);
-                        if (!res.ok) {
-                          window.alert(j?.error ?? `Error HTTP ${res.status}`);
-                          return;
-                        }
-                        await loadSales({ manual: true });
-                        window.alert("Venta editada.");
-                      }}
-                    >
-                      Editar venta
-                    </button>
+                    {!saleLinesEditOpen ? (
+                      <button
+                        type="button"
+                        className="tl-btn tl-btn-secondary !px-3 !py-2 text-xs"
+                        disabled={selectedSale.status !== "COMPLETED"}
+                        title={selectedSale.status !== "COMPLETED" ? "Solo ventas COMPLETED" : "Cambiar productos y cantidades"}
+                        onClick={() => beginSaleLinesEdit()}
+                      >
+                        <PencilLine className="mr-1 inline h-3.5 w-3.5" aria-hidden />
+                        Editar productos
+                      </button>
+                    ) : (
+                      <>
+                        <button
+                          type="button"
+                          className="tl-btn tl-btn-primary !px-3 !py-2 text-xs"
+                          disabled={saleEditBusy}
+                          onClick={() => void submitSaleLinesEdit()}
+                        >
+                          {saleEditBusy ? "Guardando…" : "Guardar líneas"}
+                        </button>
+                        <button
+                          type="button"
+                          className="tl-btn tl-btn-secondary !px-3 !py-2 text-xs"
+                          disabled={saleEditBusy}
+                          onClick={() => cancelSaleLinesEdit()}
+                        >
+                          Cancelar edición
+                        </button>
+                      </>
+                    )}
                     <button
                       type="button"
                       className="tl-btn tl-btn-secondary !px-3 !py-2 text-xs"
@@ -821,21 +1079,187 @@ export default function SalesPage() {
                 </div>
 
                 <div className="text-xs font-semibold uppercase tracking-wider text-tl-muted">Productos</div>
-                <div className="mt-2 space-y-1">
-                  {selectedSale.lines.map((l) => (
-                    <div key={l.id} className="flex items-center justify-between rounded-lg border border-tl-line px-3 py-2">
-                      <div className="min-w-0">
-                        <div className="truncate text-sm font-semibold text-tl-ink">
-                          {l.quantity}x {l.productName}
+                {!saleLinesEditOpen ? (
+                  <div className="mt-2 space-y-1">
+                    {selectedSale.lines.map((l) => (
+                      <div key={l.id} className="flex items-center justify-between rounded-lg border border-tl-line px-3 py-2">
+                        <div className="min-w-0">
+                          <div className="truncate text-sm font-semibold text-tl-ink">
+                            {l.quantity}x {l.productName}
+                          </div>
+                          <div className="text-xs text-tl-muted">{l.sku}</div>
                         </div>
-                        <div className="text-xs text-tl-muted">{l.sku}</div>
+                        <div className="text-sm font-bold text-tl-ink">
+                          <TablePriceCupCell cupCents={l.subtotalCents} compact />
+                        </div>
                       </div>
-                      <div className="text-sm font-bold text-tl-ink">
-                        <TablePriceCupCell cupCents={l.subtotalCents} compact />
+                    ))}
+                  </div>
+                ) : (
+                  <div className="mt-2 space-y-4">
+                    {saleEditErr ? (
+                      <div className="rounded-lg border border-tl-warning/30 bg-tl-warning-subtle px-3 py-2 text-sm text-tl-warning">{saleEditErr}</div>
+                    ) : null}
+                    <label className="block text-xs font-semibold uppercase tracking-wider text-tl-muted">
+                      Nota de auditoría (opcional)
+                      <textarea
+                        className="tl-input mt-1 min-h-[56px] w-full px-3 py-2 text-sm normal-case"
+                        value={saleEditNote}
+                        onChange={(e) => setSaleEditNote(e.target.value)}
+                        maxLength={200}
+                        placeholder="Ej. Cliente cambió color mismo precio"
+                      />
+                    </label>
+                    <div className="rounded-xl border border-tl-line bg-tl-canvas-inset/50 p-3">
+                      <div className="flex flex-wrap items-center justify-between gap-2">
+                        <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wider text-tl-muted">
+                          <Search className="h-3.5 w-3.5" aria-hidden />
+                          Buscar producto
+                        </div>
+                        {productPickTarget ? (
+                          <span className="text-[11px] font-medium text-tl-accent">
+                            {productPickTarget === "ADD" ? "Pulsa un resultado para añadir línea" : "Pulsa un resultado para sustituir la línea"}
+                          </span>
+                        ) : (
+                          <span className="text-[11px] text-tl-muted">Pulsa &quot;Sustituir&quot; en una línea o &quot;Añadir línea&quot;</span>
+                        )}
+                      </div>
+                      <input
+                        type="search"
+                        className="tl-input mt-2 h-9 w-full px-3 text-sm"
+                        value={productSearchQ}
+                        onChange={(e) => setProductSearchQ(e.target.value)}
+                        placeholder="Nombre o SKU (mín. 2 caracteres)"
+                        autoComplete="off"
+                      />
+                      <div className="mt-2 max-h-40 overflow-y-auto rounded-lg border border-tl-line-subtle bg-tl-canvas">
+                        {productSearchLoading ? (
+                          <p className="px-3 py-2 text-xs text-tl-muted">Buscando…</p>
+                        ) : productSearchHits.length === 0 ? (
+                          <p className="px-3 py-2 text-xs text-tl-muted">
+                            {productSearchQ.trim().length < 2 ? "Escribe para buscar." : "Sin resultados."}
+                          </p>
+                        ) : (
+                          <ul className="divide-y divide-tl-line-subtle">
+                            {productSearchHits.map((p) => (
+                              <li key={p.id}>
+                                <button
+                                  type="button"
+                                  disabled={!productPickTarget}
+                                  className={cn(
+                                    "flex w-full items-start justify-between gap-2 px-3 py-2 text-left text-sm transition-colors",
+                                    productPickTarget ? "hover:bg-tl-canvas-inset" : "cursor-not-allowed opacity-50",
+                                  )}
+                                  onClick={() => {
+                                    if (!productPickTarget) return;
+                                    applyProductPick(p);
+                                  }}
+                                >
+                                  <span className="min-w-0">
+                                    <span className="font-medium text-tl-ink">{p.name}</span>
+                                    <span className="mt-0.5 block font-mono text-[11px] text-tl-muted">{p.sku}</span>
+                                  </span>
+                                  <span className="shrink-0 text-xs tabular-nums text-tl-muted">
+                                    Stock {p.stockQty} · {formatCup(p.priceCents)}
+                                  </span>
+                                </button>
+                              </li>
+                            ))}
+                          </ul>
+                        )}
                       </div>
                     </div>
-                  ))}
-                </div>
+                    <div className="overflow-x-auto rounded-xl border border-tl-line">
+                      <table className="w-full min-w-[520px] text-left text-sm">
+                        <thead className="border-b border-tl-line bg-tl-canvas-subtle text-xs uppercase tracking-wide text-tl-muted">
+                          <tr>
+                            <th className="px-3 py-2">Producto</th>
+                            <th className="px-3 py-2">Cant.</th>
+                            <th className="px-3 py-2">P. unit. CUP</th>
+                            <th className="px-3 py-2 text-right">Subtotal</th>
+                            <th className="px-3 py-2 text-right">Acciones</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-tl-line-subtle">
+                          {saleEditLines.map((row) => (
+                            <tr key={row.key} className={productPickTarget === row.key ? "bg-tl-accent/10" : undefined}>
+                              <td className="px-3 py-2">
+                                <div className="font-medium text-tl-ink">{row.productName || "—"}</div>
+                                <div className="font-mono text-[11px] text-tl-muted">{row.sku || row.productId || "—"}</div>
+                              </td>
+                              <td className="px-3 py-2">
+                                <input
+                                  type="number"
+                                  min={1}
+                                  step={1}
+                                  className="tl-input h-9 w-20 px-2 text-sm tabular-nums"
+                                  value={row.quantity}
+                                  onChange={(e) => {
+                                    const v = e.target.value;
+                                    if (v === "") return;
+                                    const n = Number(v);
+                                    if (!Number.isFinite(n)) return;
+                                    const q = Math.max(1, Math.floor(n));
+                                    setSaleEditLines((prev) => prev.map((r) => (r.key === row.key ? { ...r, quantity: q } : r)));
+                                  }}
+                                />
+                              </td>
+                              <td className="px-3 py-2">
+                                <input
+                                  type="text"
+                                  inputMode="decimal"
+                                  className="tl-input h-9 w-28 px-2 text-sm tabular-nums"
+                                  defaultValue={centsToCupMajorInput(row.unitPriceCupCents)}
+                                  key={`${row.key}-u${row.unitPriceCupCents}`}
+                                  onBlur={(e) => {
+                                    const c = parseCupMajorToCents(e.currentTarget.value);
+                                    if (c == null) return;
+                                    setSaleEditLines((prev) => prev.map((r) => (r.key === row.key ? { ...r, unitPriceCupCents: c } : r)));
+                                  }}
+                                />
+                              </td>
+                              <td className="px-3 py-2 text-right">
+                                <TablePriceCupCell cupCents={row.quantity * row.unitPriceCupCents} compact />
+                              </td>
+                              <td className="px-3 py-2 text-right whitespace-nowrap">
+                                <button
+                                  type="button"
+                                  className="tl-btn tl-btn-secondary !px-2 !py-1 text-[11px]"
+                                  onClick={() => {
+                                    setProductPickTarget(row.key);
+                                    setProductSearchQ("");
+                                    setProductSearchHits([]);
+                                  }}
+                                >
+                                  Sustituir
+                                </button>
+                                <button
+                                  type="button"
+                                  className="ml-1 tl-btn tl-btn-secondary !px-2 !py-1 text-[11px] text-tl-warning"
+                                  onClick={() => setSaleEditLines((prev) => prev.filter((r) => r.key !== row.key))}
+                                >
+                                  Quitar
+                                </button>
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                    <button
+                      type="button"
+                      className="tl-btn tl-btn-secondary !px-3 !py-2 text-xs"
+                      onClick={() => {
+                        setProductPickTarget("ADD");
+                        setProductSearchQ("");
+                        setProductSearchHits([]);
+                      }}
+                    >
+                      <Plus className="mr-1 inline h-3.5 w-3.5" aria-hidden />
+                      Añadir línea
+                    </button>
+                  </div>
+                )}
               </div>
             </div>
           </div>
