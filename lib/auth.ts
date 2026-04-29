@@ -32,7 +32,18 @@ export async function verifyBearer(request: Request): Promise<SessionClaims | nu
   });
   for (const d of devices) {
     const ok = await compare(token, d.tokenHash);
-    if (ok) return { sub: d.id, storeId: d.storeId, typ: "device" };
+    if (ok) {
+      // Best-effort: marcar "visto" (conexión) del dispositivo.
+      try {
+        await prisma.device.updateMany({
+          where: { id: d.id, storeId: d.storeId },
+          data: { lastSeenAt: new Date() },
+        });
+      } catch {
+        // ignore
+      }
+      return { sub: d.id, storeId: d.storeId, typ: "device" };
+    }
   }
   return null;
 }
@@ -45,7 +56,19 @@ export async function getSessionFromRequest(request: Request): Promise<SessionCl
   const m = cookie.match(new RegExp(`(?:^|;\\s*)${COOKIE}=([^;]+)`));
   if (!m?.[1]) return null;
   try {
-    return await verifySessionToken(decodeURIComponent(m[1]));
+    const claims = await verifySessionToken(decodeURIComponent(m[1]));
+    // Best-effort: si es un dispositivo, marcarlo como "visto" en cualquier request.
+    if (claims?.typ === "device") {
+      try {
+        await prisma.device.updateMany({
+          where: { id: claims.sub, storeId: claims.storeId },
+          data: { lastSeenAt: new Date() },
+        });
+      } catch {
+        // ignore
+      }
+    }
+    return claims;
   } catch {
     return null;
   }
