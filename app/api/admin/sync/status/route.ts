@@ -18,7 +18,7 @@ export async function GET(request: Request) {
   const storeId = guard.session.storeId;
   const now = new Date();
   try {
-    const [maxDeviceEvent, maxDeviceSeen, maxUserAudit] = await Promise.all([
+    const [maxDeviceEvent, maxDeviceSeen, maxUserAudit, recentDevices] = await Promise.all([
       prisma.event.aggregate({
         where: { storeId },
         _max: { serverTimestamp: true },
@@ -30,6 +30,12 @@ export async function GET(request: Request) {
       prisma.auditLog.aggregate({
         where: { storeId, actorType: "USER" },
         _max: { createdAt: true },
+      }),
+      prisma.device.findMany({
+        where: { storeId },
+        orderBy: [{ lastSeenAt: "desc" }, { createdAt: "desc" }],
+        take: 5,
+        select: { id: true, label: true, lastSeenAt: true, createdAt: true },
       }),
     ]);
 
@@ -57,6 +63,14 @@ export async function GET(request: Request) {
         minutesSinceDevice,
         pendingForTablet,
         deviceStale,
+        debug: {
+          recentDevices: recentDevices.map((d) => ({
+            id: d.id,
+            label: d.label,
+            lastSeenAt: d.lastSeenAt ? d.lastSeenAt.toISOString() : null,
+            createdAt: d.createdAt.toISOString(),
+          })),
+        },
       },
     });
   } catch (e) {
