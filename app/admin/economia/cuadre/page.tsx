@@ -76,6 +76,23 @@ function moneyOrDash(cents: number | null | undefined) {
   return formatCup(cents);
 }
 
+function centsToCupInput(cents: number) {
+  if (!Number.isFinite(cents)) return "0";
+  if (cents % 100 === 0) return String(Math.round(cents / 100));
+  const v = cents / 100;
+  // Evitar forzar ".00": si hay decimales reales, mostrarlos.
+  return v.toFixed(2).replace(/\.00$/, "");
+}
+
+function parseCupInputToCents(raw: string) {
+  const s = (raw ?? "").trim();
+  if (!s) return 0;
+  const normalized = s.replace(",", ".");
+  const n = Number(normalized);
+  if (!Number.isFinite(n) || n <= 0) return 0;
+  return Math.max(0, Math.round(n * 100));
+}
+
 function severityColor(s: Finding["severity"]) {
   if (s === "ERROR") return "border-tl-warning/35 bg-tl-warning-subtle text-tl-warning";
   if (s === "WARN") return "border-amber-500/25 bg-amber-500/[0.08] text-amber-700";
@@ -93,6 +110,7 @@ export default function CashClosingAuditPage() {
     (expected?.cashExpectedCents ?? 0) + (expected?.transferExpectedCents ?? 0) + (expected?.usdChannelExpectedCents ?? 0);
 
   const [status, setStatus] = useState<"CORRECT" | "INCORRECT">("CORRECT");
+  // Inputs en CUP (pesos), no en céntimos, para evitar obligar ".00"
   const [cashCounted, setCashCounted] = useState("0");
   const [transferCounted, setTransferCounted] = useState("0");
   const [usdCounted, setUsdCounted] = useState("0");
@@ -102,9 +120,9 @@ export default function CashClosingAuditPage() {
   const [saving, setSaving] = useState(false);
 
   const countedTotal = useMemo(() => {
-    const c = Math.max(0, Math.round(Number(cashCounted || "0")));
-    const t = Math.max(0, Math.round(Number(transferCounted || "0")));
-    const u = Math.max(0, Math.round(Number(usdCounted || "0")));
+    const c = parseCupInputToCents(cashCounted);
+    const t = parseCupInputToCents(transferCounted);
+    const u = parseCupInputToCents(usdCounted);
     return c + t + u;
   }, [cashCounted, transferCounted, usdCounted]);
 
@@ -126,16 +144,16 @@ export default function CashClosingAuditPage() {
 
       if (json.audit) {
         setStatus(json.audit.status);
-        setCashCounted(String(json.audit.counted.cashCountedCents));
-        setTransferCounted(String(json.audit.counted.transferCountedCents));
-        setUsdCounted(String(json.audit.counted.usdChannelCountedCents));
+        setCashCounted(centsToCupInput(json.audit.counted.cashCountedCents));
+        setTransferCounted(centsToCupInput(json.audit.counted.transferCountedCents));
+        setUsdCounted(centsToCupInput(json.audit.counted.usdChannelCountedCents));
         setCategory(json.audit.category ?? "DESYNC");
         setObservation(json.audit.observation ?? "");
       } else {
         setStatus("CORRECT");
-        setCashCounted(String(json.computed?.totals?.cashExpectedCents ?? 0));
-        setTransferCounted(String(json.computed?.totals?.transferExpectedCents ?? 0));
-        setUsdCounted(String(json.computed?.totals?.usdChannelExpectedCents ?? 0));
+        setCashCounted(centsToCupInput(json.computed?.totals?.cashExpectedCents ?? 0));
+        setTransferCounted(centsToCupInput(json.computed?.totals?.transferExpectedCents ?? 0));
+        setUsdCounted(centsToCupInput(json.computed?.totals?.usdChannelExpectedCents ?? 0));
         setCategory("DESYNC");
         setObservation("");
       }
@@ -163,9 +181,9 @@ export default function CashClosingAuditPage() {
         body: JSON.stringify({
           date,
           status,
-          cashCountedCents: Math.max(0, Math.round(Number(cashCounted || "0"))),
-          transferCountedCents: Math.max(0, Math.round(Number(transferCounted || "0"))),
-          usdChannelCountedCents: Math.max(0, Math.round(Number(usdCounted || "0"))),
+          cashCountedCents: parseCupInputToCents(cashCounted),
+          transferCountedCents: parseCupInputToCents(transferCounted),
+          usdChannelCountedCents: parseCupInputToCents(usdCounted),
           category: status === "INCORRECT" ? category : null,
           observation: status === "INCORRECT" ? observation : null,
           note: note.trim() ? note.trim() : null,
@@ -272,15 +290,33 @@ export default function CashClosingAuditPage() {
               </label>
               <label className="flex flex-col gap-1 text-xs font-medium text-tl-muted">
                 Efectivo (CUP)
-                <input className="tl-input h-10 w-[160px] px-3 text-sm tabular-nums" value={cashCounted} onChange={(e) => setCashCounted(e.target.value)} inputMode="numeric" />
+                <input
+                  className="tl-input h-10 w-[160px] px-3 text-sm tabular-nums"
+                  value={cashCounted}
+                  onChange={(e) => setCashCounted(e.target.value)}
+                  inputMode="decimal"
+                  placeholder="12000"
+                />
               </label>
               <label className="flex flex-col gap-1 text-xs font-medium text-tl-muted">
                 Transferencia (CUP)
-                <input className="tl-input h-10 w-[160px] px-3 text-sm tabular-nums" value={transferCounted} onChange={(e) => setTransferCounted(e.target.value)} inputMode="numeric" />
+                <input
+                  className="tl-input h-10 w-[160px] px-3 text-sm tabular-nums"
+                  value={transferCounted}
+                  onChange={(e) => setTransferCounted(e.target.value)}
+                  inputMode="decimal"
+                  placeholder="12000"
+                />
               </label>
               <label className="flex flex-col gap-1 text-xs font-medium text-tl-muted">
                 USD canal (CUP)
-                <input className="tl-input h-10 w-[160px] px-3 text-sm tabular-nums" value={usdCounted} onChange={(e) => setUsdCounted(e.target.value)} inputMode="numeric" />
+                <input
+                  className="tl-input h-10 w-[160px] px-3 text-sm tabular-nums"
+                  value={usdCounted}
+                  onChange={(e) => setUsdCounted(e.target.value)}
+                  inputMode="decimal"
+                  placeholder="0"
+                />
               </label>
               <button type="button" className="tl-btn tl-btn-primary inline-flex h-10 items-center gap-2 self-end" onClick={() => void save()} disabled={saving || loading || !data}>
                 <BadgeCheck className={cn("h-4 w-4", saving && "animate-pulse")} aria-hidden />

@@ -66,6 +66,7 @@ model Store {
   saleReturns  SaleReturn[]
   expenseCategories ExpenseCategory[]
   expenses Expense[]
+  accountingEntries AccountingEntry[]
   fxExchanges FxExchange[]
   ownerSales OwnerSale[]
   suppliers  Supplier[]
@@ -495,6 +496,9 @@ model Expense {
 
   /// Fecha real del gasto (cuando ocurrió/pagó)
   occurredAt DateTime
+  /// Periodo contable de impacto (acumulación), separado de caja. Formato `YYYY-MM`.
+  /// Regla por defecto: si es null, se asume el mes de `occurredAt`.
+  impactMonth String?
   /// Quién lo pagó físicamente (texto libre: Osmar/Alex/Empleado/etc.)
   paidBy     String?
   notes      String?
@@ -516,8 +520,45 @@ model Expense {
   updatedAt DateTime @updatedAt
 
   @@index([storeId, occurredAt])
+  @@index([storeId, impactMonth])
   @@index([storeId, categoryId, occurredAt])
   @@index([storeId, splitStrategy, occurredAt])
+}
+
+/// Sub-ledger contable para asientos manuales/ajustes (acumulaciones, reclasificaciones).
+/// NO reemplaza ventas ni caja: solo afecta reportes financieros avanzados de Contabilidad.
+model AccountingEntry {
+  id        String   @id @default(cuid())
+  storeId   String
+  store     Store    @relation(fields: [storeId], references: [id], onDelete: Cascade)
+
+  /// Fecha de registro contable (posting date).
+  postedAt  DateTime
+  /// Periodo contable de impacto (YYYY-MM). Si es null, se infiere desde `postedAt` en reportes.
+  impactMonth String?
+
+  /// Clasificación de alto nivel para reportes.
+  entryType String  /// ACCRUAL | ADJUSTMENT | RECLASS | NOTE
+  /// Signo: positivo = ingreso/recuperación, negativo = egreso/coste.
+  amountCents Int
+  currency    PaymentCurrency @default(CUP)
+  originalAmount Int?
+  usdRateCup  Int?
+
+  description String
+  notes       String?
+
+  /// Enlaces opcionales a entidades existentes (no obligatorios).
+  relatedExpenseId String?
+  relatedSaleId    String?
+
+  createdByUserId String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([storeId, postedAt])
+  @@index([storeId, impactMonth])
+  @@index([storeId, entryType, postedAt])
 }
 
 /// Consumo de los dueños: descuenta stock, pero NO cuenta como ingreso/ganancia.

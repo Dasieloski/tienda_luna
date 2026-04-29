@@ -18,6 +18,8 @@ const createSchema = z.object({
   concept: z.string().trim().min(1).max(160),
   categoryId: z.string().min(1).optional().nullable(),
   categoryName: z.string().trim().max(80).optional().nullable(),
+  /** Periodo contable de impacto (YYYY-MM). Si falta, se asume el mes de `occurredAt`. */
+  impactMonth: z.string().regex(/^\d{4}-\d{2}$/).optional().nullable(),
   currency: z.enum(["CUP", "USD"]).default("CUP"),
   amountCupCents: z.number().int().min(0).optional(),
   amountUsdCents: z.number().int().min(0).optional(),
@@ -157,6 +159,7 @@ export async function GET(request: Request) {
       originalAmount: r.originalAmount ?? null,
       usdRateCup: r.usdRateCup ?? null,
       occurredAt: r.occurredAt.toISOString(),
+      impactMonth: (r as any).impactMonth ?? null,
       paidBy: r.paidBy ?? null,
       notes: r.notes ?? null,
       splitStrategy: r.splitStrategy,
@@ -196,6 +199,7 @@ export async function POST(request: Request) {
       concept: parsed.data.concept,
       categoryId: parsed.data.categoryId ?? null,
       categoryName: parsed.data.categoryName ?? null,
+      ...(parsed.data.impactMonth !== undefined ? ({ impactMonth: parsed.data.impactMonth ?? null } as any) : {}),
       amountCents: computed.amountCents,
       currency: computed.currency,
       originalAmount: computed.originalAmount,
@@ -265,6 +269,7 @@ export async function PATCH(request: Request) {
     data.category = id ? { connect: { id } } : { disconnect: true };
   }
   if ("categoryName" in parsed.data) data.categoryName = parsed.data.categoryName ?? null;
+  if ("impactMonth" in parsed.data) (data as any).impactMonth = parsed.data.impactMonth ?? null;
   if ("paidBy" in parsed.data) data.paidBy = parsed.data.paidBy ?? null;
   if ("notes" in parsed.data) data.notes = parsed.data.notes ?? null;
   if (parsed.data.occurredAt != null) data.occurredAt = new Date(parsed.data.occurredAt);
