@@ -14,21 +14,34 @@ export async function GET(request: Request) {
   }
 
   if (session.storeId === LOCAL_ADMIN_STORE_ID) {
-    return NextResponse.json({ ok: true, now: new Date().toISOString(), meta: { dbAvailable: false as const } });
+    return NextResponse.json({
+      ok: true,
+      now: new Date().toISOString(),
+      meta: { dbAvailable: false as const },
+      session: { typ: session.typ, deviceId: session.sub, storeId: session.storeId },
+      touchedCount: 0,
+    });
   }
 
   const now = new Date();
+  let touchedCount = 0;
   try {
     // Best-effort: mantener lastSeenAt fresco.
-    await prisma.device.updateMany({
+    const r = await prisma.device.updateMany({
       where: { id: session.sub, storeId: session.storeId },
       data: { lastSeenAt: now },
     });
+    touchedCount = r.count;
   } catch (e) {
     console.error("[api/device/ping]", e);
     // No bloquear: ping es best-effort
   }
 
-  return NextResponse.json({ ok: true, now: now.toISOString() });
+  return NextResponse.json({
+    ok: true,
+    now: now.toISOString(),
+    session: { typ: session.typ, deviceId: session.sub, storeId: session.storeId },
+    touchedCount,
+  });
 }
 
