@@ -65,13 +65,6 @@ function computeAmountCents(input: {
   };
 }
 
-function requireExpensePin(request: Request): boolean {
-  const expected = (process.env.TL_EXPENSES_PIN ?? process.env.TL_ADMIN_PIN ?? "").trim();
-  if (!expected) return true; // si no hay pin configurado, no bloquear
-  const got = (request.headers.get("x-tl-pin") ?? "").trim();
-  return got === expected;
-}
-
 export async function GET(request: Request) {
   const guard = await requireAdminRequest(request);
   if (!guard.ok) return guard.res;
@@ -247,7 +240,6 @@ export async function POST(request: Request) {
 export async function PATCH(request: Request) {
   const guard = await requireAdminRequest(request, { csrf: true });
   if (!guard.ok) return guard.res;
-  if (!requireExpensePin(request)) return NextResponse.json({ error: "PIN_REQUIRED" }, { status: 403 });
 
   const json = await request.json().catch(() => null);
   const parsed = updateSchema.safeParse(json);
@@ -330,7 +322,6 @@ export async function PATCH(request: Request) {
 export async function DELETE(request: Request) {
   const guard = await requireAdminRequest(request, { csrf: true });
   if (!guard.ok) return guard.res;
-  if (!requireExpensePin(request)) return NextResponse.json({ error: "PIN_REQUIRED" }, { status: 403 });
 
   const url = new URL(request.url);
   const id = url.searchParams.get("id");
