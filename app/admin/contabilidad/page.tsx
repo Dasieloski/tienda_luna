@@ -338,7 +338,7 @@ export default function ContabilidadPage() {
       const res = await fetch(`/api/admin/accounting/entries?${q}`, { credentials: "include" });
       const json = (await res.json()) as {
         entries?: AccountingEntryRow[];
-        meta?: { dbAvailable?: boolean };
+        meta?: { dbAvailable?: boolean; message?: string };
       };
       if (!res.ok) {
         setLedgerErr("No se pudo cargar asientos.");
@@ -597,13 +597,15 @@ export default function ContabilidadPage() {
               <section className="rounded-2xl border border-tl-line-subtle bg-tl-canvas-inset p-5 shadow-sm">
                 <h2 className="text-sm font-semibold text-tl-ink">Comparación vs mes anterior ({cmp.previousMonth})</h2>
                 <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
-                  {[
-                    ["Ventas", cmp.pctVsPrevious.grossSales],
-                    ["Margen bruto", cmp.pctVsPrevious.grossProfit],
-                    ["Gastos impacto", cmp.pctVsPrevious.accrualExpenses],
-                    ["Utilidad neta", cmp.pctVsPrevious.netProfit],
-                    ["Cash flow", cmp.pctVsPrevious.netCashFlow],
-                  ].map(([label, pct]) => (
+                  {(
+                    [
+                      { label: "Ventas", pct: cmp.pctVsPrevious.grossSales },
+                      { label: "Margen bruto", pct: cmp.pctVsPrevious.grossProfit },
+                      { label: "Gastos impacto", pct: cmp.pctVsPrevious.accrualExpenses },
+                      { label: "Utilidad neta", pct: cmp.pctVsPrevious.netProfit },
+                      { label: "Cash flow", pct: cmp.pctVsPrevious.netCashFlow },
+                    ] satisfies { label: string; pct: number | null }[]
+                  ).map(({ label, pct }) => (
                     <div key={String(label)} className="rounded-xl border border-tl-line-subtle bg-tl-canvas px-3 py-2">
                       <p className="text-[10px] font-semibold uppercase tracking-wider text-tl-muted">{label}</p>
                       <p className="mt-1 text-lg font-bold tabular-nums text-tl-ink">{fmtPct(pct)}</p>
@@ -619,7 +621,7 @@ export default function ContabilidadPage() {
                         <YAxis tick={{ fontSize: 10, fill: "var(--tl-muted)" }} width={44} tickFormatter={(v) => `${Math.round(v / 100)}`} />
                         <Tooltip
                           contentStyle={tipStyle}
-                          formatter={(value: number) => formatCup(value)}
+                          formatter={(value) => formatCup(typeof value === "number" ? value : Number(value ?? 0))}
                           labelFormatter={(l) => String(l)}
                         />
                         <Bar dataKey="actual" name="Mes actual" fill="var(--tl-accent)" radius={[4, 4, 0, 0]} />
@@ -645,7 +647,7 @@ export default function ContabilidadPage() {
                       <CartesianGrid stroke="var(--tl-line-subtle)" horizontal={false} />
                       <XAxis type="number" tick={{ fontSize: 10, fill: "var(--tl-muted)" }} tickFormatter={(v) => `${Math.round(v / 100)}`} />
                       <YAxis type="category" dataKey="name" width={120} tick={{ fontSize: 10, fill: "var(--tl-muted)" }} />
-                      <Tooltip contentStyle={tipStyle} formatter={(v: number) => formatCup(v)} />
+                      <Tooltip contentStyle={tipStyle} formatter={(v) => formatCup(typeof v === "number" ? v : Number(v ?? 0))} />
                       <Bar dataKey="totalCents" fill="var(--tl-warning)" radius={[0, 6, 6, 0]} />
                     </BarChart>
                   </ResponsiveContainer>
