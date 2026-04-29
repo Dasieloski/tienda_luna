@@ -5,7 +5,10 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import {
   Bell,
   Clock,
+  CloudOff,
+  Cloudy,
   KeyRound,
+  Link2,
   LayoutDashboard,
   Landmark,
   Menu,
@@ -33,6 +36,19 @@ interface TopbarProps {
 type GlobalSearchHit =
   | { kind: "product"; id: string; title: string; subtitle: string }
   | { kind: "supplier"; id: string; title: string; subtitle: string };
+
+type SyncStatusPayload = {
+  meta: { dbAvailable: boolean };
+  status: null | {
+    now: string;
+    lastDeviceEventAt: string | null;
+    lastDeviceSeenAt: string | null;
+    lastWebChangeAt: string | null;
+    minutesSinceDevice: number | null;
+    pendingForTablet: boolean;
+    deviceStale: boolean;
+  };
+};
 
 export function Topbar({
   title = "Dashboard",
@@ -82,6 +98,64 @@ export function Topbar({
   const [searchActiveIndex, setSearchActiveIndex] = useState(0);
   const searchWrapRef = useRef<HTMLDivElement | null>(null);
   const searchAbortRef = useRef<AbortController | null>(null);
+
+  // Indicador de sincronización tablet ↔ web
+  const [sync, setSync] = useState<SyncStatusPayload["status"]>(null);
+  const [syncErr, setSyncErr] = useState<string | null>(null);
+  useEffect(() => {
+    let cancelled = false;
+    let t: number | null = null;
+    async function load() {
+      try {
+        const res = await fetch("/api/admin/sync/status", { credentials: "include" });
+        const json = (await res.json().catch(() => null)) as unknown;
+        if (cancelled) return;
+        const payload = (json && typeof json === "object" ? (json as SyncStatusPayload) : null) as SyncStatusPayload | null;
+        setSync(payload?.status ?? null);
+        setSyncErr(null);
+      } catch (e) {
+        if (cancelled) return;
+        setSyncErr(e instanceof Error ? e.message : "sync");
+      }
+    }
+    void load();
+    t = window.setInterval(load, 30_000);
+    return () => {
+      cancelled = true;
+      if (t) window.clearInterval(t);
+    };
+  }, []);
+
+  const syncChip = useMemo(() => {
+    if (syncErr) {
+      return { label: "Sync: —", title: "No se pudo verificar estado de sync", kind: "neutral" as const };
+    }
+    if (!sync) {
+      return { label: "Sync: —", title: "Sin datos de sync todavía", kind: "neutral" as const };
+    }
+    const mins = sync.minutesSinceDevice;
+    const stale = sync.deviceStale;
+    const pending = sync.pendingForTablet;
+    if (stale) {
+      return {
+        label: `Tablet: ${mins != null ? `hace ${mins} min` : "sin señal"}`,
+        title: "El tablet parece sin conexión o sin sincronizar recientemente.",
+        kind: "stale" as const,
+      };
+    }
+    if (pending) {
+      return {
+        label: `Tablet: pendiente`,
+        title: "Hay cambios hechos desde la web que aún no se reflejan en el tablet (último contacto más viejo).",
+        kind: "pending" as const,
+      };
+    }
+    return {
+      label: `Tablet: al día`,
+      title: mins != null ? `Último contacto hace ${mins} min.` : "Al día.",
+      kind: "ok" as const,
+    };
+  }, [sync, syncErr]);
 
   const [density, setDensity] = useState<"comfortable" | "compact">("comfortable");
   useEffect(() => {
@@ -508,6 +582,27 @@ export function Topbar({
 
       {/* Right: Settings, status, actions */}
       <div className="flex shrink-0 items-center gap-2">
+        <div
+          className={cn(
+            "hidden items-center gap-2 rounded-full border px-3 py-2 text-xs font-semibold sm:inline-flex",
+            syncChip.kind === "ok" && "border-tl-success/25 bg-tl-success-subtle/30 text-tl-success",
+            syncChip.kind === "pending" && "border-tl-warning/25 bg-tl-warning-subtle/30 text-tl-warning",
+            syncChip.kind === "stale" && "border-tl-danger/25 bg-tl-danger-subtle/30 text-tl-danger",
+            syncChip.kind === "neutral" && "border-tl-line bg-tl-canvas-inset text-tl-muted",
+          )}
+          title={syncChip.title}
+        >
+          {syncChip.kind === "ok" ? (
+            <Link2 className="h-4 w-4" aria-hidden />
+          ) : syncChip.kind === "pending" ? (
+            <Cloudy className="h-4 w-4" aria-hidden />
+          ) : syncChip.kind === "stale" ? (
+            <CloudOff className="h-4 w-4" aria-hidden />
+          ) : (
+            <Link2 className="h-4 w-4" aria-hidden />
+          )}
+          <span>{syncChip.label}</span>
+        </div>
         <button
           type="button"
           className="hidden items-center gap-2 rounded-full border border-tl-line bg-tl-canvas-inset px-3 py-2 text-xs font-semibold text-tl-ink tl-interactive tl-hover-lift tl-press tl-focus hover:bg-tl-canvas-subtle sm:inline-flex"
