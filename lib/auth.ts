@@ -30,7 +30,10 @@ export async function verifyBearer(request: Request): Promise<SessionClaims | nu
     if (jwtClaims.typ === "device") {
       try {
         await prisma.device.updateMany({
-          where: { id: jwtClaims.sub, storeId: jwtClaims.storeId },
+          where: {
+            storeId: jwtClaims.storeId,
+            OR: [{ id: jwtClaims.sub }, { label: jwtClaims.sub }],
+          },
           data: { lastSeenAt: new Date() },
         });
       } catch {
@@ -41,7 +44,7 @@ export async function verifyBearer(request: Request): Promise<SessionClaims | nu
   }
 
   const devices = await prisma.device.findMany({
-    select: { id: true, storeId: true, tokenHash: true },
+    select: { id: true, storeId: true, label: true, tokenHash: true },
   });
   for (const d of devices) {
     const ok = await compare(token, d.tokenHash);
@@ -55,7 +58,8 @@ export async function verifyBearer(request: Request): Promise<SessionClaims | nu
       } catch {
         // ignore
       }
-      return { sub: d.id, storeId: d.storeId, typ: "device" };
+      // Para compat con sesiones antiguas, devolvemos `sub` como label (estable) si existe.
+      return { sub: d.label || d.id, storeId: d.storeId, typ: "device" };
     }
   }
   return null;
@@ -74,7 +78,10 @@ export async function getSessionFromRequest(request: Request): Promise<SessionCl
     if (claims?.typ === "device") {
       try {
         await prisma.device.updateMany({
-          where: { id: claims.sub, storeId: claims.storeId },
+          where: {
+            storeId: claims.storeId,
+            OR: [{ id: claims.sub }, { label: claims.sub }],
+          },
           data: { lastSeenAt: new Date() },
         });
       } catch {

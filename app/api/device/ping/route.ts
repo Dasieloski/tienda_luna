@@ -28,7 +28,10 @@ export async function GET(request: Request) {
   try {
     // Best-effort: mantener lastSeenAt fresco.
     const r = await prisma.device.updateMany({
-      where: { id: session.sub, storeId: session.storeId },
+      where: {
+        storeId: session.storeId,
+        OR: [{ id: session.sub }, { label: session.sub }],
+      },
       data: { lastSeenAt: now },
     });
     touchedCount = r.count;
