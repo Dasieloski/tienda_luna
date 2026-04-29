@@ -50,6 +50,15 @@ type SyncStatusPayload = {
   };
 };
 
+function fmtSince(minutes: number | null) {
+  if (minutes == null) return "sin señal";
+  const mins = Math.max(0, Math.round(minutes));
+  if (mins < 60) return `${mins} min`;
+  const h = Math.floor(mins / 60);
+  const m = mins % 60;
+  return `${h}h${m ? ` ${m} min` : ""}`;
+}
+
 export function Topbar({
   title = "Dashboard",
   onMenuClick,
@@ -138,21 +147,21 @@ export function Topbar({
     const pending = sync.pendingForTablet;
     if (stale) {
       return {
-        label: `Tablet: ${mins != null ? `hace ${mins} min` : "sin señal"}`,
+        label: `Tablet: hace ${fmtSince(mins)}`,
         title: "El tablet parece sin conexión o sin sincronizar recientemente.",
         kind: "stale" as const,
       };
     }
     if (pending) {
       return {
-        label: `Tablet: pendiente`,
-        title: "Hay cambios hechos desde la web que aún no se reflejan en el tablet (último contacto más viejo).",
+        label: `Tablet: pendiente · hace ${fmtSince(mins)}`,
+        title: `Hay cambios hechos desde la web que aún no se reflejan en el tablet. Último contacto: hace ${fmtSince(mins)}.`,
         kind: "pending" as const,
       };
     }
     return {
       label: `Tablet: al día`,
-      title: mins != null ? `Último contacto hace ${mins} min.` : "Al día.",
+      title: mins != null ? `Último contacto hace ${fmtSince(mins)}.` : "Al día.",
       kind: "ok" as const,
     };
   }, [sync, syncErr]);
@@ -584,14 +593,25 @@ export function Topbar({
       <div className="flex shrink-0 items-center gap-2">
         <div
           className={cn(
-            "hidden items-center gap-2 rounded-full border px-3 py-2 text-xs font-semibold sm:inline-flex",
-            syncChip.kind === "ok" && "border-tl-success/25 bg-tl-success-subtle/30 text-tl-success",
-            syncChip.kind === "pending" && "border-tl-warning/25 bg-tl-warning-subtle/30 text-tl-warning",
-            syncChip.kind === "stale" && "border-tl-danger/25 bg-tl-danger-subtle/30 text-tl-danger",
-            syncChip.kind === "neutral" && "border-tl-line bg-tl-canvas-inset text-tl-muted",
+            "hidden items-center gap-2 rounded-full border px-3 py-2 text-xs font-semibold shadow-sm sm:inline-flex",
+            "bg-gradient-to-b from-tl-canvas to-tl-canvas-inset",
+            syncChip.kind === "ok" && "border-tl-success/25 text-tl-success",
+            syncChip.kind === "pending" && "border-tl-warning/25 text-tl-warning",
+            syncChip.kind === "stale" && "border-tl-danger/25 text-tl-danger",
+            syncChip.kind === "neutral" && "border-tl-line text-tl-muted",
           )}
           title={syncChip.title}
         >
+          <span
+            className={cn(
+              "h-2 w-2 rounded-full",
+              syncChip.kind === "ok" && "bg-tl-success",
+              syncChip.kind === "pending" && "bg-tl-warning",
+              syncChip.kind === "stale" && "bg-tl-danger",
+              syncChip.kind === "neutral" && "bg-tl-muted/60",
+            )}
+            aria-hidden
+          />
           {syncChip.kind === "ok" ? (
             <Link2 className="h-4 w-4" aria-hidden />
           ) : syncChip.kind === "pending" ? (
@@ -601,7 +621,7 @@ export function Topbar({
           ) : (
             <Link2 className="h-4 w-4" aria-hidden />
           )}
-          <span>{syncChip.label}</span>
+          <span className="tabular-nums">{syncChip.label}</span>
         </div>
         <button
           type="button"
