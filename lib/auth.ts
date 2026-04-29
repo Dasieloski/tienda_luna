@@ -25,7 +25,20 @@ export async function verifyBearer(request: Request): Promise<SessionClaims | nu
   if (!token) return null;
 
   const jwtClaims = await verifySessionToken(token);
-  if (jwtClaims) return jwtClaims;
+  if (jwtClaims) {
+    // Best-effort: si es un dispositivo autenticado por JWT, marcar "visto".
+    if (jwtClaims.typ === "device") {
+      try {
+        await prisma.device.updateMany({
+          where: { id: jwtClaims.sub, storeId: jwtClaims.storeId },
+          data: { lastSeenAt: new Date() },
+        });
+      } catch {
+        // ignore
+      }
+    }
+    return jwtClaims;
+  }
 
   const devices = await prisma.device.findMany({
     select: { id: true, storeId: true, tokenHash: true },
