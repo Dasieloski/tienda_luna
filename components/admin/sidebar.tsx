@@ -53,6 +53,7 @@ const NAV_ITEMS = [
     section: "Sistema",
     items: [
       { href: "/admin/alertas", label: "Alertas", icon: AlertTriangle },
+      { href: "/admin/dispositivos", label: "Dispositivos", icon: Monitor },
       { href: "/admin/config", label: "Configuración", icon: Settings },
     ],
   },
