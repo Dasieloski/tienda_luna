@@ -28,6 +28,11 @@ enum OwnerName {
   ALEX
 }
 
+enum PaymentCurrency {
+  CUP
+  USD
+}
+
 model Store {
   id        String   @id @default(cuid())
   name      String
@@ -47,6 +52,8 @@ model Store {
   customers  Customer[]
   events     Event[]
   sales      Sale[]
+  salePayments SalePayment[]
+  saleReturns  SaleReturn[]
   ownerSales OwnerSale[]
   suppliers  Supplier[]
   supplierDebtPayments SupplierDebtPayment[]
@@ -190,6 +197,7 @@ model Product {
   updatedAt   DateTime @updatedAt
 
   saleLines SaleLine[]
+  saleReturnLines SaleReturnLine[]
   ownerSaleLines OwnerSaleLine[]
   inventoryMovements InventoryMovement[]
   supplierWithdrawalLines SupplierWithdrawalLine[]
@@ -272,6 +280,8 @@ model Event {
   relatedClientSaleId String?
 
   inventoryMovements InventoryMovement[]
+  salePayments SalePayment[]
+  saleReturns  SaleReturn[]
 
   @@unique([storeId, clientEventId])
   @@index([storeId, serverTimestamp])
@@ -292,12 +302,24 @@ model Sale {
   customerId   String?
   customer     Customer? @relation(fields: [customerId], references: [id])
   totalCents   Int       @default(0)
+  /// Total pagado acumulado (CUP céntimos). Para fiado/pagos parciales.
+  paidTotalCents Int     @default(0)
+  /// Balance = totalCents - paidTotalCents. Puede ser negativo si hay sobrepago/nota de crédito.
+  balanceCents Int       @default(0)
+  /// Estado de pago: PAID | PARTIAL | CREDIT_OPEN | OVERPAID (string para compatibilidad)
+  paymentStatus String   @default("PAID")
+  /// Marca si fue editada después de completada.
+  editedAt    DateTime?
+  revisionCount Int      @default(0)
   status       String    @default("COMPLETED")
   completedAt  DateTime  @default(now())
   lines        SaleLine[]
+  payments     SalePayment[]
+  returns      SaleReturn[]
 
   @@index([storeId, completedAt])
   @@index([storeId, deviceId])
+  @@index([storeId, clientSaleId])
 }
 
 model SaleLine {
@@ -316,6 +338,77 @@ model SaleLine {
   unitCostCents  Int?
   subtotalCostCents Int?
 
+  @@index([productId])
+}
+
+model SalePayment {
+  id             String   @id @default(cuid())
+  storeId        String
+  store          Store    @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  saleId         String
+  sale           Sale     @relation(fields: [saleId], references: [id], onDelete: Cascade)
+
+  /// Importe final en CUP (céntimos) que afecta contabilidad/cuadre.
+  amountCupCents Int
+
+  /// Moneda original capturada (CUP o USD). Si USD, `originalAmount` se expresa en centavos USD.
+  currency       PaymentCurrency @default(CUP)
+  originalAmount Int?
+  usdRateCup     Int?
+
+  /// Método/canal (cash, transfer, usd_cash, etc.)
+  method         String
+
+  /// Momento del pago (importante para cuadre por día si el abono ocurre otro día).
+  paidAt         DateTime @default(now())
+
+  /// Si proviene de un evento, se enlaza para trazabilidad.
+  eventId        String?
+  event          Event?   @relation(fields: [eventId], references: [id], onDelete: SetNull)
+
+  createdAt      DateTime @default(now())
+
+  @@index([storeId, paidAt])
+  @@index([storeId, saleId, paidAt])
+  @@index([storeId, method, paidAt])
+  @@index([eventId])
+}
+
+model SaleReturn {
+  id            String   @id @default(cuid())
+  storeId       String
+  store         Store    @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  saleId        String
+  sale          Sale     @relation(fields: [saleId], references: [id], onDelete: Cascade)
+
+  /// Importe en CUP (céntimos) del ajuste (negativo o positivo según convención; aquí guardamos negativo).
+  amountCupCents Int
+  reason        String?
+  returnedAt    DateTime @default(now())
+
+  eventId       String?
+  event         Event?   @relation(fields: [eventId], references: [id], onDelete: SetNull)
+
+  lines         SaleReturnLine[]
+
+  @@index([storeId, returnedAt])
+  @@index([storeId, saleId, returnedAt])
+  @@index([eventId])
+}
+
+model SaleReturnLine {
+  id            String   @id @default(cuid())
+  saleReturnId  String
+  saleReturn    SaleReturn @relation(fields: [saleReturnId], references: [id], onDelete: Cascade)
+  productId     String?
+  product       Product? @relation(fields: [productId], references: [id], onDelete: SetNull)
+  productName   String?
+  productSku    String?
+  quantity      Int
+  unitPriceCents Int
+  subtotalCents  Int
+
+  @@index([saleReturnId])
   @@index([productId])
 }
 

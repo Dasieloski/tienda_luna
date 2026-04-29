@@ -8,6 +8,16 @@ export const DOMAIN_EVENT_TYPES = [
   "STOCK_DECREASED",
   "SALE_CANCELLED",
   "SALE_COMPLETED",
+  /** v2: cierre con pagos detallados (mixto, USD, fiado parcial) */
+  "SALE_COMPLETED_V2",
+  /** v2: abono/pago aplicado posterior a una venta existente (fiado) */
+  "SALE_PAYMENT_APPLIED",
+  /** v2: devolución parcial (y ajuste de stock/contabilidad) */
+  "SALE_RETURNED",
+  /** v2: edición de una venta ya realizada (ajusta stock/contabilidad) */
+  "SALE_EDITED",
+  /** v2 (opcional): clientes mínimos para fiado */
+  "CUSTOMER_UPSERTED",
   /** Catálogo desde tablet/POS (misma auth que sync batch) */
   "PRODUCT_CREATED",
   "PRODUCT_UPDATED",
@@ -37,7 +47,10 @@ export type ProductAddedPayload = {
   /** Alternativa para compatibilidad: resolver producto por SKU. */
   sku?: string;
   quantity: number;
+  /** Compat legacy: ignorado en servidor salvo override explícito. */
   unitPriceCents?: number;
+  /** v2: precio final negociado (CUP céntimos) por unidad. */
+  unitPriceCupCentsOverride?: number;
 };
 
 export type StockDecreasedPayload = {
@@ -54,6 +67,68 @@ export type SaleCancelledPayload = {
 export type SaleCompletedPayload = {
   saleId: string;
   paymentMethod?: string;
+};
+
+export type PaymentInput = {
+  /** Canal/método: cash, transfer, usd_cash, etc. */
+  method: string;
+  /** Moneda original capturada. */
+  currency: "CUP" | "USD";
+  /** Si currency=CUP: importe en CUP céntimos. */
+  amountCupCents?: number;
+  /** Si currency=USD: importe en USD centavos. */
+  amountUsdCents?: number;
+  /** Tasa CUP por 1 USD usada en el tablet (opcional). */
+  usdRateCup?: number;
+  /** Timestamp ms del pago (si difiere del cierre de venta). */
+  paidAt?: number;
+};
+
+export type SaleCompletedV2Payload = {
+  saleId: string;
+  /** Múltiples pagos para soportar pago mixto y/o fiado parcial. */
+  payments: PaymentInput[];
+  /**
+   * Opcional: cómo fijar precios al cerrar (si no se envía, el servidor puede inferirlo).
+   * - "CUP": usar PVP CUP (priceCents)
+   * - "USD": usar PVP USD convertido a CUP (priceUsdCents -> CUP)
+   */
+  priceList?: "CUP" | "USD";
+  /** Compat: etiqueta libre para auditoría. */
+  note?: string;
+};
+
+export type SalePaymentAppliedPayload = {
+  /** Identificador de venta en el cliente (igual que saleId del flujo offline). */
+  saleId: string;
+  /** Uno o más pagos aplicados (abonos). */
+  payments: PaymentInput[];
+  note?: string;
+};
+
+export type SaleReturnedPayload = {
+  saleId: string;
+  lines: { productId: string; quantity: number }[];
+  reason?: string;
+  /** Timestamp ms del acto de devolución (si difiere del batch). */
+  returnedAt?: number;
+};
+
+export type SaleEditedPayload = {
+  saleId: string;
+  /**
+   * Nuevo estado de líneas (replace): el servidor calcula deltas vs. lo guardado.
+   * Si quieres editar solo una línea, reenvía también las demás.
+   */
+  lines: { productId: string; quantity: number; unitPriceCupCentsOverride?: number }[];
+  note?: string;
+};
+
+export type CustomerUpsertedPayload = {
+  externalId?: string;
+  name?: string;
+  phone?: string;
+  email?: string;
 };
 
 /** Alta de producto offline; el servidor valida y persiste (SKU único por tienda). */

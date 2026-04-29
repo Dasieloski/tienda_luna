@@ -49,62 +49,133 @@ type ExpectedByDeviceRow = {
 type EventWindowRow = { by_client_ts: bigint; by_server_ts: bigint };
 
 async function computeExpected(storeId: string, from: Date, to: Date) {
-  const byDevice = await prisma.$queryRaw<ExpectedByDeviceRow[]>`
-    WITH sday AS (
-      SELECT s.id, s."deviceId", s."clientSaleId"
-      FROM "Sale" s
-      WHERE s."storeId" = ${storeId}
-        AND s."status" = 'COMPLETED'
-        AND s."completedAt" >= ${from}
-        AND s."completedAt" < ${to}
-    )
-    SELECT
-      sd."deviceId" AS device_id,
-      COUNT(DISTINCT sd.id)::bigint AS sales_count,
-      COUNT(sl.id)::bigint AS lines,
-      COALESCE(SUM(
-        CASE
-          WHEN (COALESCE(e.payload->>'paymentMethod','')) ILIKE '%usd%'
-            OR (COALESCE(e.payload->>'paymentMethod','')) ILIKE '%dolar%'
-            OR (COALESCE(e.payload->>'paymentMethod','')) ILIKE '%dólar%'
-          THEN 0
-          WHEN (COALESCE(e.payload->>'paymentMethod','')) ILIKE '%trans%'
-            OR (COALESCE(e.payload->>'paymentMethod','')) ILIKE '%bank%'
-            OR (COALESCE(e.payload->>'paymentMethod','')) ILIKE '%banco%'
-          THEN 0
-          WHEN e.id IS NULL THEN 0
-          ELSE sl."subtotalCents"
-        END
-      ), 0)::bigint AS cash_cents,
-      COALESCE(SUM(
-        CASE
-          WHEN (COALESCE(e.payload->>'paymentMethod','')) ILIKE '%trans%'
-            OR (COALESCE(e.payload->>'paymentMethod','')) ILIKE '%bank%'
-            OR (COALESCE(e.payload->>'paymentMethod','')) ILIKE '%banco%'
-          THEN sl."subtotalCents"
-          ELSE 0
-        END
-      ), 0)::bigint AS transfer_cents,
-      COALESCE(SUM(
-        CASE
-          WHEN (COALESCE(e.payload->>'paymentMethod','')) ILIKE '%usd%'
-            OR (COALESCE(e.payload->>'paymentMethod','')) ILIKE '%dolar%'
-            OR (COALESCE(e.payload->>'paymentMethod','')) ILIKE '%dólar%'
-          THEN sl."subtotalCents"
-          ELSE 0
-        END
-      ), 0)::bigint AS usd_cents,
-      COALESCE(SUM(CASE WHEN e.id IS NULL THEN 1 ELSE 0 END), 0)::bigint AS unknown_method_sales
-    FROM sday sd
-    JOIN "SaleLine" sl ON sl."saleId" = sd.id
-    LEFT JOIN "Event" e
-      ON e."storeId" = ${storeId}
-     AND e.type = 'SALE_COMPLETED'
-     AND e.status IN ('ACCEPTED', 'CORRECTED')
-     AND (e.payload->>'saleId') = sd."clientSaleId"
-    GROUP BY sd."deviceId"
-    ORDER BY sales_count DESC, device_id ASC
-  `;
+  let byDevice: ExpectedByDeviceRow[] = [];
+  try {
+    // Preferir pagos persistidos (SalePayment) por ventana de pago.
+    byDevice = await prisma.$queryRaw<ExpectedByDeviceRow[]>`
+      WITH pday AS (
+        SELECT
+          sp."saleId" AS sale_id,
+          s."deviceId" AS device_id,
+          sp."amountCupCents" AS amount_cup_cents,
+          COALESCE(NULLIF(trim(sp.method), ''), '(sin método)') AS method,
+          sp.currency AS currency
+        FROM "SalePayment" sp
+        INNER JOIN "Sale" s ON s.id = sp."saleId"
+        WHERE sp."storeId" = ${storeId}
+          AND sp."paidAt" >= ${from}
+          AND sp."paidAt" < ${to}
+          AND s."status" = 'COMPLETED'
+      ),
+      lines_by_sale AS (
+        SELECT sl."saleId" AS sale_id, COUNT(*)::bigint AS lines
+        FROM "SaleLine" sl
+        GROUP BY 1
+      )
+      SELECT
+        pd.device_id AS device_id,
+        COUNT(DISTINCT pd.sale_id)::bigint AS sales_count,
+        COALESCE(SUM(lbs.lines), 0)::bigint AS lines,
+        COALESCE(SUM(
+          CASE
+            WHEN pd.currency::text = 'USD'
+              OR pd.method ILIKE '%usd%'
+              OR pd.method ILIKE '%dolar%'
+              OR pd.method ILIKE '%dólar%'
+            THEN 0
+            WHEN pd.method ILIKE '%trans%'
+              OR pd.method ILIKE '%bank%'
+              OR pd.method ILIKE '%banco%'
+            THEN 0
+            WHEN pd.method = '(sin método)'
+            THEN 0
+            ELSE pd.amount_cup_cents
+          END
+        ), 0)::bigint AS cash_cents,
+        COALESCE(SUM(
+          CASE
+            WHEN pd.method ILIKE '%trans%'
+              OR pd.method ILIKE '%bank%'
+              OR pd.method ILIKE '%banco%'
+            THEN pd.amount_cup_cents
+            ELSE 0
+          END
+        ), 0)::bigint AS transfer_cents,
+        COALESCE(SUM(
+          CASE
+            WHEN pd.currency::text = 'USD'
+              OR pd.method ILIKE '%usd%'
+              OR pd.method ILIKE '%dolar%'
+              OR pd.method ILIKE '%dólar%'
+            THEN pd.amount_cup_cents
+            ELSE 0
+          END
+        ), 0)::bigint AS usd_cents,
+        COALESCE(SUM(CASE WHEN pd.method = '(sin método)' THEN 1 ELSE 0 END), 0)::bigint AS unknown_method_sales
+      FROM pday pd
+      LEFT JOIN lines_by_sale lbs ON lbs.sale_id = pd.sale_id
+      GROUP BY pd.device_id
+      ORDER BY sales_count DESC, device_id ASC
+    `;
+  } catch {
+    // Fallback legacy: inferir por Event.payload.paymentMethod y fecha de venta.
+    byDevice = await prisma.$queryRaw<ExpectedByDeviceRow[]>`
+      WITH sday AS (
+        SELECT s.id, s."deviceId", s."clientSaleId"
+        FROM "Sale" s
+        WHERE s."storeId" = ${storeId}
+          AND s."status" = 'COMPLETED'
+          AND s."completedAt" >= ${from}
+          AND s."completedAt" < ${to}
+      )
+      SELECT
+        sd."deviceId" AS device_id,
+        COUNT(DISTINCT sd.id)::bigint AS sales_count,
+        COUNT(sl.id)::bigint AS lines,
+        COALESCE(SUM(
+          CASE
+            WHEN (COALESCE(e.payload->>'paymentMethod','')) ILIKE '%usd%'
+              OR (COALESCE(e.payload->>'paymentMethod','')) ILIKE '%dolar%'
+              OR (COALESCE(e.payload->>'paymentMethod','')) ILIKE '%dólar%'
+            THEN 0
+            WHEN (COALESCE(e.payload->>'paymentMethod','')) ILIKE '%trans%'
+              OR (COALESCE(e.payload->>'paymentMethod','')) ILIKE '%bank%'
+              OR (COALESCE(e.payload->>'paymentMethod','')) ILIKE '%banco%'
+            THEN 0
+            WHEN e.id IS NULL THEN 0
+            ELSE sl."subtotalCents"
+          END
+        ), 0)::bigint AS cash_cents,
+        COALESCE(SUM(
+          CASE
+            WHEN (COALESCE(e.payload->>'paymentMethod','')) ILIKE '%trans%'
+              OR (COALESCE(e.payload->>'paymentMethod','')) ILIKE '%bank%'
+              OR (COALESCE(e.payload->>'paymentMethod','')) ILIKE '%banco%'
+            THEN sl."subtotalCents"
+            ELSE 0
+          END
+        ), 0)::bigint AS transfer_cents,
+        COALESCE(SUM(
+          CASE
+            WHEN (COALESCE(e.payload->>'paymentMethod','')) ILIKE '%usd%'
+              OR (COALESCE(e.payload->>'paymentMethod','')) ILIKE '%dolar%'
+              OR (COALESCE(e.payload->>'paymentMethod','')) ILIKE '%dólar%'
+            THEN sl."subtotalCents"
+            ELSE 0
+          END
+        ), 0)::bigint AS usd_cents,
+        COALESCE(SUM(CASE WHEN e.id IS NULL THEN 1 ELSE 0 END), 0)::bigint AS unknown_method_sales
+      FROM sday sd
+      JOIN "SaleLine" sl ON sl."saleId" = sd.id
+      LEFT JOIN "Event" e
+        ON e."storeId" = ${storeId}
+       AND e.type = 'SALE_COMPLETED'
+       AND e.status IN ('ACCEPTED', 'CORRECTED')
+       AND (e.payload->>'saleId') = sd."clientSaleId"
+      GROUP BY sd."deviceId"
+      ORDER BY sales_count DESC, device_id ASC
+    `;
+  }
 
   const offsetMinutes = storeTzOffsetMinutes();
   const byWindow = await prisma.$queryRaw<EventWindowRow[]>`

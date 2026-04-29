@@ -26,7 +26,7 @@ export async function computeDailySnapshot(storeId: string, dayUtc: Date): Promi
   const day = startOfUtcDay(dayUtc);
   const toExclusive = nextUtcDayExclusive(dayUtc);
 
-  const [saleAgg, marginRows, paymentRows] = await Promise.all([
+  const [saleAgg, marginRows] = await Promise.all([
     prisma.sale.aggregate({
       where: { storeId, status: "COMPLETED", completedAt: { gte: day, lt: toExclusive } },
       _sum: { totalCents: true },
@@ -48,7 +48,28 @@ export async function computeDailySnapshot(storeId: string, dayUtc: Date): Promi
         AND s."completedAt" >= ${day}
         AND s."completedAt" < ${toExclusive}
     `,
-    prisma.$queryRaw<{ method: string; revenue: bigint; cnt: bigint }[]>`
+  ]);
+
+  // Mezcla de pagos: preferir pagos persistidos (SalePayment) por fecha de pago.
+  // Fallback: método legacy en Event.payload.paymentMethod.
+  let paymentRows: { method: string; revenue: bigint; cnt: bigint }[] = [];
+  try {
+    paymentRows = await prisma.$queryRaw<{ method: string; revenue: bigint; cnt: bigint }[]>`
+      SELECT COALESCE(NULLIF(trim(sp.method), ''), '(sin método)') AS method,
+             COALESCE(SUM(sp."amountCupCents"), 0)::bigint AS revenue,
+             COUNT(DISTINCT sp."saleId")::bigint AS cnt
+      FROM "SalePayment" sp
+      INNER JOIN "Sale" s ON s.id = sp."saleId"
+      WHERE sp."storeId" = ${storeId}
+        AND sp."paidAt" >= ${day}
+        AND sp."paidAt" < ${toExclusive}
+        AND s."status" = 'COMPLETED'
+      GROUP BY 1
+      ORDER BY revenue DESC
+      LIMIT 30
+    `;
+  } catch {
+    paymentRows = await prisma.$queryRaw<{ method: string; revenue: bigint; cnt: bigint }[]>`
       SELECT COALESCE(NULLIF(trim(e.payload->>'paymentMethod'), ''), '(sin método)') AS method,
              COALESCE(SUM(s."totalCents"), 0)::bigint AS revenue,
              COUNT(*)::bigint AS cnt
@@ -64,8 +85,8 @@ export async function computeDailySnapshot(storeId: string, dayUtc: Date): Promi
       GROUP BY 1
       ORDER BY revenue DESC
       LIMIT 30
-    `,
-  ]);
+    `;
+  }
 
   const revenueCents = Number(saleAgg._sum.totalCents ?? 0);
   const saleCount = Number(saleAgg._count ?? 0);
