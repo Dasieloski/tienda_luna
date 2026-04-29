@@ -59,6 +59,15 @@ type RecentSale = {
   }[];
 };
 
+function derivedPaymentMethod(row: RecentSale): string {
+  const payCount = row.payments?.length ?? 0;
+  if (payCount > 1) return "MIXTO";
+  if (payCount === 1) return row.payments[0]?.method?.trim() || "—";
+  const bal = row.balanceCents ?? null;
+  if (bal != null && bal > 0) return "FIADO";
+  return row.paymentMethod?.trim() || "—";
+}
+
 function ymdLocal(d: Date) {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 }
@@ -245,7 +254,7 @@ export default function SalesPage() {
       width: "120px",
       render: (row) => (
         <span className="text-xs font-semibold uppercase tracking-wide text-tl-muted">
-          {row.paymentMethod ?? "—"}
+          {derivedPaymentMethod(row)}
         </span>
       ),
     },
