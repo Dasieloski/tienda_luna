@@ -30,6 +30,7 @@ En el código, solo estas rutas comprueban sesión y permiten explícitamente **
 | `GET /api/exchange-rate` | `canSync`: `device` **o** `ADMIN` / `CASHIER` |
 | `GET /api/expense-categories` | `canSync`: `device` **o** `ADMIN` / `CASHIER` |
 | `GET /api/expenses` | `canSync`: `device` **o** `ADMIN` / `CASHIER` |
+| `GET /api/device/ping` | `device` (recomendado para presencia online) |
 
 **Cualquier otra ruta** (`/api/admin/*`, `GET /api/events`, `POST /api/sales/validate`, `GET /api/stats/overview`, mutaciones REST de productos con CSRF admin, etc.) está pensada para **panel web** o **usuarios admin**, no para el flujo mínimo de la APK. Usarlas desde la tablet implicaría otra política de seguridad (cookies, CSRF, 2FA) y **no** está soportado como contrato de “app de caja”.
 
@@ -243,6 +244,20 @@ Uso: cargar el catálogo de categorías de gastos en el tablet (selector) y refr
 | **200** | `{ expenses: Expense[], meta }` |
 
 Uso: sincronización de solo lectura para que el tablet pueda re-hidratar gastos o validar el estado del servidor.
+
+---
+
+### 4.7 `GET /api/device/ping`
+
+**Archivo**: `app/api/device/ping/route.ts`
+
+| Aspecto | Detalle |
+|---------|---------|
+| **Método** | `GET` |
+| **Auth** | Solo `device` |
+| **200** | `{ ok: true, now: string }` |
+
+**Uso recomendado**: mientras la caja esté abierta, llamar cada **30–60s** para mantener `Device.lastSeenAt` actualizado. Esto alimenta el indicador del panel (“Tablet: hace 2h 36 min”, etc.).
 
 ## 5. Catálogo de eventos (dominio offline)
 
