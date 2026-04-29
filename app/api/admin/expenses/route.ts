@@ -268,7 +268,10 @@ export async function PATCH(request: Request) {
     updatedByUserId: guard.user.id,
   };
   if (parsed.data.concept != null) data.concept = parsed.data.concept;
-  if ("categoryId" in parsed.data) data.categoryId = parsed.data.categoryId ?? null;
+  if ("categoryId" in parsed.data) {
+    const id = parsed.data.categoryId ?? null;
+    data.category = id ? { connect: { id } } : { disconnect: true };
+  }
   if ("categoryName" in parsed.data) data.categoryName = parsed.data.categoryName ?? null;
   if ("paidBy" in parsed.data) data.paidBy = parsed.data.paidBy ?? null;
   if ("notes" in parsed.data) data.notes = parsed.data.notes ?? null;

@@ -124,7 +124,7 @@ export async function POST(request: Request) {
         nextTotal += subtotalCents;
         const unitCostCents = p.costCents ?? null;
         createLines.push({
-          productId: pid,
+          product: { connect: { id: pid } },
           productName: p.name,
           productSku: p.sku,
           quantity: d.quantity,
