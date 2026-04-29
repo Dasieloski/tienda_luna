@@ -28,6 +28,8 @@ En el código, solo estas rutas comprueban sesión y permiten explícitamente **
 | `GET /api/products` | `device` **o** usuario `ADMIN` / `CASHIER` |
 | `POST /api/sync/batch` | `canSync`: `device` **o** `ADMIN` / `CASHIER` |
 | `GET /api/exchange-rate` | `canSync`: `device` **o** `ADMIN` / `CASHIER` |
+| `GET /api/expense-categories` | `canSync`: `device` **o** `ADMIN` / `CASHIER` |
+| `GET /api/expenses` | `canSync`: `device` **o** `ADMIN` / `CASHIER` |
 
 **Cualquier otra ruta** (`/api/admin/*`, `GET /api/events`, `POST /api/sales/validate`, `GET /api/stats/overview`, mutaciones REST de productos con CSRF admin, etc.) está pensada para **panel web** o **usuarios admin**, no para el flujo mínimo de la APK. Usarlas desde la tablet implicaría otra política de seguridad (cookies, CSRF, 2FA) y **no** está soportado como contrato de “app de caja”.
 
@@ -214,6 +216,34 @@ El login web (`POST /api/auth/login`) puede fijar cookie `httpOnly`. La APK norm
 
 ---
 
+### 4.5 `GET /api/expense-categories`
+
+**Archivo**: `app/api/expense-categories/route.ts`
+
+| Aspecto | Detalle |
+|---------|---------|
+| **Método** | `GET` |
+| **Auth** | Sesión con `canSync` (`device` o `ADMIN`/`CASHIER`) |
+| **200** | `{ categories: [{ id, name, active, updatedAt }], meta }` |
+| **401** | `UNAUTHORIZED` |
+
+Uso: cargar el catálogo de categorías de gastos en el tablet (selector) y refrescar al iniciar turno.
+
+---
+
+### 4.6 `GET /api/expenses`
+
+**Archivo**: `app/api/expenses/route.ts`
+
+| Aspecto | Detalle |
+|---------|---------|
+| **Método** | `GET` |
+| **Auth** | Sesión con `canSync` (`device` o `ADMIN`/`CASHIER`) |
+| **Query** | `from` ISO datetime (opcional), `to` ISO datetime (opcional), `limit` (1–1000, default 400) |
+| **200** | `{ expenses: Expense[], meta }` |
+
+Uso: sincronización de solo lectura para que el tablet pueda re-hidratar gastos o validar el estado del servidor.
+
 ## 5. Catálogo de eventos (dominio offline)
 
 Tipos canónicos: `types/events.ts` (`DOMAIN_EVENT_TYPES`).  
@@ -372,6 +402,86 @@ En `PRODUCT_ADDED_TO_CART` se puede enviar `unitPriceCupCentsOverride` para fija
     "productId": "<productId>",
     "quantity": 2,
     "unitPriceCupCentsOverride": 4500
+  }
+}
+```
+
+---
+
+### 5.6 Gastos (tablet → servidor)
+
+Los gastos se envían como eventos en `POST /api/sync/batch`, igual que ventas y stock. Esto permite registrar gastos sin conexión y subirlos luego.
+
+#### 5.6.1 Categorías (opcional)
+
+**`EXPENSE_CATEGORY_UPSERTED`**:
+
+```json
+{
+  "type": "EXPENSE_CATEGORY_UPSERTED",
+  "timestamp": 1730000000000,
+  "payload": {
+    "name": "Electricidad",
+    "active": true
+  }
+}
+```
+
+#### 5.6.2 Crear gasto
+
+**`EXPENSE_CREATED`**:
+
+```json
+{
+  "type": "EXPENSE_CREATED",
+  "timestamp": 1730000000000,
+  "payload": {
+    "expenseId": "<opcional id estable>",
+    "concept": "Electricidad",
+    "categoryId": "<opcional>",
+    "amountCupCents": 12500,
+    "occurredAt": 1730000000000,
+    "paidBy": "Osmar",
+    "notes": "Pago del mes",
+    "splitStrategy": "PARTES_IGUALES"
+  }
+}
+```
+
+Reparto (`splitStrategy`):
+- `PARTES_IGUALES` → 50/50
+- `PORCENTAJE_CUSTOM` + `osmarPct` (0–100)
+- `UN_SOLO_DUENO` + `singleOwner` (`OSMAR` | `ALEX`)
+
+USD (si aplica): usar `amountUsdCents` + `usdRateCup` (opcional). El servidor persiste el gasto en CUP (`amountCents`) para contabilidad.
+
+#### 5.6.3 Actualizar gasto
+
+**`EXPENSE_UPDATED`**:
+
+```json
+{
+  "type": "EXPENSE_UPDATED",
+  "timestamp": 1730000000000,
+  "payload": {
+    "expenseId": "<id>",
+    "notes": "Actualizado",
+    "splitStrategy": "PORCENTAJE_CUSTOM",
+    "osmarPct": 70
+  }
+}
+```
+
+#### 5.6.4 Eliminar gasto
+
+**`EXPENSE_DELETED`**:
+
+```json
+{
+  "type": "EXPENSE_DELETED",
+  "timestamp": 1730000000000,
+  "payload": {
+    "expenseId": "<id>"
   }
 }
 ```

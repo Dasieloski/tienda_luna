@@ -1,8 +1,45 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
+import type { Prisma } from "@prisma/client";
 import { getSessionFromRequest, requireAdmin } from "@/lib/auth";
 import { prisma } from "@/lib/db";
 import { LOCAL_ADMIN_STORE_ID } from "@/lib/static-admin-auth";
+
+type SaleRecentRow = Prisma.SaleGetPayload<{
+  include: {
+    lines: { include: { product: { select: { name: true; sku: true } } } };
+    payments: {
+      orderBy: { paidAt: "asc" };
+      take: 12;
+      select: {
+        id: true;
+        amountCupCents: true;
+        currency: true;
+        originalAmount: true;
+        usdRateCup: true;
+        method: true;
+        paidAt: true;
+      };
+    };
+    returns: {
+      orderBy: { returnedAt: "asc" };
+      take: 8;
+      include: {
+        lines: {
+          select: {
+            id: true;
+            productId: true;
+            productName: true;
+            productSku: true;
+            quantity: true;
+            unitPriceCents: true;
+            subtotalCents: true;
+          };
+        };
+      };
+    };
+  };
+}>;
 
 const querySchema = z
   .object({
@@ -109,7 +146,7 @@ export async function GET(request: Request) {
       };
     }
 
-    const sales = await prisma.sale.findMany({
+    const sales = (await prisma.sale.findMany({
       where: { storeId: session.storeId, ...(completedAt ? { completedAt } : {}) },
       orderBy: { completedAt: "desc" },
       take: parsed.data.limit,
@@ -119,8 +156,38 @@ export async function GET(request: Request) {
             product: { select: { name: true, sku: true } },
           },
         },
+        payments: {
+          orderBy: { paidAt: "asc" },
+          take: 12,
+          select: {
+            id: true,
+            amountCupCents: true,
+            currency: true,
+            originalAmount: true,
+            usdRateCup: true,
+            method: true,
+            paidAt: true,
+          },
+        },
+        returns: {
+          orderBy: { returnedAt: "asc" },
+          take: 8,
+          include: {
+            lines: {
+              select: {
+                id: true,
+                productId: true,
+                productName: true,
+                productSku: true,
+                quantity: true,
+                unitPriceCents: true,
+                subtotalCents: true,
+              },
+            },
+          },
+        },
       },
-    });
+    })) as SaleRecentRow[];
 
     const clientSaleIds = sales.map((s) => s.clientSaleId).filter(Boolean) as string[];
     const events = clientSaleIds.length
@@ -153,10 +220,20 @@ export async function GET(request: Request) {
         id: s.id,
         deviceId: s.deviceId,
         totalCents: s.totalCents,
+        paidTotalCents: s.paidTotalCents,
+        balanceCents: s.balanceCents,
+        paymentStatus: s.paymentStatus,
+        editedAt: s.editedAt ? s.editedAt.toISOString() : null,
+        revisionCount: s.revisionCount,
         status: s.status,
         completedAt: s.completedAt.toISOString(),
         paymentMethod:
-          (eventBySaleId.get(s.clientSaleId ?? "")?.payload as any)?.paymentMethod ?? null,
+          (() => {
+            const payload = eventBySaleId.get(s.clientSaleId ?? "")?.payload;
+            if (!payload || typeof payload !== "object") return null;
+            const pm = (payload as Record<string, unknown>).paymentMethod;
+            return typeof pm === "string" && pm.trim() ? pm : null;
+          })(),
         paidCents:
           getPayloadNumberMaybe(eventBySaleId.get(s.clientSaleId ?? "")?.payload, [
             "paidCents",
@@ -169,13 +246,38 @@ export async function GET(request: Request) {
             "changeCents",
             "vueltoCents",
           ]),
+        payments: s.payments.map((p) => ({
+          id: p.id,
+          amountCupCents: p.amountCupCents,
+          currency: String(p.currency),
+          originalAmount: p.originalAmount ?? null,
+          usdRateCup: p.usdRateCup ?? null,
+          method: p.method,
+          paidAt: p.paidAt.toISOString(),
+        })),
+        returns: s.returns.map((r) => ({
+          id: r.id,
+          amountCupCents: r.amountCupCents,
+          reason: r.reason ?? null,
+          returnedAt: r.returnedAt.toISOString(),
+          lines: r.lines.map((l) => ({
+            id: l.id,
+            productId: l.productId,
+            productName: l.productName ?? "—",
+            sku: l.productSku ?? "—",
+            quantity: l.quantity,
+            unitPriceCents: l.unitPriceCents,
+            subtotalCents: l.subtotalCents,
+          })),
+        })),
         lines: s.lines.map((l) => ({
           id: l.id,
+          productId: l.productId,
           quantity: l.quantity,
           unitPriceCents: l.unitPriceCents,
           subtotalCents: l.subtotalCents,
-          productName: (l as any).product?.name ?? (l as any).productName ?? "—",
-          sku: (l as any).product?.sku ?? (l as any).productSku ?? "—",
+          productName: l.product?.name ?? l.productName ?? "—",
+          sku: l.product?.sku ?? l.productSku ?? "—",
         })),
       })),
       meta: { dbAvailable: true as const },

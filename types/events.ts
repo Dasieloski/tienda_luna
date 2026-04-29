@@ -18,6 +18,11 @@ export const DOMAIN_EVENT_TYPES = [
   "SALE_EDITED",
   /** v2 (opcional): clientes mínimos para fiado */
   "CUSTOMER_UPSERTED",
+  /** Gastos (POS/Tablet) */
+  "EXPENSE_CATEGORY_UPSERTED",
+  "EXPENSE_CREATED",
+  "EXPENSE_UPDATED",
+  "EXPENSE_DELETED",
   /** Catálogo desde tablet/POS (misma auth que sync batch) */
   "PRODUCT_CREATED",
   "PRODUCT_UPDATED",
@@ -129,6 +134,51 @@ export type CustomerUpsertedPayload = {
   name?: string;
   phone?: string;
   email?: string;
+};
+
+export type ExpenseSplitStrategy = "PARTES_IGUALES" | "PORCENTAJE_CUSTOM" | "UN_SOLO_DUENO";
+
+export type ExpenseCategoryUpsertedPayload = {
+  categoryId?: string;
+  name: string;
+  active?: boolean;
+};
+
+export type ExpenseCreatedPayload = {
+  expenseId?: string;
+  concept: string;
+  categoryId?: string | null;
+  categoryName?: string | null;
+  amountCupCents?: number;
+  amountUsdCents?: number;
+  usdRateCup?: number;
+  occurredAt: number; // ms epoch
+  paidBy?: string | null;
+  notes?: string | null;
+  splitStrategy?: ExpenseSplitStrategy;
+  osmarPct?: number;
+  singleOwner?: "OSMAR" | "ALEX";
+};
+
+export type ExpenseUpdatedPayload = {
+  expenseId: string;
+  concept?: string;
+  categoryId?: string | null;
+  categoryName?: string | null;
+  amountCupCents?: number;
+  amountUsdCents?: number;
+  usdRateCup?: number;
+  occurredAt?: number;
+  paidBy?: string | null;
+  notes?: string | null;
+  splitStrategy?: ExpenseSplitStrategy;
+  osmarPct?: number;
+  singleOwner?: "OSMAR" | "ALEX";
+  active?: boolean;
+};
+
+export type ExpenseDeletedPayload = {
+  expenseId: string;
 };
 
 /** Alta de producto offline; el servidor valida y persiste (SKU único por tienda). */

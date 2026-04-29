@@ -17,10 +17,40 @@ type RecentSale = {
   paymentMethod: string | null;
   paidCents: number | null;
   changeCents: number | null;
+  paidTotalCents: number | null;
+  balanceCents: number | null;
+  paymentStatus: string | null;
+  editedAt: string | null;
+  revisionCount: number;
+  payments: {
+    id: string;
+    amountCupCents: number;
+    currency: string;
+    originalAmount: number | null;
+    usdRateCup: number | null;
+    method: string;
+    paidAt: string;
+  }[];
+  returns: {
+    id: string;
+    amountCupCents: number;
+    reason: string | null;
+    returnedAt: string;
+    lines: {
+      id: string;
+      productId: string | null;
+      productName: string;
+      sku: string;
+      quantity: number;
+      unitPriceCents: number;
+      subtotalCents: number;
+    }[];
+  }[];
   /** Campo auxiliar para búsqueda local */
   searchText?: string;
   lines: {
     id: string;
+    productId?: string | null;
     quantity: number;
     unitPriceCents: number;
     subtotalCents: number;
@@ -59,6 +89,12 @@ export default function SalesPage() {
   const [deleteMsg, setDeleteMsg] = useState<string | null>(null);
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(25);
+  const [selectedSaleId, setSelectedSaleId] = useState<string | null>(null);
+
+  const selectedSale = useMemo(
+    () => (selectedSaleId ? sales.find((s) => s.id === selectedSaleId) ?? null : null),
+    [selectedSaleId, sales],
+  );
 
   const loadSales = useCallback(async (opts?: { initial?: boolean; manual?: boolean }) => {
     if (inFlightRef.current) return;
@@ -82,6 +118,9 @@ export default function SalesPage() {
         searchText: [
           s.deviceId,
           s.paymentMethod ?? "",
+          s.paymentStatus ?? "",
+          String(s.balanceCents ?? ""),
+          ...(s.payments ?? []).map((p) => p.method),
           ...s.lines.map((l) => `${l.productName} ${l.sku}`),
         ]
           .join(" ")
@@ -211,6 +250,50 @@ export default function SalesPage() {
       ),
     },
     {
+      key: "paymentStatus",
+      label: "Pago",
+      width: "140px",
+      render: (row) => {
+        const status = row.paymentStatus ?? "—";
+        const isMixed = (row.payments?.length ?? 0) > 1;
+        const hasReturn = (row.returns?.length ?? 0) > 0;
+        const edited = (row.revisionCount ?? 0) > 0 || Boolean(row.editedAt);
+        return (
+          <div className="flex flex-wrap items-center justify-end gap-1">
+            <span className="text-xs font-semibold uppercase tracking-wide text-tl-muted">
+              {status}
+            </span>
+            {isMixed ? (
+              <span className="rounded-full bg-tl-accent-subtle px-2 py-0.5 text-[11px] font-semibold text-tl-accent">
+                MIXTO
+              </span>
+            ) : null}
+            {hasReturn ? (
+              <span className="rounded-full bg-tl-warning-subtle px-2 py-0.5 text-[11px] font-semibold text-tl-warning">
+                DEV
+              </span>
+            ) : null}
+            {edited ? (
+              <span className="rounded-full bg-tl-canvas-inset px-2 py-0.5 text-[11px] font-semibold text-tl-muted">
+                EDIT
+              </span>
+            ) : null}
+          </div>
+        );
+      },
+    },
+    {
+      key: "balanceCents",
+      label: "Saldo",
+      align: "right",
+      width: "120px",
+      render: (row) => (
+        <span className="text-xs tabular-nums text-tl-ink">
+          {row.balanceCents != null ? <TablePriceCupCell cupCents={row.balanceCents} compact /> : "—"}
+        </span>
+      ),
+    },
+    {
       key: "paidCents",
       label: "Pagó con",
       align: "right",
@@ -314,14 +397,18 @@ export default function SalesPage() {
         headers: { "content-type": "application/json", "x-tl-csrf": "1" },
         body: JSON.stringify({ ids }),
       });
-      const json = (await res.json().catch(() => null)) as any;
+      const json: unknown = await res.json().catch(() => null);
       if (!res.ok) {
-        setDeleteMsg(json?.error ?? `No se pudo eliminar (HTTP ${res.status}).`);
+        const obj = json && typeof json === "object" ? (json as Record<string, unknown>) : null;
+        const err = obj && "error" in obj ? String(obj.error ?? "") : "";
+        setDeleteMsg(err || `No se pudo eliminar (HTTP ${res.status}).`);
         return;
       }
       setSelectedIds(new Set());
       await loadSales({ manual: true });
-      setDeleteMsg(`Eliminadas: ${json?.deleted ?? ids.length}.`);
+      const deleted =
+        obj && "deleted" in obj ? Number(obj.deleted ?? NaN) : NaN;
+      setDeleteMsg(`Eliminadas: ${Number.isFinite(deleted) ? deleted : ids.length}.`);
     } catch (e) {
       setDeleteMsg(e instanceof Error ? e.message : "Error de red.");
     } finally {
@@ -462,6 +549,7 @@ export default function SalesPage() {
           columns={columns}
           data={sales}
           keyExtractor={(row) => row.id}
+          onRowClick={(row) => setSelectedSaleId(row.id)}
           searchable
           searchPlaceholder="Buscar por dispositivo, producto o método..."
           searchKeys={["deviceId", "searchText", "paymentMethod"]}
@@ -501,6 +589,248 @@ export default function SalesPage() {
             </div>
           }
         />
+
+        {selectedSale ? (
+          <div
+            className="fixed inset-0 z-50 flex items-end justify-center bg-black/40 p-4 md:items-center"
+            role="dialog"
+            aria-modal="true"
+            onClick={() => setSelectedSaleId(null)}
+          >
+            <div
+              className="tl-glass w-full max-w-3xl rounded-2xl p-4 md:p-6"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div className="flex items-start justify-between gap-4">
+                <div>
+                  <h2 className="text-lg font-bold text-tl-ink">Detalle de venta</h2>
+                  <p className="mt-1 text-xs text-tl-muted">
+                    {new Date(selectedSale.completedAt).toLocaleString("es-ES")} · {selectedSale.deviceId}
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  className="tl-btn tl-btn-secondary !px-3 !py-2 text-xs"
+                  onClick={() => setSelectedSaleId(null)}
+                >
+                  Cerrar
+                </button>
+              </div>
+
+              <div className="mt-4 grid gap-3 md:grid-cols-3">
+                <div className="rounded-xl border border-tl-line bg-tl-canvas-inset/60 p-3">
+                  <div className="text-xs font-semibold uppercase tracking-wider text-tl-muted">Total</div>
+                  <div className="mt-1 text-base font-bold text-tl-ink">
+                    <CupUsdMoney cents={selectedSale.totalCents} />
+                  </div>
+                </div>
+                <div className="rounded-xl border border-tl-line bg-tl-canvas-inset/60 p-3">
+                  <div className="text-xs font-semibold uppercase tracking-wider text-tl-muted">Pagado</div>
+                  <div className="mt-1 text-base font-bold text-tl-ink">
+                    {selectedSale.paidTotalCents != null ? <CupUsdMoney cents={selectedSale.paidTotalCents} /> : "—"}
+                  </div>
+                </div>
+                <div className="rounded-xl border border-tl-line bg-tl-canvas-inset/60 p-3">
+                  <div className="text-xs font-semibold uppercase tracking-wider text-tl-muted">Saldo</div>
+                  <div className="mt-1 text-base font-bold text-tl-ink">
+                    {selectedSale.balanceCents != null ? <CupUsdMoney cents={selectedSale.balanceCents} /> : "—"}
+                  </div>
+                </div>
+              </div>
+
+              <div className="mt-4 grid gap-4 md:grid-cols-2">
+                <div>
+                  <div className="text-xs font-semibold uppercase tracking-wider text-tl-muted">Pagos</div>
+                  <div className="mt-2 space-y-2">
+                    {(selectedSale.payments ?? []).length === 0 ? (
+                      <div className="text-sm text-tl-muted">Sin pagos registrados (fiado total).</div>
+                    ) : (
+                      selectedSale.payments.map((p) => (
+                        <div key={p.id} className="flex items-center justify-between rounded-lg border border-tl-line px-3 py-2">
+                          <div className="min-w-0">
+                            <div className="truncate text-sm font-semibold text-tl-ink">{p.method}</div>
+                            <div className="text-xs text-tl-muted">
+                              {new Date(p.paidAt).toLocaleString("es-ES")} · {p.currency}
+                              {p.currency === "USD" && p.originalAmount != null ? ` ${p.originalAmount / 100}` : ""}
+                            </div>
+                          </div>
+                          <div className="text-sm font-bold text-tl-ink">
+                            <CupUsdMoney cents={p.amountCupCents} />
+                          </div>
+                        </div>
+                      ))
+                    )}
+                  </div>
+                </div>
+                <div>
+                  <div className="text-xs font-semibold uppercase tracking-wider text-tl-muted">Devoluciones</div>
+                  <div className="mt-2 space-y-2">
+                    {(selectedSale.returns ?? []).length === 0 ? (
+                      <div className="text-sm text-tl-muted">Sin devoluciones.</div>
+                    ) : (
+                      selectedSale.returns.map((r) => (
+                        <div key={r.id} className="rounded-lg border border-tl-line px-3 py-2">
+                          <div className="flex items-center justify-between">
+                            <div className="text-sm font-semibold text-tl-ink">
+                              {new Date(r.returnedAt).toLocaleString("es-ES")}
+                            </div>
+                            <div className="text-sm font-bold text-tl-warning">
+                              <CupUsdMoney cents={r.amountCupCents} />
+                            </div>
+                          </div>
+                          {r.reason ? <div className="mt-1 text-xs text-tl-muted">{r.reason}</div> : null}
+                          <div className="mt-2 space-y-1">
+                            {r.lines.map((l) => (
+                              <div key={l.id} className="flex items-center justify-between text-xs text-tl-muted">
+                                <span className="truncate">{l.quantity}x {l.productName}</span>
+                                <span className="tabular-nums"><TablePriceCupCell cupCents={l.subtotalCents} compact /></span>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      ))
+                    )}
+                  </div>
+                </div>
+              </div>
+
+              <div className="mt-4">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <div className="text-xs font-semibold uppercase tracking-wider text-tl-muted">Acciones</div>
+                  <div className="flex flex-wrap gap-2">
+                    <button
+                      type="button"
+                      className="tl-btn tl-btn-secondary !px-3 !py-2 text-xs"
+                      onClick={async () => {
+                        const raw = window.prompt(
+                          "Pega JSON de líneas: [{\"productId\":\"...\",\"quantity\":1,\"unitPriceCupCentsOverride\":4500}]",
+                          JSON.stringify(
+                            selectedSale.lines.map((l) => ({
+                              productId: l.productId ?? "",
+                              quantity: l.quantity,
+                              unitPriceCupCentsOverride: l.unitPriceCents,
+                            })),
+                            null,
+                            2,
+                          ),
+                        );
+                        if (!raw) return;
+                        let parsedLines: unknown;
+                        try {
+                          parsedLines = JSON.parse(raw);
+                        } catch {
+                          window.alert("JSON inválido.");
+                          return;
+                        }
+                        if (!Array.isArray(parsedLines)) {
+                          window.alert("Formato inválido: debe ser un array de líneas.");
+                          return;
+                        }
+                        const note = window.prompt("Nota de auditoría (opcional)", "") ?? "";
+                        const res = await fetch("/api/admin/sales/edit", {
+                          method: "POST",
+                          credentials: "include",
+                          headers: { "content-type": "application/json", "x-tl-csrf": "1" },
+                          body: JSON.stringify({ saleId: selectedSale.id, lines: parsedLines, note: note.trim() || null }),
+                        });
+                        const j = await res.json().catch(() => null);
+                        if (!res.ok) {
+                          window.alert(j?.error ?? `Error HTTP ${res.status}`);
+                          return;
+                        }
+                        await loadSales({ manual: true });
+                        window.alert("Venta editada.");
+                      }}
+                    >
+                      Editar venta
+                    </button>
+                    <button
+                      type="button"
+                      className="tl-btn tl-btn-secondary !px-3 !py-2 text-xs"
+                      onClick={async () => {
+                        const raw = window.prompt("Abono (CUP) en pesos, ej. 350.00", "0");
+                        if (raw == null) return;
+                        const n = Number(String(raw).replace(",", "."));
+                        if (!Number.isFinite(n) || n <= 0) return;
+                        const method = window.prompt("Método (cash / transfer / ...)", "cash") ?? "cash";
+                        const amountCupCents = Math.round(n * 100);
+                        const res = await fetch("/api/admin/sales/apply-payment", {
+                          method: "POST",
+                          credentials: "include",
+                          headers: { "content-type": "application/json", "x-tl-csrf": "1" },
+                          body: JSON.stringify({
+                            saleId: selectedSale.id,
+                            method,
+                            currency: "CUP",
+                            amountCupCents,
+                          }),
+                        });
+                        if (!res.ok) {
+                          const j = await res.json().catch(() => null);
+                          window.alert(j?.error ?? `Error HTTP ${res.status}`);
+                          return;
+                        }
+                        await loadSales({ manual: true });
+                        window.alert("Abono registrado.");
+                      }}
+                    >
+                      Registrar abono
+                    </button>
+                    <button
+                      type="button"
+                      className="tl-btn tl-btn-secondary !px-3 !py-2 text-xs"
+                      onClick={async () => {
+                        const pid = window.prompt("productId a devolver (exacto)", "");
+                        if (!pid) return;
+                        const qraw = window.prompt("Cantidad a devolver (entero)", "1");
+                        if (qraw == null) return;
+                        const qty = Number(qraw);
+                        if (!Number.isFinite(qty) || !Number.isInteger(qty) || qty <= 0) return;
+                        const reason = window.prompt("Motivo (opcional)", "") ?? "";
+                        const res = await fetch("/api/admin/sales/return", {
+                          method: "POST",
+                          credentials: "include",
+                          headers: { "content-type": "application/json", "x-tl-csrf": "1" },
+                          body: JSON.stringify({
+                            saleId: selectedSale.id,
+                            reason: reason.trim() || null,
+                            lines: [{ productId: pid, quantity: qty }],
+                          }),
+                        });
+                        const j = await res.json().catch(() => null);
+                        if (!res.ok) {
+                          window.alert(j?.error ?? `Error HTTP ${res.status}`);
+                          return;
+                        }
+                        await loadSales({ manual: true });
+                        window.alert("Devolución registrada.");
+                      }}
+                    >
+                      Devolución parcial
+                    </button>
+                  </div>
+                </div>
+
+                <div className="text-xs font-semibold uppercase tracking-wider text-tl-muted">Productos</div>
+                <div className="mt-2 space-y-1">
+                  {selectedSale.lines.map((l) => (
+                    <div key={l.id} className="flex items-center justify-between rounded-lg border border-tl-line px-3 py-2">
+                      <div className="min-w-0">
+                        <div className="truncate text-sm font-semibold text-tl-ink">
+                          {l.quantity}x {l.productName}
+                        </div>
+                        <div className="text-xs text-tl-muted">{l.sku}</div>
+                      </div>
+                      <div className="text-sm font-bold text-tl-ink">
+                        <TablePriceCupCell cupCents={l.subtotalCents} compact />
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </div>
+          </div>
+        ) : null}
       </div>
     </AdminShell>
   );

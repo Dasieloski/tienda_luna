@@ -33,6 +33,12 @@ enum PaymentCurrency {
   USD
 }
 
+enum ExpenseSplitStrategy {
+  PARTES_IGUALES
+  PORCENTAJE_CUSTOM
+  UN_SOLO_DUENO
+}
+
 model Store {
   id        String   @id @default(cuid())
   name      String
@@ -54,6 +60,8 @@ model Store {
   sales      Sale[]
   salePayments SalePayment[]
   saleReturns  SaleReturn[]
+  expenseCategories ExpenseCategory[]
+  expenses Expense[]
   ownerSales OwnerSale[]
   suppliers  Supplier[]
   supplierDebtPayments SupplierDebtPayment[]
@@ -410,6 +418,63 @@ model SaleReturnLine {
 
   @@index([saleReturnId])
   @@index([productId])
+}
+
+model ExpenseCategory {
+  id        String   @id @default(cuid())
+  storeId   String
+  store     Store    @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  name      String
+  active    Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  expenses  Expense[]
+
+  @@unique([storeId, name])
+  @@index([storeId, active])
+}
+
+model Expense {
+  id         String   @id @default(cuid())
+  storeId    String
+  store      Store    @relation(fields: [storeId], references: [id], onDelete: Cascade)
+
+  concept    String
+  categoryId String?
+  category   ExpenseCategory? @relation(fields: [categoryId], references: [id], onDelete: SetNull)
+  categoryName String?
+
+  amountCents Int
+  currency    PaymentCurrency @default(CUP)
+  originalAmount Int?
+  usdRateCup  Int?
+
+  /// Fecha real del gasto (cuando ocurrió/pagó)
+  occurredAt DateTime
+  /// Quién lo pagó físicamente (texto libre: Osmar/Alex/Empleado/etc.)
+  paidBy     String?
+  notes      String?
+
+  /// Reparto entre dueños
+  splitStrategy ExpenseSplitStrategy @default(PARTES_IGUALES)
+  /// Solo si splitStrategy=PORCENTAJE_CUSTOM (0-100)
+  osmarPct   Int?
+  /// Solo si splitStrategy=UN_SOLO_DUENO
+  singleOwner OwnerName?
+
+  /// Auditoría ligera
+  createdByUserId String?
+  createdByDeviceId String?
+  updatedByUserId String?
+  updatedByDeviceId String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([storeId, occurredAt])
+  @@index([storeId, categoryId, occurredAt])
+  @@index([storeId, splitStrategy, occurredAt])
 }
 
 /// Consumo de los dueños: descuenta stock, pero NO cuenta como ingreso/ganancia.

@@ -1,6 +1,7 @@
 import { randomUUID } from "crypto";
 import type { EventStatus, Prisma } from "@prisma/client";
 import type { PrismaClient } from "@prisma/client";
+import { ExpenseSplitStrategy, PaymentCurrency, OwnerName } from "@prisma/client";
 import {
   buildDuplicateKey,
   checkDuplicateInBatch,
@@ -1236,6 +1237,217 @@ export async function processBatch(
               },
             });
           }
+          results.push(await record({ status: "ACCEPTED" }));
+          break;
+        }
+
+        case "EXPENSE_CATEGORY_UPSERTED": {
+          const name = getPayloadString(ev.payload, "name")?.trim();
+          if (!name) {
+            results.push(await record({ status: "REJECTED", correctionNote: "INVALID_EXPENSE_CATEGORY" }));
+            break;
+          }
+          const categoryId = getPayloadString(ev.payload, "categoryId")?.trim();
+          const activeRaw = (ev.payload as Record<string, unknown>).active;
+          const active = typeof activeRaw === "boolean" ? activeRaw : true;
+
+          if (categoryId) {
+            await tx.expenseCategory.upsert({
+              where: { id: categoryId },
+              create: { id: categoryId, storeId: params.storeId, name: name.slice(0, 80), active },
+              update: { name: name.slice(0, 80), active },
+            });
+          } else {
+            await tx.expenseCategory.create({
+              data: { storeId: params.storeId, name: name.slice(0, 80), active },
+            });
+          }
+          results.push(await record({ status: "ACCEPTED" }));
+          break;
+        }
+
+        case "EXPENSE_CREATED": {
+          const pl = ev.payload as Record<string, unknown>;
+          const concept = getPayloadString(pl, "concept")?.trim();
+          const occurredAtMs = getPayloadNumber(pl, "occurredAt");
+          if (!concept || !occurredAtMs) {
+            results.push(await record({ status: "REJECTED", correctionNote: "INVALID_EXPENSE" }));
+            break;
+          }
+          const expenseId = getPayloadString(pl, "expenseId")?.trim();
+          const categoryId = getPayloadString(pl, "categoryId")?.trim() ?? null;
+          const categoryName = getPayloadString(pl, "categoryName")?.trim() ?? null;
+          const paidBy = getPayloadString(pl, "paidBy")?.trim() ?? null;
+          const notes = getPayloadString(pl, "notes")?.trim() ?? null;
+
+          const splitRaw = getPayloadString(pl, "splitStrategy")?.trim()?.toUpperCase();
+          const splitStrategy =
+            splitRaw === "PORCENTAJE_CUSTOM"
+              ? ExpenseSplitStrategy.PORCENTAJE_CUSTOM
+              : splitRaw === "UN_SOLO_DUENO"
+                ? ExpenseSplitStrategy.UN_SOLO_DUENO
+                : ExpenseSplitStrategy.PARTES_IGUALES;
+          const osmarPct = getPayloadIntNonneg(pl, "osmarPct");
+          const singleOwnerRaw = getPayloadString(pl, "singleOwner")?.trim()?.toUpperCase();
+          const singleOwner =
+            singleOwnerRaw === "OSMAR" ? OwnerName.OSMAR : singleOwnerRaw === "ALEX" ? OwnerName.ALEX : null;
+
+          const amountCupCents = getPayloadIntNonneg(pl, "amountCupCents");
+          const amountUsdCents = getPayloadIntNonneg(pl, "amountUsdCents");
+          const usdRateCup = getPayloadIntNonneg(pl, "usdRateCup");
+
+          let currency: PaymentCurrency = PaymentCurrency.CUP;
+          let amountCents = 0;
+          let originalAmount: number | null = null;
+          let rate: number | null = null;
+          if (amountUsdCents != null && amountUsdCents > 0) {
+            currency = PaymentCurrency.USD;
+            originalAmount = amountUsdCents;
+            rate = usdRateCup ?? storeUsdRateCup;
+            amountCents = Math.round((amountUsdCents / 100) * Math.round(rate) * 100);
+          } else {
+            currency = PaymentCurrency.CUP;
+            amountCents = amountCupCents ?? 0;
+          }
+
+          try {
+            await tx.expense.create({
+              data: {
+                ...(expenseId ? { id: expenseId } : {}),
+                storeId: params.storeId,
+                concept: concept.slice(0, 160),
+                categoryId,
+                categoryName: categoryName ? categoryName.slice(0, 80) : null,
+                amountCents,
+                currency,
+                originalAmount,
+                usdRateCup: rate,
+                occurredAt: new Date(occurredAtMs),
+                paidBy: paidBy ? paidBy.slice(0, 80) : null,
+                notes: notes ? notes.slice(0, 500) : null,
+                splitStrategy,
+                osmarPct: splitStrategy === ExpenseSplitStrategy.PORCENTAJE_CUSTOM ? osmarPct ?? 50 : null,
+                singleOwner: splitStrategy === ExpenseSplitStrategy.UN_SOLO_DUENO ? singleOwner : null,
+                createdByDeviceId: params.deviceId,
+                updatedByDeviceId: params.deviceId,
+              },
+            });
+            results.push(await record({ status: "ACCEPTED" }));
+          } catch (e) {
+            results.push(await record({ status: "REJECTED", correctionNote: "EXPENSE_CREATE_FAILED" }));
+          }
+          break;
+        }
+
+        case "EXPENSE_UPDATED": {
+          const pl = ev.payload as Record<string, unknown>;
+          const expenseId = getPayloadString(pl, "expenseId")?.trim();
+          if (!expenseId) {
+            results.push(await record({ status: "REJECTED", correctionNote: "MISSING_EXPENSE_ID" }));
+            break;
+          }
+          const row = await tx.expense.findFirst({ where: { id: expenseId, storeId: params.storeId } });
+          if (!row) {
+            results.push(await record({ status: "REJECTED", correctionNote: "UNKNOWN_EXPENSE" }));
+            break;
+          }
+
+          const data: Prisma.ExpenseUpdateInput = {
+            updatedByDeviceId: params.deviceId,
+          };
+          if ("concept" in pl && typeof pl.concept === "string") {
+            const c = pl.concept.trim();
+            if (!c) {
+              results.push(await record({ status: "REJECTED", correctionNote: "INVALID_EXPENSE" }));
+              break;
+            }
+            data.concept = c.slice(0, 160);
+          }
+          if ("categoryId" in pl) {
+            if (pl.categoryId === null) data.category = { disconnect: true };
+            else if (typeof pl.categoryId === "string") {
+              const id = pl.categoryId.trim();
+              data.category = id ? { connect: { id } } : { disconnect: true };
+            }
+          }
+          if ("categoryName" in pl) {
+            if (pl.categoryName === null) data.categoryName = null;
+            else if (typeof pl.categoryName === "string") data.categoryName = pl.categoryName.trim().slice(0, 80);
+          }
+          if ("paidBy" in pl) {
+            if (pl.paidBy === null) data.paidBy = null;
+            else if (typeof pl.paidBy === "string") data.paidBy = pl.paidBy.trim().slice(0, 80);
+          }
+          if ("notes" in pl) {
+            if (pl.notes === null) data.notes = null;
+            else if (typeof pl.notes === "string") data.notes = pl.notes.trim().slice(0, 500);
+          }
+          if ("occurredAt" in pl) {
+            const ms = getPayloadNumber(pl, "occurredAt");
+            if (!ms) {
+              results.push(await record({ status: "REJECTED", correctionNote: "INVALID_DATE" }));
+              break;
+            }
+            data.occurredAt = new Date(ms);
+          }
+
+          // importe
+          const amountCupCents = getPayloadIntNonneg(pl, "amountCupCents");
+          const amountUsdCents = getPayloadIntNonneg(pl, "amountUsdCents");
+          const usdRateCup = getPayloadIntNonneg(pl, "usdRateCup");
+          if (amountUsdCents != null && amountUsdCents > 0) {
+            const rate = usdRateCup ?? storeUsdRateCup;
+            const amountCents = Math.round((amountUsdCents / 100) * Math.round(rate) * 100);
+            data.currency = PaymentCurrency.USD;
+            data.originalAmount = amountUsdCents;
+            data.usdRateCup = rate;
+            data.amountCents = amountCents;
+          } else if (amountCupCents != null) {
+            data.currency = PaymentCurrency.CUP;
+            data.originalAmount = null;
+            data.usdRateCup = null;
+            data.amountCents = amountCupCents;
+          }
+
+          // reparto
+          if ("splitStrategy" in pl && typeof pl.splitStrategy === "string") {
+            const splitRaw = pl.splitStrategy.trim().toUpperCase();
+            data.splitStrategy =
+              splitRaw === "PORCENTAJE_CUSTOM"
+                ? ExpenseSplitStrategy.PORCENTAJE_CUSTOM
+                : splitRaw === "UN_SOLO_DUENO"
+                  ? ExpenseSplitStrategy.UN_SOLO_DUENO
+                  : ExpenseSplitStrategy.PARTES_IGUALES;
+          }
+          if ("osmarPct" in pl) {
+            const pct = getPayloadIntNonneg(pl, "osmarPct");
+            if (pct != null && pct <= 100) data.osmarPct = pct;
+          }
+          if ("singleOwner" in pl) {
+            if (pl.singleOwner === null) data.singleOwner = null;
+            else if (typeof pl.singleOwner === "string") {
+              const v = pl.singleOwner.trim().toUpperCase();
+              data.singleOwner = v === "OSMAR" ? OwnerName.OSMAR : v === "ALEX" ? OwnerName.ALEX : null;
+            }
+          }
+
+          await tx.expense.update({ where: { id: expenseId }, data });
+          results.push(await record({ status: "ACCEPTED" }));
+          break;
+        }
+
+        case "EXPENSE_DELETED": {
+          const expenseId = getPayloadString(ev.payload, "expenseId")?.trim();
+          if (!expenseId) {
+            results.push(await record({ status: "REJECTED", correctionNote: "MISSING_EXPENSE_ID" }));
+            break;
+          }
+          const row = await tx.expense.findFirst({ where: { id: expenseId, storeId: params.storeId } });
+          if (!row) {
+            results.push(await record({ status: "ACCEPTED", correctionNote: "UNKNOWN_EXPENSE_IGNORED" }));
+            break;
+          }
+          await tx.expense.delete({ where: { id: expenseId } });
           results.push(await record({ status: "ACCEPTED" }));
           break;
         }
