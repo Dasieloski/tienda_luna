@@ -39,6 +39,10 @@ enum ExpenseSplitStrategy {
   UN_SOLO_DUENO
 }
 
+enum FxDirection {
+  USD_TO_CUP
+}
+
 model Store {
   id        String   @id @default(cuid())
   name      String
@@ -62,6 +66,7 @@ model Store {
   saleReturns  SaleReturn[]
   expenseCategories ExpenseCategory[]
   expenses Expense[]
+  fxExchanges FxExchange[]
   ownerSales OwnerSale[]
   suppliers  Supplier[]
   supplierDebtPayments SupplierDebtPayment[]
@@ -290,12 +295,50 @@ model Event {
   inventoryMovements InventoryMovement[]
   salePayments SalePayment[]
   saleReturns  SaleReturn[]
+  fxExchanges  FxExchange[]
 
   @@unique([storeId, clientEventId])
   @@index([storeId, serverTimestamp])
   @@index([storeId, deviceId])
   @@index([storeId, type])
   @@index([storeId, deviceId, clientTimestamp, payloadHash])
+}
+
+model FxExchange {
+  id        String   @id @default(cuid())
+  storeId   String
+  store     Store    @relation(fields: [storeId], references: [id], onDelete: Cascade)
+
+  /// Dispositivo que lo registró (tablet POS)
+  deviceId  String
+
+  direction FxDirection @default(USD_TO_CUP)
+
+  /// USD recibidos (centavos USD)
+  usdCentsReceived Int
+  /// CUP entregados al cliente (céntimos CUP)
+  cupCentsGiven Int
+  /// Tasa usada (CUP por 1 USD) en el momento del cambio
+  usdRateCup Int
+
+  /// Valor teórico en CUP equivalente a los USD recibidos (usdCentsReceived * usdRateCup)
+  usdValueCupCents Int
+  /// Diferencia = usdValueCupCents - cupCentsGiven (spread/ganancia/pérdida del cambio)
+  spreadCupCents Int
+
+  exchangedAt DateTime @default(now())
+  note       String?
+
+  /// Si proviene de un evento, se enlaza para trazabilidad
+  eventId    String?
+  event      Event? @relation(fields: [eventId], references: [id], onDelete: SetNull)
+
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  @@index([storeId, exchangedAt])
+  @@index([storeId, deviceId, exchangedAt])
+  @@index([eventId])
 }
 
 /// Proyección de ventas aceptadas (consultas rápidas; reconstruible desde Event)

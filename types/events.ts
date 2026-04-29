@@ -23,6 +23,8 @@ export const DOMAIN_EVENT_TYPES = [
   "EXPENSE_CREATED",
   "EXPENSE_UPDATED",
   "EXPENSE_DELETED",
+  /** Cambios USD→CUP (no es venta; movimiento de caja) */
+  "FX_EXCHANGED_USD_TO_CUP",
   /** Catálogo desde tablet/POS (misma auth que sync batch) */
   "PRODUCT_CREATED",
   "PRODUCT_UPDATED",
@@ -179,6 +181,20 @@ export type ExpenseUpdatedPayload = {
 
 export type ExpenseDeletedPayload = {
   expenseId: string;
+};
+
+export type FxExchangedUsdToCupPayload = {
+  /** ID estable (UUID) generado en el cliente; recomendado para idempotencia extra en la APK. */
+  fxExchangeId?: string;
+  /** USD recibidos (centavos USD) */
+  usdCentsReceived: number;
+  /** CUP entregados (céntimos CUP) */
+  cupCentsGiven: number;
+  /** Tasa CUP por 1 USD aplicada */
+  usdRateCup: number;
+  /** Timestamp ms del cambio (si difiere del batch) */
+  exchangedAt?: number;
+  note?: string | null;
 };
 
 /** Alta de producto offline; el servidor valida y persiste (SKU único por tienda). */

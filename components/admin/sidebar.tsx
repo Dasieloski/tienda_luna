@@ -6,6 +6,7 @@ import { usePathname } from "next/navigation";
 import {
   AlertTriangle,
   ArrowUpDown,
+  ArrowRightLeft,
   BarChart3,
   Boxes,
   Calculator,
@@ -45,6 +46,7 @@ const NAV_ITEMS = [
       { href: "/admin/economia", label: "Economía", icon: Landmark },
       { href: "/admin/contabilidad", label: "Contabilidad", icon: Calculator },
       { href: "/admin/gastos", label: "Gastos", icon: ReceiptText },
+      { href: "/admin/cambios", label: "Cambios", icon: ArrowRightLeft },
       { href: "/admin/duenos", label: "Dueños", icon: Users },
       { href: "/admin/control-diario", label: "Control diario", icon: ClipboardList },
     ],

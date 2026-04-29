@@ -46,6 +46,14 @@ type ExpectedByDeviceRow = {
   unknown_method_sales: bigint;
 };
 
+type FxByDeviceRow = {
+  device_id: string;
+  fx_count: bigint;
+  cup_given_cents: bigint;
+  usd_value_cup_cents: bigint;
+  spread_cup_cents: bigint;
+};
+
 type EventWindowRow = { by_client_ts: bigint; by_server_ts: bigint };
 
 async function computeExpected(storeId: string, from: Date, to: Date) {
@@ -177,6 +185,21 @@ async function computeExpected(storeId: string, from: Date, to: Date) {
     `;
   }
 
+  const fxByDevice = await prisma.$queryRaw<FxByDeviceRow[]>`
+    SELECT
+      fx."deviceId" AS device_id,
+      COUNT(*)::bigint AS fx_count,
+      COALESCE(SUM(fx."cupCentsGiven"), 0)::bigint AS cup_given_cents,
+      COALESCE(SUM(fx."usdValueCupCents"), 0)::bigint AS usd_value_cup_cents,
+      COALESCE(SUM(fx."spreadCupCents"), 0)::bigint AS spread_cup_cents
+    FROM "FxExchange" fx
+    WHERE fx."storeId" = ${storeId}
+      AND fx."exchangedAt" >= ${from}
+      AND fx."exchangedAt" < ${to}
+    GROUP BY fx."deviceId"
+    ORDER BY fx_count DESC, device_id ASC
+  `;
+
   const offsetMinutes = storeTzOffsetMinutes();
   const byWindow = await prisma.$queryRaw<EventWindowRow[]>`
     SELECT
@@ -214,6 +237,21 @@ async function computeExpected(storeId: string, from: Date, to: Date) {
     },
   );
 
+  const fxTotals = fxByDevice.reduce(
+    (acc, r) => {
+      acc.fxCount += Number(r.fx_count ?? BigInt(0));
+      acc.cupGivenCents += Number(r.cup_given_cents ?? BigInt(0));
+      acc.usdValueCupCents += Number(r.usd_value_cup_cents ?? BigInt(0));
+      acc.spreadCupCents += Number(r.spread_cup_cents ?? BigInt(0));
+      return acc;
+    },
+    { fxCount: 0, cupGivenCents: 0, usdValueCupCents: 0, spreadCupCents: 0 },
+  );
+
+  // Cambios USD→CUP: sale CUP (efectivo) y entra USD (canal USD, expresado en CUP céntimos)
+  totals.cashExpectedCents -= fxTotals.cupGivenCents;
+  totals.usdChannelExpectedCents += fxTotals.usdValueCupCents;
+
   const win = byWindow[0];
   const eventsByClientTs = Number(win?.by_client_ts ?? BigInt(0));
   const eventsByServerTs = Number(win?.by_server_ts ?? BigInt(0));
@@ -241,6 +279,18 @@ async function computeExpected(storeId: string, from: Date, to: Date) {
     });
   }
 
+  if (fxTotals.fxCount > 0 && fxTotals.spreadCupCents < 0) {
+    findings.push({
+      code: "FX_NEGATIVE_SPREAD",
+      severity: "WARN",
+      title: "Cambios con spread negativo",
+      detail:
+        `En el período hay cambios USD→CUP con spread total negativo de ${fxTotals.spreadCupCents} CUP céntimos. ` +
+        `Esto suele indicar que se entregó más CUP que el equivalente por tasa.`,
+      evidence: fxTotals,
+    });
+  }
+
   if (eventsByClientTs > eventsByServerTs + 2) {
     findings.push({
       code: "SYNC_LAG",
@@ -254,7 +304,7 @@ async function computeExpected(storeId: string, from: Date, to: Date) {
     });
   }
 
-  return { byDevice, totals, findings, eventsByClientTs, eventsByServerTs };
+  return { byDevice, totals: { ...totals, fx: fxTotals }, fxByDevice, findings, eventsByClientTs, eventsByServerTs };
 }
 
 export async function GET(request: Request) {
@@ -296,6 +346,13 @@ export async function GET(request: Request) {
           transferExpectedCents: Number(r.transfer_cents ?? BigInt(0)),
           usdChannelExpectedCents: Number(r.usd_cents ?? BigInt(0)),
           unknownPaymentMethodSales: Number(r.unknown_method_sales ?? BigInt(0)),
+        })),
+        fxByDevice: computed.fxByDevice.map((r) => ({
+          deviceId: r.device_id,
+          fxCount: Number(r.fx_count ?? BigInt(0)),
+          cupGivenCents: Number(r.cup_given_cents ?? BigInt(0)),
+          usdValueCupCents: Number(r.usd_value_cup_cents ?? BigInt(0)),
+          spreadCupCents: Number(r.spread_cup_cents ?? BigInt(0)),
         })),
         findings: computed.findings,
       },

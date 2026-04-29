@@ -1452,6 +1452,55 @@ export async function processBatch(
           break;
         }
 
+        case "FX_EXCHANGED_USD_TO_CUP": {
+          const pl = ev.payload as Record<string, unknown>;
+          const fxExchangeId = getPayloadString(pl, "fxExchangeId")?.trim();
+          const usdCentsReceived = getPayloadIntNonneg(pl, "usdCentsReceived");
+          const cupCentsGiven = getPayloadIntNonneg(pl, "cupCentsGiven");
+          const usdRateCup = getPayloadIntPos(pl, "usdRateCup") ?? storeUsdRateCup;
+          const exchangedAtMs = getPayloadNumber(pl, "exchangedAt") ?? ev.timestamp;
+          const note = getPayloadString(pl, "note")?.trim() ?? null;
+
+          if (usdCentsReceived == null || cupCentsGiven == null || usdCentsReceived <= 0 || cupCentsGiven <= 0) {
+            results.push(await record({ status: "REJECTED", correctionNote: "INVALID_FX_EXCHANGE" }));
+            break;
+          }
+          if (!usdRateCup || usdRateCup <= 0) {
+            results.push(await record({ status: "REJECTED", correctionNote: "INVALID_USD_RATE" }));
+            break;
+          }
+
+          // CUP céntimos equivalentes a los USD recibidos: (usdCents/100)*usdRateCup*CUP*100 => usdCents*usdRateCup
+          const usdValueCupCents = Math.round(usdCentsReceived * Math.round(usdRateCup));
+          const spreadCupCents = usdValueCupCents - cupCentsGiven;
+
+          try {
+            const created = await tx.fxExchange.create({
+              data: {
+                ...(fxExchangeId ? { id: fxExchangeId } : {}),
+                storeId: params.storeId,
+                deviceId: params.deviceId,
+                direction: "USD_TO_CUP",
+                usdCentsReceived,
+                cupCentsGiven,
+                usdRateCup: Math.round(usdRateCup),
+                usdValueCupCents,
+                spreadCupCents,
+                exchangedAt: new Date(exchangedAtMs),
+                note: note ? note.slice(0, 500) : null,
+              },
+            });
+            const rec = await record({ status: "ACCEPTED" });
+            await tx.fxExchange.update({ where: { id: created.id }, data: { eventId: rec.serverEventId } });
+            results.push(rec);
+          } catch (e) {
+            // Si falla por duplicado (idempotencia por id), aceptamos.
+            const rec = await record({ status: "ACCEPTED", correctionNote: "FX_EXCHANGE_DUPLICATE_IGNORED" });
+            results.push(rec);
+          }
+          break;
+        }
+
         case "PRODUCT_CREATED": {
           const name = getPayloadString(ev.payload, "name")?.trim();
           if (!name) {

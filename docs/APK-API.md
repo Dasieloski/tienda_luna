@@ -30,6 +30,7 @@ En el código, solo estas rutas comprueban sesión y permiten explícitamente **
 | `GET /api/exchange-rate` | `canSync`: `device` **o** `ADMIN` / `CASHIER` |
 | `GET /api/expense-categories` | `canSync`: `device` **o** `ADMIN` / `CASHIER` |
 | `GET /api/expenses` | `canSync`: `device` **o** `ADMIN` / `CASHIER` |
+| `GET /api/fx-exchanges` | `canSync`: `device` **o** `ADMIN` / `CASHIER` |
 | `GET /api/device/ping` | `device` (recomendado para presencia online) |
 
 **Cualquier otra ruta** (`/api/admin/*`, `GET /api/events`, `POST /api/sales/validate`, `GET /api/stats/overview`, mutaciones REST de productos con CSRF admin, etc.) está pensada para **panel web** o **usuarios admin**, no para el flujo mínimo de la APK. Usarlas desde la tablet implicaría otra política de seguridad (cookies, CSRF, 2FA) y **no** está soportado como contrato de “app de caja”.
@@ -247,7 +248,45 @@ Uso: sincronización de solo lectura para que el tablet pueda re-hidratar gastos
 
 ---
 
-### 4.7 `GET /api/device/ping`
+### 4.7 `GET /api/fx-exchanges`
+
+**Archivo**: `app/api/fx-exchanges/route.ts`
+
+Lista cambios **USD→CUP** registrados en servidor. Esto **no es una venta**: es un movimiento de caja donde entra USD y sale CUP.
+
+| Aspecto | Detalle |
+|---------|---------|
+| **Método** | `GET` |
+| **Auth** | Sesión con `canSync` (`device` o `ADMIN`/`CASHIER`) |
+| **Query** | `from` ISO datetime (opcional), `to` ISO datetime (opcional), `updatedSince` ISO datetime (opcional), `limit` (1–1000, default 400) |
+| **200** | `{ fxExchanges: FxExchange[], meta }` |
+
+`FxExchange` (shape):
+
+```json
+{
+  "id": "fx-uuid",
+  "deviceId": "device-luna-pos-001",
+  "direction": "USD_TO_CUP",
+  "usdCentsReceived": 1000,
+  "cupCentsGiven": 500000,
+  "usdRateCup": 520,
+  "usdValueCupCents": 520000,
+  "spreadCupCents": 20000,
+  "exchangedAt": "2026-04-29T20:15:17.580Z",
+  "note": "Cambio para cliente",
+  "updatedAt": "2026-04-29T20:15:17.580Z"
+}
+```
+
+Notas:
+- **`usdValueCupCents`** se calcula como `usdCentsReceived * usdRateCup` (CUP céntimos equivalentes).
+- **`spreadCupCents`** = `usdValueCupCents - cupCentsGiven` (puede ser negativo).
+- Para sincronización incremental, usar `updatedSince` + upsert local por `id`.
+
+---
+
+### 4.8 `GET /api/device/ping`
 
 **Archivo**: `app/api/device/ping/route.ts`
 
@@ -500,6 +539,35 @@ USD (si aplica): usar `amountUsdCents` + `usdRateCup` (opcional). El servidor pe
   }
 }
 ```
+
+### 5.7 Cambios USD→CUP (movimiento de caja)
+
+En la tienda **no se vende en USD**: se hace **cambio USD→CUP** a una tasa, y luego el cliente compra en CUP.  
+Para que quede registrado (y cuente para el cuadre), la APK debe enviar este evento.
+
+**`FX_EXCHANGED_USD_TO_CUP`**:
+
+```json
+{
+  "type": "FX_EXCHANGED_USD_TO_CUP",
+  "timestamp": 1730000000000,
+  "payload": {
+    "fxExchangeId": "<opcional id estable>",
+    "usdCentsReceived": 1000,
+    "cupCentsGiven": 500000,
+    "usdRateCup": 520,
+    "exchangedAt": 1730000000000,
+    "note": "Cambio para cliente"
+  }
+}
+```
+
+Reglas:
+- `usdCentsReceived > 0`, `cupCentsGiven > 0`, `usdRateCup > 0`.
+- El servidor calcula:
+  - `usdValueCupCents = usdCentsReceived * usdRateCup`
+  - `spreadCupCents = usdValueCupCents - cupCentsGiven`
+- Esto **no crea una venta**: solo crea un registro `FxExchange` para auditoría y cuadre.
 
 ### 5.2 `SALE_CANCELLED`
 
