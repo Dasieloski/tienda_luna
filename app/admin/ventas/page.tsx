@@ -398,8 +398,8 @@ export default function SalesPage() {
         body: JSON.stringify({ ids }),
       });
       const json: unknown = await res.json().catch(() => null);
+      const obj = json && typeof json === "object" ? (json as Record<string, unknown>) : null;
       if (!res.ok) {
-        const obj = json && typeof json === "object" ? (json as Record<string, unknown>) : null;
         const err = obj && "error" in obj ? String(obj.error ?? "") : "";
         setDeleteMsg(err || `No se pudo eliminar (HTTP ${res.status}).`);
         return;
