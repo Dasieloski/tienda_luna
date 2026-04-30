@@ -766,23 +766,6 @@ export default function EconomyPage() {
           </div>
         )}
 
-        <section className="rounded-2xl border border-tl-line-subtle bg-tl-canvas-inset p-4 shadow-sm sm:p-5">
-          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-            <div>
-              <p className="text-sm font-semibold text-tl-ink">Auditoría de cuadre de caja</p>
-              <p className="mt-1 text-xs text-tl-muted">
-                Valida días (correcto/incorrecto), compara tablet vs sistema y detecta causas probables con acciones sugeridas.
-              </p>
-            </div>
-            <Link
-              href="/admin/control-diario/cuadre"
-              className="tl-btn tl-btn-primary tl-interactive tl-hover-lift tl-press tl-focus !px-4 !py-2 text-sm no-underline"
-            >
-              Abrir auditoría
-            </Link>
-          </div>
-        </section>
-
         <>
             {analytics?.meta?.dbAvailable && mar && (
           <div className="relative overflow-hidden rounded-2xl border-2 border-tl-success/45 bg-gradient-to-br from-tl-success-subtle via-tl-canvas-inset to-tl-canvas p-6 shadow-lg ring-1 ring-tl-success/30 sm:p-8">

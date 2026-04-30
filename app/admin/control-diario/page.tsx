@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
+import Link from "next/link";
 import {
   Banknote,
   Calendar,
@@ -9,6 +10,7 @@ import {
   DollarSign,
   Download,
   FileDown,
+  ShieldAlert,
   PackageSearch,
   RefreshCw,
   TrendingUp,
@@ -353,6 +355,14 @@ export default function DailyControlPage() {
                 className="tl-input h-9 w-[140px] px-3 py-1 text-xs sm:text-sm"
               />
             </label>
+            <Link
+              href="/admin/control-diario/cuadre"
+              className="tl-btn tl-btn-primary tl-interactive tl-hover-lift tl-press tl-focus !px-3 !py-2 text-xs sm:text-sm no-underline"
+              title="Abrir auditoría de cuadre"
+            >
+              <ShieldAlert className="h-4 w-4" aria-hidden />
+              Cuadre
+            </Link>
             <button
               type="button"
               onClick={() => void load()}
