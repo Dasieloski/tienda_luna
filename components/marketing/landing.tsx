@@ -1,22 +1,22 @@
 "use client"
 
 import {
-  ArrowRight,
-  BarChart3,
-  CheckCircle2,
-  CloudOff,
-  HelpCircle,
-  Layers3,
-  LayoutDashboard,
-  Lock,
-  Package,
-  Radar,
-  ShieldCheck,
-  ShoppingBag,
-  Sparkles,
-  Store,
-  Workflow,
-} from "lucide-react"
+  ArrowRightIcon as ArrowRight,
+  BarChart3Icon as BarChart3,
+  CheckCircle2Icon as CheckCircle2,
+  CloudOffIcon as CloudOff,
+  HelpCircleIcon as HelpCircle,
+  Layers3Icon as Layers3,
+  LayoutDashboardIcon as LayoutDashboard,
+  LockIcon as Lock,
+  PackageIcon as Package,
+  RadarIcon as Radar,
+  ShieldCheckIcon as ShieldCheck,
+  ShoppingBagIcon as ShoppingBag,
+  SparklesIcon as Sparkles,
+  StoreIcon as Store,
+  WorkflowIcon as Workflow,
+} from "@/components/ui/icons"
 import Link from "next/link"
 import { cn } from "@/lib/utils"
 

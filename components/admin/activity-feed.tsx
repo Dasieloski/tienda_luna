@@ -1,14 +1,14 @@
 "use client";
 
 import {
-  AlertTriangle,
-  CheckCircle2,
-  Clock,
-  CreditCard,
-  Package,
-  ShoppingCart,
-  XCircle,
-} from "lucide-react";
+  AlertTriangleIcon as AlertTriangle,
+  CheckCircle2Icon as CheckCircle2,
+  ClockIcon as Clock,
+  CreditCardIcon as CreditCard,
+  PackageIcon as Package,
+  ShoppingCartIcon as ShoppingCart,
+  XCircleIcon as XCircle,
+} from "@/components/ui/icons";
 import { cn } from "@/lib/utils";
 
 export type ActivityType =

@@ -3,7 +3,7 @@
 import { Suspense, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
-import { Boxes, Search, Truck } from "lucide-react";
+import { BoxesIcon as Boxes, SearchLucideIcon as Search, TruckIcon as Truck } from "@/components/ui/icons";
 import { AdminShell } from "@/components/admin/admin-shell";
 import { DataTable, type Column } from "@/components/admin/data-table";
 import { formatCup } from "@/lib/money";
@@ -177,6 +177,8 @@ function SearchPageClient() {
 
         <div className="grid gap-6 xl:grid-cols-2">
           <DataTable
+            title="Productos"
+            description={q ? `Resultados para “${q}”.` : "Escribe una consulta en el buscador superior."}
             columns={productColumns}
             data={products}
             keyExtractor={(r) => r.id}
@@ -194,6 +196,8 @@ function SearchPageClient() {
           />
 
           <DataTable
+            title="Proveedores"
+            description={q ? `Resultados para “${q}”.` : "Escribe una consulta en el buscador superior."}
             columns={supplierColumns}
             data={suppliers}
             keyExtractor={(r) => r.id}

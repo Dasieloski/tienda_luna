@@ -2,7 +2,12 @@
 
 import { Suspense, useCallback, useEffect, useState } from "react";
 import { useSearchParams } from "next/navigation";
-import { AlertTriangle, Shield, ShieldAlert, ShieldCheck } from "lucide-react";
+import {
+  AlertTriangleIcon as AlertTriangle,
+  ShieldIcon as Shield,
+  ShieldAlertIcon as ShieldAlert,
+  ShieldCheckIcon as ShieldCheck,
+} from "@/components/ui/icons";
 import { AdminShell } from "@/components/admin/admin-shell";
 import { KpiCard } from "@/components/admin/kpi-card";
 import { DataTable, type Column } from "@/components/admin/data-table";

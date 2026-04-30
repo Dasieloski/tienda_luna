@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { BadgeCheck, Plus, RefreshCw } from "lucide-react";
+import { BadgeCheckIcon as BadgeCheck, PlusIcon as Plus, RefreshCwIcon as RefreshCw } from "@/components/ui/icons";
 import { AdminShell } from "@/components/admin/admin-shell";
 import { KpiCard } from "@/components/admin/kpi-card";
 import { TablePriceCupCell } from "@/components/admin/table-price-cup-cell";

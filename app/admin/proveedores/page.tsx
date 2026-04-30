@@ -2,21 +2,21 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
-  Banknote,
-  BookMarked,
-  Calendar,
-  FileText,
-  Layers,
-  Package,
-  Pencil,
-  Plus,
-  RefreshCw,
-  Store,
-  Trash2,
-  TrendingUp,
-  Truck,
-  Wallet,
-} from "lucide-react";
+  BanknoteIcon as Banknote,
+  BookMarkedIcon as BookMarked,
+  CalendarIcon as Calendar,
+  FileTextIcon as FileText,
+  LayersIcon as Layers,
+  PackageIcon as Package,
+  PencilIcon as Pencil,
+  PlusIcon as Plus,
+  RefreshCwIcon as RefreshCw,
+  StoreIcon as Store,
+  Trash2Icon as Trash2,
+  TrendingUpIcon as TrendingUp,
+  TruckIcon as Truck,
+  WalletIcon as Wallet,
+} from "@/components/ui/icons";
 import { AdminShell } from "@/components/admin/admin-shell";
 import { KpiCard } from "@/components/admin/kpi-card";
 import { CupUsdMoney } from "@/components/admin/cup-usd-money";

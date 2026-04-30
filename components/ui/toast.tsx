@@ -1,8 +1,8 @@
 "use client";
 
 import * as React from "react";
-import { X } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { XIcon } from "@/components/ui/x";
 
 export type ToastKind = "success" | "error" | "warning" | "info";
 
@@ -164,7 +164,7 @@ function ToastCard({ toast, onDismiss }: { toast: ToastItem; onDismiss: () => vo
           onClick={onDismiss}
           aria-label="Cerrar notificación"
         >
-          <X className="h-4 w-4" aria-hidden />
+          <XIcon size={16} className="text-current" aria-hidden="true" />
         </button>
       </div>
       <div className={cn("h-0.5 w-full", tone.bg)} aria-hidden />

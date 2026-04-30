@@ -3,15 +3,15 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import {
-  AlertTriangle,
-  BadgeCheck,
-  Banknote,
-  Calendar,
-  ClipboardList,
-  RefreshCw,
-  ShieldAlert,
-  ThumbsUp,
-} from "lucide-react";
+  AlertTriangleIcon as AlertTriangle,
+  BadgeCheckIcon as BadgeCheck,
+  BanknoteIcon as Banknote,
+  CalendarIcon as Calendar,
+  ClipboardListIcon as ClipboardList,
+  RefreshCwIcon as RefreshCw,
+  ShieldAlertIcon as ShieldAlert,
+  ThumbsUpIcon as ThumbsUp,
+} from "@/components/ui/icons";
 import { AdminShell } from "@/components/admin/admin-shell";
 import { KpiCard } from "@/components/admin/kpi-card";
 import { TablePriceCupCell } from "@/components/admin/table-price-cup-cell";

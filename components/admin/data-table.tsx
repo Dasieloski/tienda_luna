@@ -1,8 +1,14 @@
 "use client";
 
 import { useEffect, useId, useMemo, useState, type ReactNode } from "react";
-import { ChevronDown, ChevronLeft, ChevronRight, ChevronUp, Search, X } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { ChevronDownIcon } from "@/components/ui/chevron-down";
+import { ChevronLeftIcon } from "@/components/ui/chevron-left";
+import { ChevronRightIcon } from "@/components/ui/chevron-right";
+import { ChevronUpIcon } from "@/components/ui/chevron-up";
+import { SearchIcon } from "@/components/ui/search";
+import { XIcon } from "@/components/ui/x";
+import { BoxesIcon } from "@/components/ui/icons";
 
 type FilterKind = "text" | "select" | "numberRange";
 
@@ -73,6 +79,13 @@ export type DataTablePagination = {
 };
 
 interface DataTableProps<T> {
+  title?: string;
+  description?: string;
+  actions?: ReactNode;
+  /** Para tablas server-side: total real en backend (para contador). */
+  totalCount?: number | null;
+  /** Muestra contador de resultados en toolbar */
+  showCount?: boolean;
   columns: Column<T>[];
   data: T[];
   keyExtractor: (row: T) => string;
@@ -115,6 +128,11 @@ interface DataTableProps<T> {
 }
 
 export function DataTable<T extends Record<string, unknown>>({
+  title,
+  description,
+  actions,
+  totalCount = null,
+  showCount = true,
   columns,
   data,
   keyExtractor,
@@ -292,6 +310,14 @@ export function DataTable<T extends Record<string, unknown>>({
       ? sortedData.slice((pageSafe - 1) * pageSize, (pageSafe - 1) * pageSize + pageSize)
       : sortedData;
 
+  const countLabel = useMemo(() => {
+    if (!showCount) return null;
+    if (loading) return "Cargando…";
+    const n = totalCount != null ? totalCount : sortedData.length;
+    const nf = new Intl.NumberFormat("es-ES");
+    return `${nf.format(Math.max(0, n))} resultados`;
+  }, [loading, showCount, sortedData.length, totalCount]);
+
   const handleSort = (key: string) => {
     if (sortKey === key) {
       setNextSorting({ key, dir: sortDir === "asc" ? "desc" : "asc" });
@@ -334,17 +360,41 @@ export function DataTable<T extends Record<string, unknown>>({
         className,
       )}
     >
-      {(searchable || filterableColumns.length > 0) && (
+      {(title || searchable || filterableColumns.length > 0 || actions) && (
         <div className="border-b border-tl-line px-4 py-3">
-          <div className="flex flex-col gap-2">
-            {searchable && (
-              <div className="relative max-w-sm">
+          <div className="flex flex-col gap-3">
+            {(title || actions || countLabel || description) && (
+              <div className="flex flex-wrap items-start justify-between gap-3">
+                <div className="min-w-0">
+                  {title ? (
+                    <div className="flex flex-wrap items-center gap-2">
+                      <p className="truncate text-sm font-semibold text-tl-ink">{title}</p>
+                      {countLabel ? (
+                        <span className="rounded-full border border-tl-line bg-tl-canvas-inset px-2.5 py-1 text-[11px] font-semibold text-tl-muted">
+                          {countLabel}
+                        </span>
+                      ) : null}
+                    </div>
+                  ) : countLabel ? (
+                    <p className="text-xs font-semibold text-tl-muted">{countLabel}</p>
+                  ) : null}
+                  {description ? <p className="mt-0.5 text-xs text-tl-muted">{description}</p> : null}
+                </div>
+                {actions ? <div className="flex shrink-0 flex-wrap items-center gap-2">{actions}</div> : null}
+              </div>
+            )}
+
+            {(searchable || filterableColumns.length > 0) && (
+              <div className="flex flex-col gap-2">
+                {searchable && (
+                  <div className="relative w-full max-w-md">
                 <label htmlFor={searchId} className="sr-only">
                   {searchPlaceholder}
                 </label>
-                <Search
-                  className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-tl-muted"
-                  aria-hidden
+                <SearchIcon
+                  size={16}
+                  className="absolute left-3 top-1/2 -translate-y-1/2 text-tl-muted"
+                  aria-hidden="true"
                 />
                 <input
                   id={searchId}
@@ -356,15 +406,15 @@ export function DataTable<T extends Record<string, unknown>>({
                     if (searchControlled) onSearchQueryChange?.(v);
                     else setSearchLocal(v);
                   }}
-                  className="tl-input h-9 pl-10 text-sm"
+                  className="tl-input h-10 pl-10 text-sm"
                   disabled={loading}
                 />
-              </div>
-            )}
+                  </div>
+                )}
 
-            {filterableColumns.length > 0 && (
-              <div className="flex flex-col gap-2">
-                <div className="flex flex-wrap items-end gap-2">
+                {filterableColumns.length > 0 && (
+                  <div className="flex flex-col gap-2">
+                    <div className="flex flex-wrap items-end gap-2">
                   {filterableColumns.map((col) => {
                     const f = col.filter!;
                     const k = String(col.key);
@@ -473,22 +523,22 @@ export function DataTable<T extends Record<string, unknown>>({
                     return null;
                   })}
 
-                  <div className="flex items-center gap-2">
-                    <button
-                      type="button"
-                      className="tl-btn tl-btn-secondary tl-interactive tl-hover-lift tl-press tl-focus !h-9 !px-3 !py-0 text-xs"
-                      onClick={() => setNextFilters({})}
-                      disabled={loading || activeFilterChips.length === 0}
-                      title="Limpiar filtros"
-                    >
-                      <X className="h-4 w-4" aria-hidden />
-                      Limpiar
-                    </button>
-                  </div>
-                </div>
+                      <div className="flex items-center gap-2">
+                        <button
+                          type="button"
+                          className="tl-btn tl-btn-secondary tl-interactive tl-hover-lift tl-press tl-focus !h-10 !px-3 !py-0 text-xs"
+                          onClick={() => setNextFilters({})}
+                          disabled={loading || activeFilterChips.length === 0}
+                          title="Limpiar filtros"
+                        >
+                          <XIcon size={16} className="text-current" aria-hidden="true" />
+                          Limpiar
+                        </button>
+                      </div>
+                    </div>
 
                 {activeFilterChips.length > 0 && (
-                  <div className="flex flex-wrap gap-2">
+                  <div className="-mx-1 flex gap-2 overflow-x-auto px-1 pb-1">
                     {activeFilterChips.map((c) => (
                       <button
                         key={c.key}
@@ -503,10 +553,12 @@ export function DataTable<T extends Record<string, unknown>>({
                         disabled={loading}
                       >
                         <span className="truncate">{c.label}</span>
-                        <X className="h-3.5 w-3.5 text-tl-muted" aria-hidden />
+                        <XIcon size={14} className="text-tl-muted" aria-hidden="true" />
                       </button>
                     ))}
                   </div>
+                )}
+              </div>
                 )}
               </div>
             )}
@@ -532,6 +584,7 @@ export function DataTable<T extends Record<string, unknown>>({
                     col.align === "right" && "text-right"
                   )}
                   style={col.width ? { width: col.width } : undefined}
+                  data-numeric={col.align === "right" ? "true" : undefined}
                   aria-sort={
                     col.sortable
                       ? sortKey === String(col.key)
@@ -556,9 +609,9 @@ export function DataTable<T extends Record<string, unknown>>({
                       <span>{col.label}</span>
                       {sortKey === String(col.key) && !loading ? (
                         sortDir === "asc" ? (
-                          <ChevronUp className="h-3 w-3" aria-hidden />
+                          <ChevronUpIcon size={12} className="text-current" aria-hidden="true" />
                         ) : (
-                          <ChevronDown className="h-3 w-3" aria-hidden />
+                          <ChevronDownIcon size={12} className="text-current" aria-hidden="true" />
                         )
                       ) : (
                         <span className="sr-only">Sin ordenar</span>
@@ -604,8 +657,16 @@ export function DataTable<T extends Record<string, unknown>>({
               ))
             ) : sortedData.length === 0 ? (
               <tr>
-                <td colSpan={columns.length} className="py-12 text-center text-tl-muted">
-                  {emptyMessage}
+                <td colSpan={columns.length} className="py-14 text-center">
+                  <div className="mx-auto flex max-w-md flex-col items-center gap-3 px-4">
+                    <span className="flex h-11 w-11 items-center justify-center rounded-2xl border border-tl-line bg-tl-canvas-inset text-tl-muted">
+                      <BoxesIcon className="h-5 w-5" aria-hidden />
+                    </span>
+                    <div>
+                      <p className="text-sm font-semibold text-tl-ink">Sin resultados</p>
+                      <p className="mt-1 text-xs text-tl-muted">{emptyMessage}</p>
+                    </div>
+                  </div>
                 </td>
               </tr>
             ) : (
@@ -625,6 +686,7 @@ export function DataTable<T extends Record<string, unknown>>({
                           col.align === "center" && "text-center",
                           col.align === "right" && "text-right"
                         )}
+                        data-numeric={col.align === "right" ? "true" : undefined}
                       >
                         {renderCellContent(row, col, index)}
                       </td>
@@ -736,7 +798,7 @@ export function DataTable<T extends Record<string, unknown>>({
               disabled={pageSafe <= 1}
               aria-label="Página anterior"
             >
-              <ChevronLeft className="h-4 w-4" aria-hidden />
+              <ChevronLeftIcon size={16} className="text-current" aria-hidden="true" />
               Anterior
             </button>
             <button
@@ -751,7 +813,7 @@ export function DataTable<T extends Record<string, unknown>>({
               aria-label="Página siguiente"
             >
               Siguiente
-              <ChevronRight className="h-4 w-4" aria-hidden />
+              <ChevronRightIcon size={16} className="text-current" aria-hidden="true" />
             </button>
           </div>
         </div>

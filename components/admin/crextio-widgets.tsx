@@ -1,7 +1,14 @@
 "use client";
 
 import { cn } from "@/lib/utils";
-import { ArrowUpRight, CheckCircle2, Circle, Pause, Play, RotateCcw } from "lucide-react";
+import {
+  ArrowUpRightIcon as ArrowUpRight,
+  CheckCircle2Icon as CheckCircle2,
+  CircleIcon as Circle,
+  PauseIcon as Pause,
+  PlayIcon as Play,
+  RotateCcwIcon as RotateCcw,
+} from "@/components/ui/icons";
 
 /**
  * Weekly Progress Chart - Crextio Style

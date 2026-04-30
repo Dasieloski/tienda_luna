@@ -2,19 +2,19 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import {
-  Banknote,
-  Calendar,
-  CreditCard,
-  DollarSign,
-  FileDown,
-  PieChart,
-  ReceiptText,
-  RefreshCw,
-  TrendingDown,
-  TrendingUp,
-  Users,
-  Wallet,
-} from "lucide-react";
+  BanknoteIcon as Banknote,
+  CalendarIcon as Calendar,
+  CreditCardIcon as CreditCard,
+  DollarSignIcon as DollarSign,
+  FileDownIcon as FileDown,
+  PieChartIcon as PieChart,
+  ReceiptTextIcon as ReceiptText,
+  RefreshCwIcon as RefreshCw,
+  TrendingDownIcon as TrendingDown,
+  TrendingUpIcon as TrendingUp,
+  UsersLucideIcon as Users,
+  WalletIcon as Wallet,
+} from "@/components/ui/icons";
 import { AdminShell } from "@/components/admin/admin-shell";
 import { KpiCard } from "@/components/admin/kpi-card";
 import { CupUsdMoney } from "@/components/admin/cup-usd-money";

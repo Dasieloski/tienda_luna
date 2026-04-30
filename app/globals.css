@@ -350,6 +350,8 @@
 /* Table styles */
 .tl-table {
   @apply w-full text-sm;
+  border-collapse: separate;
+  border-spacing: 0;
 }
 
 .tl-table thead {
@@ -357,13 +359,32 @@
 }
 
 .tl-table th {
-  @apply bg-tl-canvas-subtle px-3 py-3 text-left text-[11px] font-semibold uppercase tracking-wider text-tl-muted sm:px-4;
+  @apply bg-tl-canvas/92 px-3 py-3 text-left text-[11px] font-semibold uppercase tracking-wider text-tl-muted sm:px-4;
   border-bottom: 1px solid var(--tl-line);
+  backdrop-filter: blur(10px);
 }
 
 .tl-table td {
-  @apply px-3 py-3 text-tl-ink-secondary sm:px-4 sm:py-3.5;
+  @apply px-3 py-3 text-tl-ink sm:px-4 sm:py-3.5;
   border-bottom: 1px solid var(--tl-line-subtle);
+}
+
+.tl-table td[data-numeric="true"],
+.tl-table th[data-numeric="true"] {
+  font-variant-numeric: tabular-nums;
+}
+
+@supports (background-color: color-mix(in srgb, black 50%, white)) {
+  .tl-table tbody tr:nth-child(odd) td {
+    background-color: color-mix(in srgb, var(--tl-canvas-inset) 45%, transparent);
+  }
+  .tl-table tbody tr:nth-child(even) td {
+    background-color: transparent;
+  }
+}
+
+.tl-table tbody td:first-child {
+  border-left: 1px solid transparent;
 }
 
 /* Density toggle (set by Topbar: documentElement.dataset.density) */

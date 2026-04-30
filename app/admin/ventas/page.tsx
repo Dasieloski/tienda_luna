@@ -1,7 +1,14 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { PencilLine, Plus, RefreshCw, Search, Trash2, WifiOff } from "lucide-react";
+import {
+  PencilLineIcon as PencilLine,
+  PlusIcon as Plus,
+  RefreshCwIcon as RefreshCw,
+  SearchLucideIcon as Search,
+  Trash2Icon as Trash2,
+  WifiOffIcon as WifiOff,
+} from "@/components/ui/icons";
 import { AdminShell } from "@/components/admin/admin-shell";
 import { DataTable, type Column } from "@/components/admin/data-table";
 import { cn } from "@/lib/utils";
@@ -924,6 +931,20 @@ export default function SalesPage() {
         </div>
 
         <DataTable
+          title="Ventas"
+          description="Busca por dispositivo, producto o método. Click en una fila para ver el detalle."
+          actions={
+            <button
+              type="button"
+              className="tl-btn tl-btn-secondary !h-10 !px-3 !py-0 text-xs"
+              onClick={() => void loadSales({ manual: true })}
+              disabled={loading}
+              title="Actualizar"
+            >
+              <RefreshCw className="h-4 w-4" aria-hidden />
+              Actualizar
+            </button>
+          }
           columns={columns}
           data={sales}
           keyExtractor={(row) => row.id}
@@ -934,7 +955,7 @@ export default function SalesPage() {
           searchQuery={searchQuery}
           onSearchQueryChange={setSearchQuery}
           onVisibleRowsChange={setVisibleSales}
-          emptyMessage="No hay ventas recientes"
+          emptyMessage="No hay ventas que coincidan con tu búsqueda/filtros."
           maxHeight="calc(100vh - 300px)"
           loading={loading}
           skeletonRows={10}

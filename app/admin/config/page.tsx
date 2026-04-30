@@ -3,15 +3,15 @@
 import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import {
-  CheckCircle2,
-  Copy,
-  Database,
-  ExternalLink,
-  Home,
-  Info,
-  Settings,
-  XCircle,
-} from "lucide-react";
+  CheckCircle2Icon as CheckCircle2,
+  CopyIcon as Copy,
+  DatabaseIcon as Database,
+  ExternalLinkIcon as ExternalLink,
+  HomeIcon as Home,
+  InfoIcon as Info,
+  SettingsLucideIcon as Settings,
+  XCircleIcon as XCircle,
+} from "@/components/ui/icons";
 import { AdminShell } from "@/components/admin/admin-shell";
 import { cn } from "@/lib/utils";
 

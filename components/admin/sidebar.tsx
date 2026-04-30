@@ -4,26 +4,26 @@ import { useEffect, useLayoutEffect, useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import {
-  AlertTriangle,
-  ArrowUpDown,
-  ArrowRightLeft,
-  BarChart3,
-  Boxes,
-  Calculator,
-  ChevronDown,
-  ChevronLeft,
-  Clock,
-  ClipboardList,
-  Landmark,
-  LayoutDashboard,
-  Monitor,
-  Radio,
-  ReceiptText,
-  Settings,
-  Store,
-  Truck,
-  Users,
-} from "lucide-react";
+  AlertTriangleIcon as AlertTriangle,
+  ArrowUpDownIcon as ArrowUpDown,
+  ArrowRightLeftIcon as ArrowRightLeft,
+  BarChart3Icon as BarChart3,
+  BoxesIcon as Boxes,
+  CalculatorIcon as Calculator,
+  ChevronDownIcon as ChevronDown,
+  ChevronLeftIcon as ChevronLeft,
+  ClockIcon as Clock,
+  ClipboardListIcon as ClipboardList,
+  LandmarkLucideIcon as Landmark,
+  LayoutDashboardIcon as LayoutDashboard,
+  MonitorIcon as Monitor,
+  RadioIcon as Radio,
+  ReceiptTextIcon as ReceiptText,
+  SettingsLucideIcon as Settings,
+  StoreIcon as Store,
+  TruckIcon as Truck,
+  UsersLucideIcon as Users,
+} from "@/components/ui/icons";
 import { cn } from "@/lib/utils";
 
 const NAV_ITEMS = [

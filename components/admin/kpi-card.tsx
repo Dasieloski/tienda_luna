@@ -1,7 +1,12 @@
 "use client";
 
 import type { ReactNode } from "react";
-import { ArrowDown, ArrowUp, ArrowUpRight, Minus } from "lucide-react";
+import {
+  ArrowDownIcon as ArrowDown,
+  ArrowUpIcon as ArrowUp,
+  ArrowUpRightIcon as ArrowUpRight,
+  MinusIcon as Minus,
+} from "@/components/ui/icons";
 import { cn } from "@/lib/utils";
 
 type Variant = "default" | "success" | "warning" | "danger" | "info" | "accent";

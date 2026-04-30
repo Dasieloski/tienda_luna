@@ -3,18 +3,18 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import {
-  AlertTriangle,
-  Boxes,
-  Clock,
-  ClipboardList,
-  Cpu,
-  DollarSign,
-  Package,
-  ShoppingCart,
-  ShieldAlert,
-  TrendingUp,
-  Users,
-} from "lucide-react";
+  AlertTriangleIcon as AlertTriangle,
+  BoxesIcon as Boxes,
+  ClockIcon as Clock,
+  ClipboardListIcon as ClipboardList,
+  CpuIcon as Cpu,
+  DollarSignIcon as DollarSign,
+  PackageIcon as Package,
+  ShoppingCartIcon as ShoppingCart,
+  ShieldAlertIcon as ShieldAlert,
+  TrendingUpIcon as TrendingUp,
+  UsersLucideIcon as Users,
+} from "@/components/ui/icons";
 import { AdminShell } from "@/components/admin/admin-shell";
 import { KpiCard } from "@/components/admin/kpi-card";
 import { ActivityFeed, type ActivityItem } from "@/components/admin/activity-feed";

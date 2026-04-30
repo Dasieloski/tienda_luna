@@ -1,8 +1,8 @@
 "use client";
 
 import * as React from "react";
-import { X } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { XIcon } from "@/components/ui/x";
 
 type ModalProps = {
   open: boolean;
@@ -132,7 +132,7 @@ export function Modal({
               className="rounded-lg p-2 text-tl-muted tl-interactive tl-press tl-focus hover:bg-tl-canvas-subtle"
               aria-label="Cerrar"
             >
-              <X className="h-4 w-4" aria-hidden />
+              <XIcon size={16} className="text-current" aria-hidden="true" />
             </button>
           </div>
           <div className="p-4">{children}</div>

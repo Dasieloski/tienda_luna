@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { Monitor, RefreshCw, Save } from "lucide-react";
+import { MonitorIcon as Monitor, RefreshCwIcon as RefreshCw, SaveIcon as Save } from "@/components/ui/icons";
 import { AdminShell } from "@/components/admin/admin-shell";
 import { cn } from "@/lib/utils";
 

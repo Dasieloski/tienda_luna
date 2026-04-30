@@ -3,17 +3,17 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import Link from "next/link";
 import {
-  Activity,
-  BarChart2,
-  Boxes,
-  ChevronRight,
-  Cpu,
-  LayoutGrid,
-  Radio,
-  RefreshCw,
-  Settings2,
-  ShoppingCart,
-} from "lucide-react";
+  ActivityIcon as Activity,
+  BarChart2Icon as BarChart2,
+  BoxesIcon as Boxes,
+  ChevronRightIcon as ChevronRight,
+  CpuIcon as Cpu,
+  LayoutGridIcon as LayoutGrid,
+  RadioIcon as Radio,
+  RefreshCwIcon as RefreshCw,
+  Settings2Icon as Settings2,
+  ShoppingCartIcon as ShoppingCart,
+} from "@/components/ui/icons";
 import { DashboardCharts } from "@/components/admin/dashboard-charts";
 import { cn } from "@/lib/utils";
 import { formatCup } from "@/lib/money";

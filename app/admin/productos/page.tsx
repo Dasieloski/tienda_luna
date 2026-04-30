@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { BarChart3, Boxes, RefreshCw } from "lucide-react";
+import { BarChart3Icon as BarChart3, BoxesIcon as Boxes, RefreshCwIcon as RefreshCw } from "@/components/ui/icons";
 import {
   Area,
   AreaChart,

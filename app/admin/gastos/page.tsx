@@ -2,20 +2,20 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
-  Bolt,
-  Calendar,
-  CreditCard,
-  Home,
-  Package,
-  Pencil,
-  Plus,
-  RefreshCw,
-  Tag,
-  Trash2,
-  Truck,
-  UtensilsCrossed,
-  Wrench,
-} from "lucide-react";
+  BoltIcon as Bolt,
+  CalendarIcon as Calendar,
+  CreditCardIcon as CreditCard,
+  HomeIcon as Home,
+  PackageIcon as Package,
+  PencilIcon as Pencil,
+  PlusIcon as Plus,
+  RefreshCwIcon as RefreshCw,
+  TagIcon as Tag,
+  Trash2Icon as Trash2,
+  TruckIcon as Truck,
+  UtensilsCrossedIcon as UtensilsCrossed,
+  WrenchIcon as Wrench,
+} from "@/components/ui/icons";
 import { AdminShell } from "@/components/admin/admin-shell";
 import { CupUsdMoney } from "@/components/admin/cup-usd-money";
 import { TablePriceCupCell } from "@/components/admin/table-price-cup-cell";

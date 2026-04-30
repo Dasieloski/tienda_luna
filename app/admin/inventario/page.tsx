@@ -1,7 +1,15 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { ArchiveRestore, Boxes, ChevronRight, Package, Pencil, Trash2, X } from "lucide-react";
+import {
+  ArchiveRestoreIcon as ArchiveRestore,
+  BoxesIcon as Boxes,
+  ChevronRightIcon as ChevronRight,
+  PackageIcon as Package,
+  PencilIcon as Pencil,
+  Trash2Icon as Trash2,
+  XLucideIcon as X,
+} from "@/components/ui/icons";
 import { AdminShell } from "@/components/admin/admin-shell";
 import { DataTable, type Column } from "@/components/admin/data-table";
 import { cn } from "@/lib/utils";
@@ -902,13 +910,15 @@ export default function InventoryPage() {
 
         <div className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_340px]">
           <DataTable
+            title="Catálogo"
+            description="Busca por SKU o nombre. Click en una fila para editar."
             columns={columns}
             data={activeProducts}
             keyExtractor={(row) => row.id}
             searchable
             searchPlaceholder="Buscar por SKU o nombre..."
             searchKeys={["sku", "name"]}
-            emptyMessage="No hay productos en el catálogo"
+            emptyMessage="No hay productos que coincidan con tu búsqueda."
             fillHeight
             maxHeight="calc(100vh - 340px)"
             loading={loading}
@@ -1104,6 +1114,8 @@ export default function InventoryPage() {
             </div>
           </div>
           <DataTable
+            title="Productos inactivos"
+            description="No aparecen en caja. Útil para reactivar o revisar."
             columns={inactiveColumns}
             data={inactiveProducts}
             keyExtractor={(row) => row.id}
@@ -1126,6 +1138,8 @@ export default function InventoryPage() {
             </p>
           </div>
           <DataTable
+            title="Archivados"
+            description="Conservan historial. Puedes restaurar o editar antes de reactivar."
             columns={deletedColumns}
             data={deletedProducts}
             keyExtractor={(row) => row.id}

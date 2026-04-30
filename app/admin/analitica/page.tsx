@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { BarChart3, TrendingUp } from "lucide-react";
+import { BarChart3Icon as BarChart3, TrendingUpIcon as TrendingUp } from "@/components/ui/icons";
 import { AdminShell } from "@/components/admin/admin-shell";
 import { KpiCard } from "@/components/admin/kpi-card";
 import { CupUsdMoney } from "@/components/admin/cup-usd-money";

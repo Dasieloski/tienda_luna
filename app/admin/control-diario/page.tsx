@@ -3,19 +3,19 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import {
-  Banknote,
-  Calendar,
-  ClipboardList,
-  CreditCard,
-  DollarSign,
-  Download,
-  FileDown,
-  ListChecks,
-  ShieldAlert,
-  PackageSearch,
-  RefreshCw,
-  TrendingUp,
-} from "lucide-react";
+  BanknoteIcon as Banknote,
+  CalendarIcon as Calendar,
+  ClipboardListIcon as ClipboardList,
+  CreditCardIcon as CreditCard,
+  DollarSignIcon as DollarSign,
+  DownloadIcon as Download,
+  FileDownIcon as FileDown,
+  ListChecksIcon as ListChecks,
+  ShieldAlertIcon as ShieldAlert,
+  PackageSearchIcon as PackageSearch,
+  RefreshCwIcon as RefreshCw,
+  TrendingUpIcon as TrendingUp,
+} from "@/components/ui/icons";
 import { AdminShell } from "@/components/admin/admin-shell";
 import { DataTable, type Column } from "@/components/admin/data-table";
 import { formatCup } from "@/lib/money";

@@ -3,7 +3,15 @@
 import { useRouter } from "next/navigation"
 import { useState } from "react"
 import Link from "next/link"
-import { ArrowLeft, Eye, EyeOff, Loader2, Lock, Mail, ShoppingBag } from "lucide-react"
+import {
+  ArrowLeftIcon as ArrowLeft,
+  EyeIcon as Eye,
+  EyeOffIcon as EyeOff,
+  Loader2Icon as Loader2,
+  LockIcon as Lock,
+  MailIcon as Mail,
+  ShoppingBagIcon as ShoppingBag,
+} from "@/components/ui/icons";
 
 export default function AdminLoginPage() {
   const router = useRouter()

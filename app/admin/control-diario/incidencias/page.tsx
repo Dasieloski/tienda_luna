@@ -2,7 +2,12 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import { Calendar, CheckCircle2, RefreshCw, ShieldAlert } from "lucide-react";
+import {
+  CalendarIcon as Calendar,
+  CheckCircle2Icon as CheckCircle2,
+  RefreshCwIcon as RefreshCw,
+  ShieldAlertIcon as ShieldAlert,
+} from "@/components/ui/icons";
 import { AdminShell } from "@/components/admin/admin-shell";
 import { cn } from "@/lib/utils";
 import { Modal } from "@/components/ui/modal";

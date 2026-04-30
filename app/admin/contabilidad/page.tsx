@@ -3,20 +3,20 @@
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
-  ArrowRightLeft,
-  BarChart3,
-  Calendar,
-  FileSpreadsheet,
-  Landmark,
-  LineChart,
-  PencilLine,
-  PieChart,
-  Plus,
-  ReceiptText,
-  RefreshCw,
-  Scale,
-  Trash2,
-} from "lucide-react";
+  ArrowRightLeftIcon as ArrowRightLeft,
+  BarChart3Icon as BarChart3,
+  CalendarIcon as Calendar,
+  FileSpreadsheetIcon as FileSpreadsheet,
+  LandmarkLucideIcon as Landmark,
+  LineChartIcon as LineChart,
+  PencilLineIcon as PencilLine,
+  PieChartIcon as PieChart,
+  PlusIcon as Plus,
+  ReceiptTextIcon as ReceiptText,
+  RefreshCwIcon as RefreshCw,
+  ScaleIcon as Scale,
+  Trash2Icon as Trash2,
+} from "@/components/ui/icons";
 import {
   Bar,
   BarChart,

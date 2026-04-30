@@ -1,7 +1,12 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { Landmark, PieChart, RefreshCw, Users } from "lucide-react";
+import {
+  LandmarkLucideIcon as Landmark,
+  PieChartIcon as PieChart,
+  RefreshCwIcon as RefreshCw,
+  UsersLucideIcon as Users,
+} from "@/components/ui/icons";
 import { AdminShell } from "@/components/admin/admin-shell";
 import { KpiCard } from "@/components/admin/kpi-card";
 import { CupUsdMoney } from "@/components/admin/cup-usd-money";

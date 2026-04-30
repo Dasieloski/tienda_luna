@@ -3,18 +3,18 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { usePathname, useRouter } from "next/navigation";
 import {
-  BarChart3,
-  Boxes,
-  Clock,
-  CreditCard,
-  LayoutDashboard,
-  Landmark,
-  Search,
-  Settings,
-  ShieldAlert,
-  Truck,
-  X,
-} from "lucide-react";
+  BarChart3Icon as BarChart3,
+  BoxesIcon as Boxes,
+  ClockIcon as Clock,
+  CreditCardIcon as CreditCard,
+  LayoutDashboardIcon as LayoutDashboard,
+  LandmarkLucideIcon as Landmark,
+  SearchLucideIcon as Search,
+  SettingsLucideIcon as Settings,
+  ShieldAlertIcon as ShieldAlert,
+  TruckIcon as Truck,
+  XLucideIcon as X,
+} from "@/components/ui/icons";
 import { cn } from "@/lib/utils";
 
 type CommandAction = {
