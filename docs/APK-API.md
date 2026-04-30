@@ -31,6 +31,8 @@ En el código, solo estas rutas comprueban sesión y permiten explícitamente **
 | `GET /api/expense-categories` | `canSync`: `device` **o** `ADMIN` / `CASHIER` |
 | `GET /api/expenses` | `canSync`: `device` **o** `ADMIN` / `CASHIER` |
 | `GET /api/fx-exchanges` | `canSync`: `device` **o** `ADMIN` / `CASHIER` |
+| `GET /api/incidents/day` | `canSync`: `device` **o** `ADMIN` / `CASHIER` |
+| `POST /api/incidents/day` | `canSync`: `device` **o** `ADMIN` / `CASHIER` |
 | `GET /api/device/ping` | `device` (recomendado para presencia online) |
 
 **Cualquier otra ruta** (`/api/admin/*`, `GET /api/events`, `POST /api/sales/validate`, `GET /api/stats/overview`, mutaciones REST de productos con CSRF admin, etc.) está pensada para **panel web** o **usuarios admin**, no para el flujo mínimo de la APK. Usarlas desde la tablet implicaría otra política de seguridad (cookies, CSRF, 2FA) y **no** está soportado como contrato de “app de caja”.
@@ -261,6 +263,58 @@ Reglas:
 - Si `status=INCORRECT`, entonces `observation` y `category` son **obligatorios**.
 - El servidor recalcula el **esperado** (desde `SalePayment.paidAt` + FX) y guarda `diffTotalCents = contado - esperado`.
 - El servidor persiste findings automáticos (`CashClosingFinding`) en cada validación, para trazabilidad y diagnóstico histórico.
+
+---
+
+### 4.3.3 `GET /api/incidents/day` (listar incidencias del día)
+
+**Archivo**: `app/api/incidents/day/route.ts`
+
+La APK puede listar las incidencias operativas del día (reportadas desde POS o panel) para revisar pendientes, OK y resueltas.
+
+| Aspecto | Detalle |
+|---------|---------|
+| **Método** | `GET` |
+| **Auth** | Sesión con `canSync` (`device` o `ADMIN`/`CASHIER`) |
+| **Query** | `date=YYYY-MM-DD` (obligatorio) |
+| **200** | `{ meta, rows }` |
+| **401** | `UNAUTHORIZED` |
+| **400** | `INVALID_QUERY` |
+
+Notas:
+- El servidor devuelve incidencias de la tienda para el día. Si la APK solo quiere las suyas, puede filtrar por `deviceId` en `rows[]`.
+
+---
+
+### 4.3.4 `POST /api/incidents/day` (crear incidencia diaria)
+
+**Archivo**: `app/api/incidents/day/route.ts`
+
+El vendedor del POS reporta incidencias del día (errores operativos, clientes, inventario, red, etc.).
+
+| Aspecto | Detalle |
+|---------|---------|
+| **Método** | `POST` |
+| **Auth** | Sesión con `canSync` (`device` o `ADMIN`/`CASHIER`) |
+| **200** | `{ ok: true, id }` |
+| **401** | `UNAUTHORIZED` |
+| **400** | `INVALID_BODY` |
+
+#### Body JSON
+
+```json
+{
+  "date": "YYYY-MM-DD",
+  "severity": "INFO | WARN | ERROR",
+  "title": "string (3-120)",
+  "message": "string (3-2000)",
+  "tags": ["string", "string"]
+}
+```
+
+Reglas recomendadas en la APK:
+- Guardar incidencias en una cola offline si no hay red y reintentar (igual que sync batch), evitando duplicar envíos.
+- Usar `severity=ERROR` cuando la incidencia afecte dinero/stock/sincronización.
 
 ---
 

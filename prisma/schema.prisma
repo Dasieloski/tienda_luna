@@ -753,6 +753,60 @@ enum CashClosingCategory {
   OTHER
 }
 
+enum DailyIncidentStatus {
+  OPEN
+  ACK
+  RESOLVED
+}
+
+enum DailyIncidentSeverity {
+  INFO
+  WARN
+  ERROR
+}
+
+/// Incidencias operativas diarias reportadas desde POS (APK) o panel.
+/// Se indexan por día local (YYYY-MM-DD) para seguimiento y auditoría.
+model DailyIncident {
+  id        String   @id @default(cuid())
+  storeId   String
+  store     Store    @relation(fields: [storeId], references: [id], onDelete: Cascade)
+
+  /// Día local de la tienda (YYYY-MM-DD).
+  dayYmd    String
+
+  /// Origen principal: DEVICE (POS) o USER (panel).
+  actorType String
+  actorId   String
+
+  /// Dispositivo (si actorType=DEVICE); útil para filtrar en la APK.
+  deviceId  String?
+
+  severity  DailyIncidentSeverity @default(INFO)
+  status    DailyIncidentStatus   @default(OPEN)
+
+  title     String
+  message   String
+  tags      Json?
+
+  /// Aprobación/OK por supervisor/admin.
+  ackedAt      DateTime?
+  ackedByUserId String?
+  ackNote      String?
+
+  resolvedAt      DateTime?
+  resolvedByUserId String?
+  resolutionNote  String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([storeId, dayYmd, createdAt])
+  @@index([storeId, status, dayYmd])
+  @@index([storeId, deviceId, dayYmd])
+  @@index([storeId, severity, dayYmd])
+}
+
 /// Auditoría de acciones sensibles (cambios de producto, stock, ajustes, configuraciones).
 model AuditLog {
   id        String   @id @default(cuid())

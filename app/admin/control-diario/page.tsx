@@ -10,6 +10,7 @@ import {
   DollarSign,
   Download,
   FileDown,
+  ListChecks,
   ShieldAlert,
   PackageSearch,
   RefreshCw,
@@ -362,6 +363,14 @@ export default function DailyControlPage() {
             >
               <ShieldAlert className="h-4 w-4" aria-hidden />
               Cuadre
+            </Link>
+            <Link
+              href="/admin/control-diario/incidencias"
+              className="tl-btn tl-btn-secondary tl-interactive tl-hover-lift tl-press tl-focus !px-3 !py-2 text-xs sm:text-sm no-underline"
+              title="Incidencias diarias del POS"
+            >
+              <ListChecks className="h-4 w-4" aria-hidden />
+              Incidencias
             </Link>
             <button
               type="button"
