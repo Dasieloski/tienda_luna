@@ -6,6 +6,8 @@ import { Filter, RefreshCw } from "lucide-react";
 import { AdminShell } from "@/components/admin/admin-shell";
 import { DataTable, type Column, type DataTableFilters, type DataTableSorting } from "@/components/admin/data-table";
 import { cn } from "@/lib/utils";
+import { Modal } from "@/components/ui/modal";
+import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 
 type MovementRow = {
   id: string;
@@ -67,6 +69,16 @@ function InventoryMovementsPageClient() {
   const [sorting, setSorting] = useState<DataTableSorting>({ key: "createdAt", dir: "desc" });
   const [filters, setFilters] = useState<DataTableFilters>({});
   const [revertBusyId, setRevertBusyId] = useState<string | null>(null);
+  const [confirmRevertOpen, setConfirmRevertOpen] = useState(false);
+  const [confirmRevertId, setConfirmRevertId] = useState<string | null>(null);
+  const [saveViewOpen, setSaveViewOpen] = useState(false);
+  const [saveViewName, setSaveViewName] = useState("");
+  const [confirmDeleteViewOpen, setConfirmDeleteViewOpen] = useState(false);
+
+  const selectedView = useMemo(
+    () => (selectedViewId ? savedViews.find((v) => v.id === selectedViewId) ?? null : null),
+    [savedViews, selectedViewId],
+  );
 
   type SavedView = {
     id: string;
@@ -92,27 +104,31 @@ function InventoryMovementsPageClient() {
       }
       const parsed = arr
         .filter((x): x is SavedView => x && typeof x === "object")
-        .map((x: any): SavedView => {
+        .map((x: unknown): SavedView => {
+          const obj = x && typeof x === "object" ? (x as Record<string, unknown>) : {};
           const sorting: DataTableSorting =
-            x.sorting && typeof x.sorting === "object"
+            obj.sorting && typeof obj.sorting === "object"
               ? {
-                  key: typeof x.sorting.key === "string" ? x.sorting.key : null,
-                  dir: x.sorting.dir === "asc" ? "asc" : "desc",
+                  key:
+                    typeof (obj.sorting as Record<string, unknown>).key === "string"
+                      ? ((obj.sorting as Record<string, unknown>).key as string)
+                      : null,
+                  dir: (obj.sorting as Record<string, unknown>).dir === "asc" ? "asc" : "desc",
                 }
               : { key: "createdAt", dir: "desc" };
 
           const filters: DataTableFilters =
-            x.filters && typeof x.filters === "object" ? (x.filters as DataTableFilters) : {};
+            obj.filters && typeof obj.filters === "object" ? (obj.filters as DataTableFilters) : {};
 
           return {
-            id: String(x.id ?? ""),
-            name: String(x.name ?? ""),
-            q: typeof x.q === "string" ? x.q : "",
-            from: typeof x.from === "string" ? x.from : "",
-            to: typeof x.to === "string" ? x.to : "",
+            id: String(obj.id ?? ""),
+            name: String(obj.name ?? ""),
+            q: typeof obj.q === "string" ? obj.q : "",
+            from: typeof obj.from === "string" ? obj.from : "",
+            to: typeof obj.to === "string" ? obj.to : "",
             sorting,
             filters,
-            createdAt: typeof x.createdAt === "number" ? x.createdAt : Date.now(),
+            createdAt: typeof obj.createdAt === "number" ? obj.createdAt : Date.now(),
           };
         })
         .filter((x) => x.id && x.name);
@@ -364,33 +380,8 @@ function InventoryMovementsPageClient() {
               )}
               title="Revertir este ajuste manual"
               onClick={async () => {
-                if (
-                  !window.confirm(
-                    "¿Revertir este ajuste manual de stock? Esto creará un nuevo movimiento y dejará auditoría.",
-                  )
-                ) {
-                  return;
-                }
-                setRevertBusyId(r.id);
-                setError(null);
-                try {
-                  const res = await fetch("/api/admin/inventory/revert-manual-adjust", {
-                    method: "POST",
-                    credentials: "include",
-                    headers: { "content-type": "application/json", "x-tl-csrf": "1" },
-                    body: JSON.stringify({ movementId: r.id }),
-                  });
-                  const j = (await res.json().catch(() => ({}))) as any;
-                  if (!res.ok) {
-                    setError(j?.error ?? "No se pudo revertir.");
-                    return;
-                  }
-                  await load();
-                } catch (e) {
-                  setError(e instanceof Error ? e.message : "Error de red al revertir.");
-                } finally {
-                  setRevertBusyId(null);
-                }
+                setConfirmRevertId(r.id);
+                setConfirmRevertOpen(true);
               }}
             >
               {busy ? "Revirtiendo…" : "Revertir"}
@@ -399,7 +390,7 @@ function InventoryMovementsPageClient() {
         },
       },
     ],
-    [load, revertBusyId],
+    [revertBusyId],
   );
 
   return (
@@ -511,20 +502,8 @@ function InventoryMovementsPageClient() {
                     type="button"
                     className="tl-btn tl-btn-primary tl-interactive !px-3 !py-2 text-xs"
                     onClick={() => {
-                      const name = window.prompt("Nombre para guardar esta vista:", "");
-                      if (!name || !name.trim()) return;
-                      const v: SavedView = {
-                        id: `${Date.now()}_${Math.random().toString(16).slice(2)}`,
-                        name: name.trim(),
-                        q,
-                        from,
-                        to,
-                        sorting,
-                        filters,
-                        createdAt: Date.now(),
-                      };
-                      persistSavedViews([v, ...savedViews].slice(0, 30));
-                      setSelectedViewId(v.id);
+                      setSaveViewName("");
+                      setSaveViewOpen(true);
                     }}
                     title="Guardar filtros actuales"
                   >
@@ -535,11 +514,7 @@ function InventoryMovementsPageClient() {
                     className="tl-btn tl-btn-secondary tl-interactive !px-3 !py-2 text-xs"
                     onClick={() => {
                       if (!selectedViewId) return;
-                      const v = savedViews.find((x) => x.id === selectedViewId);
-                      if (!v) return;
-                      if (!window.confirm(`¿Eliminar la vista \"${v.name}\"?`)) return;
-                      persistSavedViews(savedViews.filter((x) => x.id !== selectedViewId));
-                      setSelectedViewId("");
+                      setConfirmDeleteViewOpen(true);
                     }}
                     disabled={!selectedViewId}
                     title="Eliminar vista seleccionada"
@@ -654,6 +629,116 @@ function InventoryMovementsPageClient() {
           }}
         />
       </div>
+
+      <ConfirmDialog
+        open={confirmRevertOpen}
+        title="Revertir ajuste manual"
+        description="Esto creará un nuevo movimiento que revierte el ajuste y dejará auditoría."
+        confirmLabel="Revertir"
+        destructive
+        busy={revertBusyId != null}
+        onClose={() => {
+          if (revertBusyId != null) return;
+          setConfirmRevertOpen(false);
+          setConfirmRevertId(null);
+        }}
+        onConfirm={() => {
+          if (!confirmRevertId) return;
+          void (async () => {
+            setRevertBusyId(confirmRevertId);
+            setError(null);
+            try {
+              const res = await fetch("/api/admin/inventory/revert-manual-adjust", {
+                method: "POST",
+                credentials: "include",
+                headers: { "content-type": "application/json", "x-tl-csrf": "1" },
+                body: JSON.stringify({ movementId: confirmRevertId }),
+              });
+              const raw: unknown = await res.json().catch(() => ({}));
+              const obj = raw && typeof raw === "object" ? (raw as { error?: unknown }) : null;
+              if (!res.ok) {
+                setError(typeof obj?.error === "string" ? obj.error : "No se pudo revertir.");
+                return;
+              }
+              await load();
+              setConfirmRevertOpen(false);
+              setConfirmRevertId(null);
+            } catch (e) {
+              setError(e instanceof Error ? e.message : "Error de red al revertir.");
+            } finally {
+              setRevertBusyId(null);
+            }
+          })();
+        }}
+      />
+
+      <Modal
+        open={saveViewOpen}
+        title="Guardar vista"
+        description="Guarda filtros/orden para reutilizarlos rápidamente."
+        onClose={() => setSaveViewOpen(false)}
+        maxWidthClassName="max-w-[520px]"
+      >
+        <div className="grid gap-3">
+          <label className="text-xs font-semibold uppercase tracking-wider text-tl-muted">
+            Nombre
+            <input
+              className="tl-input mt-1 h-10"
+              value={saveViewName}
+              onChange={(e) => setSaveViewName(e.target.value)}
+              placeholder="Ej: Ajustes manuales · esta semana"
+              autoFocus
+            />
+          </label>
+          <div className="mt-2 flex items-center justify-end gap-2">
+            <button type="button" className="tl-btn tl-btn-secondary !px-4 !py-2 text-sm" onClick={() => setSaveViewOpen(false)}>
+              Cancelar
+            </button>
+            <button
+              type="button"
+              className="tl-btn tl-btn-primary !px-4 !py-2 text-sm"
+              onClick={() => {
+                const name = saveViewName.trim();
+                if (!name) return;
+                const v: SavedView = {
+                  id: `${Date.now()}_${Math.random().toString(16).slice(2)}`,
+                  name,
+                  q,
+                  from,
+                  to,
+                  sorting,
+                  filters,
+                  createdAt: Date.now(),
+                };
+                persistSavedViews([v, ...savedViews].slice(0, 30));
+                setSelectedViewId(v.id);
+                setSaveViewOpen(false);
+              }}
+            >
+              Guardar
+            </button>
+          </div>
+        </div>
+      </Modal>
+
+      <ConfirmDialog
+        open={confirmDeleteViewOpen}
+        title="Eliminar vista guardada"
+        description={
+          selectedView
+            ? `Se eliminará la vista «${selectedView.name}». Esta acción no se puede deshacer.`
+            : "Se eliminará la vista seleccionada. Esta acción no se puede deshacer."
+        }
+        confirmLabel="Eliminar"
+        destructive
+        onClose={() => setConfirmDeleteViewOpen(false)}
+        onConfirm={() => {
+          if (!selectedViewId) return;
+          persistSavedViews(savedViews.filter((x) => x.id !== selectedViewId));
+          setSelectedViewId("");
+          setConfirmDeleteViewOpen(false);
+        }}
+      />
     </AdminShell>
   );
 }

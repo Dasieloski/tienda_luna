@@ -7,11 +7,13 @@ import {
   Clock,
   CloudOff,
   Cloudy,
+  Moon,
   KeyRound,
   Link2,
   LayoutDashboard,
   Landmark,
   Menu,
+  Sun,
   Plus,
   Package,
   RefreshCw,
@@ -25,6 +27,8 @@ import {
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useRouter } from "next/navigation";
+import { Modal } from "@/components/ui/modal";
+import { useToast } from "@/components/ui/toast";
 
 interface TopbarProps {
   title?: string;
@@ -50,6 +54,14 @@ type SyncStatusPayload = {
   };
 };
 
+function isRecord(v: unknown): v is Record<string, unknown> {
+  return Boolean(v) && typeof v === "object";
+}
+
+function getString(v: unknown): string | null {
+  return typeof v === "string" ? v : null;
+}
+
 function fmtSince(minutes: number | null) {
   if (minutes == null) return "sin señal";
   const mins = Math.max(0, Math.round(minutes));
@@ -66,6 +78,7 @@ export function Topbar({
   onUsdRateCupChange,
 }: TopbarProps) {
   const router = useRouter();
+  const toast = useToast();
   const [open, setOpen] = useState(false);
   const [value, setValue] = useState(() => (usdRateCup ?? 250).toString());
   const [saving, setSaving] = useState(false);
@@ -178,6 +191,19 @@ export function Topbar({
     }
   }, []);
 
+  const [theme, setTheme] = useState<"light" | "dark">("light");
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem("tl-theme");
+      const next = raw === "dark" ? "dark" : "light";
+      setTheme(next);
+      document.documentElement.dataset.theme = next;
+    } catch {
+      setTheme("light");
+      document.documentElement.dataset.theme = "light";
+    }
+  }, []);
+
   const label = useMemo(() => {
     const r = usdRateCup ?? 250;
     return `Cambio: ${r}`;
@@ -202,29 +228,36 @@ export function Topbar({
           credentials: "include",
           signal: ac.signal,
         });
-        const json = (await res.json().catch(() => null)) as any;
-        const prods = (json?.products ?? []) as any[];
-        const sups = (json?.suppliers ?? []) as any[];
+        const raw: unknown = await res.json().catch(() => null);
+        const json = isRecord(raw) ? raw : {};
+        const prods = Array.isArray(json.products) ? json.products : [];
+        const sups = Array.isArray(json.suppliers) ? json.suppliers : [];
 
         const hits: GlobalSearchHit[] = [
-          ...prods.slice(0, 7).map((p) => ({
+          ...prods.slice(0, 7).map((p) => {
+            const r = isRecord(p) ? p : {};
+            return {
             kind: "product" as const,
-            id: String(p.id),
-            title: String(p.name ?? "Producto"),
-            subtitle: `SKU: ${String(p.sku ?? "—")} · ${p.supplierName ? String(p.supplierName) : "—"}`,
-          })),
-          ...sups.slice(0, 5).map((s) => ({
+            id: String(r.id ?? ""),
+            title: String(r.name ?? "Producto"),
+            subtitle: `SKU: ${String(r.sku ?? "—")} · ${r.supplierName ? String(r.supplierName) : "—"}`,
+            };
+          }),
+          ...sups.slice(0, 5).map((s) => {
+            const r = isRecord(s) ? s : {};
+            return {
             kind: "supplier" as const,
-            id: String(s.id),
-            title: String(s.name ?? "Proveedor"),
-            subtitle: s.phone ? String(s.phone) : "—",
-          })),
+            id: String(r.id ?? ""),
+            title: String(r.name ?? "Proveedor"),
+            subtitle: r.phone ? String(r.phone) : "—",
+            };
+          }),
         ].slice(0, 10);
 
         setSearchHits(hits);
         setSearchActiveIndex(0);
       } catch (e) {
-        if ((e as any)?.name !== "AbortError") {
+        if (!(e instanceof DOMException && e.name === "AbortError")) {
           setSearchHits([]);
         }
       } finally {
@@ -294,19 +327,20 @@ export function Topbar({
       try {
         const res = await fetch("/api/session/me", { credentials: "include" });
         if (!res.ok) return;
-        const json = (await res.json()) as any;
+        const raw: unknown = await res.json().catch(() => null);
+        const json = isRecord(raw) ? raw : {};
         if (cancelled) return;
-        if (json?.typ === "user") {
+        if (json.typ === "user") {
           setSession({
             typ: "user",
-            storeId: typeof json.storeId === "string" ? json.storeId : undefined,
-            role: json.role ?? undefined,
-            userId: json.userId ?? undefined,
+            storeId: getString(json.storeId) ?? undefined,
+            role: getString(json.role) ?? undefined,
+            userId: getString(json.userId) ?? undefined,
           });
-        } else if (json?.typ === "device") {
+        } else if (json.typ === "device") {
           setSession({
             typ: "device",
-            storeId: typeof json.storeId === "string" ? json.storeId : undefined,
+            storeId: getString(json.storeId) ?? undefined,
           });
         }
       } catch {
@@ -360,10 +394,23 @@ export function Topbar({
     try {
       const storeKey = await resolveStoreKeyForNotifications();
       const res = await fetch("/api/admin/notifications", { credentials: "include" });
-      const json = (await res.json()) as any;
+      const raw: unknown = await res.json().catch(() => null);
+      const json = isRecord(raw) ? raw : {};
       if (!res.ok) return;
       const dismissed = readDismissedNotificationIds(storeKey);
-      const list = (json.notifications ?? []) as { id: string; kind: string; title: string; body: string; ts: string }[];
+      const listRaw = Array.isArray(json.notifications) ? json.notifications : [];
+      const list = listRaw
+        .map((n): { id: string; kind: string; title: string; body: string; ts: string } | null => {
+          if (!isRecord(n)) return null;
+          return {
+            id: String(n.id ?? ""),
+            kind: String(n.kind ?? "info"),
+            title: String(n.title ?? "Notificación"),
+            body: String(n.body ?? ""),
+            ts: String(n.ts ?? ""),
+          };
+        })
+        .filter((x): x is { id: string; kind: string; title: string; body: string; ts: string } => Boolean(x && x.id));
       setNotifications(list.filter((n) => !dismissed.has(n.id)));
     } finally {
       setNotifLoading(false);
@@ -395,16 +442,30 @@ export function Topbar({
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ currentPassword: pwdCurrent, newPassword: pwdNext }),
       });
-      const json = (await res.json()) as any;
+      const raw: unknown = await res.json().catch(() => null);
+      const json = isRecord(raw) ? raw : {};
       if (!res.ok) {
-        setPwdMsg(json.hint ?? json.error ?? "No se pudo cambiar la contraseña.");
+        const hint = getString(json.hint);
+        const err = getString(json.error);
+        setPwdMsg(hint ?? err ?? "No se pudo cambiar la contraseña.");
+        toast.push({
+          kind: "error",
+          title: "No se pudo cambiar la contraseña",
+          description: hint ?? err ?? "Revisa la contraseña actual e inténtalo de nuevo.",
+        });
         return;
       }
       setPwdMsg("Contraseña actualizada.");
+      toast.push({ kind: "success", title: "Contraseña actualizada" });
       setPwdCurrent("");
       setPwdNext("");
     } catch (e) {
       setPwdMsg(e instanceof Error ? e.message : "Error de red.");
+      toast.push({
+        kind: "error",
+        title: "Error de red",
+        description: e instanceof Error ? e.message : "Inténtalo de nuevo.",
+      });
     } finally {
       setPwdBusy(false);
     }
@@ -415,12 +476,13 @@ export function Topbar({
     setUsersMsg(null);
     try {
       const res = await fetch("/api/admin/users", { credentials: "include" });
-      const json = (await res.json()) as any;
+      const raw: unknown = await res.json().catch(() => null);
+      const json = isRecord(raw) ? raw : {};
       if (!res.ok) {
-        setUsersMsg(json.error ?? "No se pudieron cargar usuarios.");
+        setUsersMsg(getString(json.error) ?? "No se pudieron cargar usuarios.");
         return;
       }
-      setUsers(json.users ?? []);
+      setUsers(Array.isArray(json.users) ? (json.users as { id: string; email: string; role: string; createdAt: string }[]) : []);
     } catch (e) {
       setUsersMsg(e instanceof Error ? e.message : "Error de red.");
     } finally {
@@ -437,16 +499,29 @@ export function Topbar({
         headers: { "content-type": "application/json", "x-tl-csrf": "1" },
         body: JSON.stringify({ email: newEmail, password: newPassword, role: newRole }),
       });
-      const json = (await res.json()) as any;
+      const raw: unknown = await res.json().catch(() => null);
+      const json = isRecord(raw) ? raw : {};
       if (!res.ok) {
-        setUsersMsg(json.error ?? "No se pudo crear usuario.");
+        const err = getString(json.error);
+        setUsersMsg(err ?? "No se pudo crear usuario.");
+        toast.push({
+          kind: "error",
+          title: "No se pudo crear usuario",
+          description: err ?? "Verifica correo/contraseña/rol.",
+        });
         return;
       }
       setNewEmail("");
       setNewPassword("");
       await loadUsers();
+      toast.push({ kind: "success", title: "Usuario creado" });
     } catch (e) {
       setUsersMsg(e instanceof Error ? e.message : "Error de red.");
+      toast.push({
+        kind: "error",
+        title: "Error de red",
+        description: e instanceof Error ? e.message : "Inténtalo de nuevo.",
+      });
     }
   }
 
@@ -458,14 +533,27 @@ export function Topbar({
         credentials: "include",
         headers: { "x-tl-csrf": "1" },
       });
-      const json = (await res.json()) as any;
+      const raw: unknown = await res.json().catch(() => null);
+      const json = isRecord(raw) ? raw : {};
       if (!res.ok) {
-        setUsersMsg(json.error ?? "No se pudo eliminar usuario.");
+        const err = getString(json.error);
+        setUsersMsg(err ?? "No se pudo eliminar usuario.");
+        toast.push({
+          kind: "error",
+          title: "No se pudo eliminar usuario",
+          description: err ?? "Inténtalo de nuevo.",
+        });
         return;
       }
       await loadUsers();
+      toast.push({ kind: "success", title: "Usuario eliminado" });
     } catch (e) {
       setUsersMsg(e instanceof Error ? e.message : "Error de red.");
+      toast.push({
+        kind: "error",
+        title: "Error de red",
+        description: e instanceof Error ? e.message : "Inténtalo de nuevo.",
+      });
     }
   }
 
@@ -640,6 +728,31 @@ export function Topbar({
         >
           <Rows3 className="h-4 w-4 text-tl-muted" aria-hidden />
           {density === "compact" ? "Denso" : "Normal"}
+        </button>
+
+        <button
+          type="button"
+          className="hidden items-center gap-2 rounded-full border border-tl-line bg-tl-canvas-inset px-3 py-2 text-xs font-semibold text-tl-ink tl-interactive tl-hover-lift tl-press tl-focus hover:bg-tl-canvas-subtle sm:inline-flex"
+          onClick={() => {
+            const next = theme === "dark" ? "light" : "dark";
+            setTheme(next);
+            try {
+              localStorage.setItem("tl-theme", next);
+            } catch {
+              // ignore
+            }
+            document.documentElement.dataset.theme = next;
+            toast.push({
+              kind: "info",
+              title: next === "dark" ? "Modo oscuro" : "Modo claro",
+              durationMs: 1800,
+            });
+          }}
+          title={theme === "dark" ? "Cambiar a modo claro" : "Cambiar a modo oscuro"}
+          aria-label={theme === "dark" ? "Cambiar a modo claro" : "Cambiar a modo oscuro"}
+        >
+          {theme === "dark" ? <Moon className="h-4 w-4 text-tl-muted" aria-hidden /> : <Sun className="h-4 w-4 text-tl-muted" aria-hidden />}
+          {theme === "dark" ? "Oscuro" : "Claro"}
         </button>
         {/* Exchange rate (always accessible) */}
         <div className="relative">
@@ -1013,45 +1126,3 @@ function TopIconLink({
     </Link>
   );
 }
-
-function Modal({
-  open,
-  title,
-  onClose,
-  children,
-}: {
-  open: boolean;
-  title: string;
-  onClose: () => void;
-  children: React.ReactNode;
-}) {
-  if (!open) return null;
-  return (
-    <>
-      <button
-        type="button"
-        className="fixed inset-0 z-50 bg-black/35"
-        onClick={onClose}
-        aria-label="Cerrar modal"
-      />
-      <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-        <div className="w-full max-w-[520px] rounded-2xl border border-tl-line bg-tl-canvas shadow-xl">
-          <div className="flex items-start justify-between gap-3 border-b border-tl-line px-4 py-3">
-            <div>
-              <p className="text-sm font-semibold text-tl-ink">{title}</p>
-            </div>
-            <button
-              type="button"
-              onClick={onClose}
-              className="rounded-lg px-2 py-1 text-xs font-semibold text-tl-muted hover:bg-tl-canvas-subtle"
-            >
-              Cerrar
-            </button>
-          </div>
-          <div className="p-4">{children}</div>
-        </div>
-      </div>
-    </>
-  );
-}
-

@@ -5,9 +5,11 @@ import { ArchiveRestore, Boxes, ChevronRight, Package, Pencil, Trash2, X } from 
 import { AdminShell } from "@/components/admin/admin-shell";
 import { DataTable, type Column } from "@/components/admin/data-table";
 import { cn } from "@/lib/utils";
-import { formatCup, formatUsdCents, formatUsdFromCupCents } from "@/lib/money";
+import { formatCup } from "@/lib/money";
 import { CupUsdMoney } from "@/components/admin/cup-usd-money";
 import { TablePriceCupCell } from "@/components/admin/table-price-cup-cell";
+import { useToast } from "@/components/ui/toast";
+import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 
 type ProductRow = {
   id: string;
@@ -95,8 +97,12 @@ function StockQtyWithHover({ row, tone }: { row: ProductRow; tone: "muted" | "in
 }
 
 export default function InventoryPage() {
+  const toast = useToast();
   const [products, setProducts] = useState<ProductRow[]>([]);
   const [loading, setLoading] = useState(true);
+
+  const [confirmDeleteOpen, setConfirmDeleteOpen] = useState(false);
+  const [confirmDeleteProduct, setConfirmDeleteProduct] = useState<ProductRow | null>(null);
 
   // Alta (SKU lo asigna el servidor)
   const [formName, setFormName] = useState("");
@@ -180,13 +186,14 @@ export default function InventoryPage() {
   }, [formPriceCup, formCostCup]);
 
   async function deleteProduct(p: ProductRow) {
-    if (
-      !window.confirm(
-        `¿Eliminar DEFINITIVAMENTE "${p.name}"?\n\nSe borrará de la base de datos.\nEl historial se conservará por snapshot (ventas/movimientos), pero el producto ya no existirá en catálogo.\n\n¿Continuar?`,
-      )
-    ) {
-      return;
-    }
+    setConfirmDeleteProduct(p);
+    setConfirmDeleteOpen(true);
+    return;
+  }
+
+  async function confirmDeleteProductNow() {
+    const p = confirmDeleteProduct;
+    if (!p) return;
     setDeleteBusyId(p.id);
     try {
       const res = await fetch(`/api/admin/products/hard-delete`, {
@@ -197,14 +204,22 @@ export default function InventoryPage() {
       });
       if (!res.ok) {
         const j = (await res.json().catch(() => ({}))) as { error?: string; hint?: string };
-        window.alert(
-          j.error === "DATABASE_SCHEMA_MISMATCH"
-            ? "La BD no tiene las columnas necesarias para conservar historial por snapshot. Ejecuta migraciones o npx prisma db push."
-            : "No se pudo eliminar el producto.",
-        );
+        toast.push({
+          kind: "error",
+          title: "No se pudo eliminar el producto",
+          description:
+            j.error === "DATABASE_SCHEMA_MISMATCH"
+              ? "La BD no tiene las columnas necesarias para conservar historial por snapshot. Ejecuta migraciones o `npx prisma db push`."
+              : j.hint ?? j.error ?? "Inténtalo de nuevo.",
+        });
         return;
       }
       await loadProducts();
+      toast.push({
+        kind: "success",
+        title: "Producto eliminado",
+        description: "Se eliminó del catálogo (el historial se conserva por snapshot).",
+      });
     } finally {
       setDeleteBusyId(null);
     }
@@ -220,10 +235,15 @@ export default function InventoryPage() {
         body: JSON.stringify({ restore: true }),
       });
       if (!res.ok) {
-        window.alert("No se pudo restaurar el producto.");
+        toast.push({
+          kind: "error",
+          title: "No se pudo restaurar el producto",
+          description: "Inténtalo de nuevo.",
+        });
         return;
       }
       await loadProducts();
+      toast.push({ kind: "success", title: "Producto restaurado" });
     } finally {
       setRestoreDeletedId(null);
     }
@@ -240,10 +260,15 @@ export default function InventoryPage() {
       });
       if (!res.ok) {
         const j = (await res.json().catch(() => ({}))) as { error?: string };
-        window.alert(j.error === "NOT_FOUND" ? "Producto no encontrado." : "No se pudo reactivar.");
+        toast.push({
+          kind: "error",
+          title: j.error === "NOT_FOUND" ? "Producto no encontrado" : "No se pudo reactivar",
+          description: j.error === "NOT_FOUND" ? "Es posible que haya sido eliminado." : "Inténtalo de nuevo.",
+        });
         return;
       }
       await loadProducts();
+      toast.push({ kind: "success", title: "Producto reactivado" });
     } finally {
       setReactivateId(null);
     }
@@ -1345,6 +1370,30 @@ export default function InventoryPage() {
           </div>
         </div>
       )}
+
+      <ConfirmDialog
+        open={confirmDeleteOpen}
+        title="Eliminar producto definitivamente"
+        description={
+          confirmDeleteProduct
+            ? `Se borrará "${confirmDeleteProduct.name}" de la base de datos. El historial se conservará por snapshot (ventas/movimientos), pero el producto ya no existirá en catálogo.`
+            : "Se borrará el producto de la base de datos."
+        }
+        confirmLabel="Eliminar"
+        destructive
+        busy={deleteBusyId != null}
+        onClose={() => {
+          if (deleteBusyId != null) return;
+          setConfirmDeleteOpen(false);
+          setConfirmDeleteProduct(null);
+        }}
+        onConfirm={() => {
+          void confirmDeleteProductNow().then(() => {
+            setConfirmDeleteOpen(false);
+            setConfirmDeleteProduct(null);
+          });
+        }}
+      />
     </AdminShell>
   );
 }

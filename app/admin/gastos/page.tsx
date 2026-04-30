@@ -1,11 +1,28 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { Calendar, Pencil, Plus, RefreshCw, Trash2 } from "lucide-react";
+import {
+  Bolt,
+  Calendar,
+  CreditCard,
+  Home,
+  Package,
+  Pencil,
+  Plus,
+  RefreshCw,
+  Tag,
+  Trash2,
+  Truck,
+  UtensilsCrossed,
+  Wrench,
+} from "lucide-react";
 import { AdminShell } from "@/components/admin/admin-shell";
 import { CupUsdMoney } from "@/components/admin/cup-usd-money";
 import { TablePriceCupCell } from "@/components/admin/table-price-cup-cell";
 import { cn } from "@/lib/utils";
+import { useToast } from "@/components/ui/toast";
+import { Modal } from "@/components/ui/modal";
+import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 
 type ExpenseDto = {
   id: string;
@@ -48,27 +65,33 @@ function splitLabelNice(e: { splitStrategy: string; osmarPct: number | null; sin
 }
 
 const EXPENSE_CATEGORIES = [
-  { id: "proveedor", label: "Proveedor", emoji: "🛒" },
-  { id: "servicios", label: "Servicios", emoji: "💡" },
-  { id: "alquiler", label: "Alquiler", emoji: "🏠" },
-  { id: "transporte", label: "Transporte", emoji: "🚗" },
-  { id: "personal", label: "Personal", emoji: "👤" },
-  { id: "mantenimiento", label: "Mantenimiento", emoji: "🔧" },
-  { id: "impuestos", label: "Impuestos", emoji: "📋" },
-  { id: "otros", label: "Otros", emoji: "📦" },
+  { id: "proveedor", label: "Proveedor" },
+  { id: "servicios", label: "Servicios" },
+  { id: "alquiler", label: "Alquiler" },
+  { id: "transporte", label: "Transporte" },
+  { id: "personal", label: "Personal" },
+  { id: "mantenimiento", label: "Mantenimiento" },
+  { id: "impuestos", label: "Impuestos" },
+  { id: "otros", label: "Otros" },
 ] as const;
-
-function categoryEmoji(name: string | null | undefined) {
-  const n = (name ?? "").toLowerCase();
-  const hit = EXPENSE_CATEGORIES.find((c) => c.label.toLowerCase() === n || c.id === n);
-  return hit?.emoji ?? "📦";
-}
 
 function categoryLabel(name: string | null | undefined) {
   if (!name) return "Otros";
   const n = name.trim().toLowerCase();
   const hit = EXPENSE_CATEGORIES.find((c) => c.label.toLowerCase() === n || c.id === n);
   return hit?.label ?? name;
+}
+
+function categoryIcon(cat: string) {
+  const c = cat.trim().toLowerCase();
+  if (c.includes("servicio") || c.includes("luz") || c.includes("electric") || c.includes("agua")) return Bolt;
+  if (c.includes("alquiler") || c.includes("renta") || c.includes("local")) return Home;
+  if (c.includes("transporte") || c.includes("gas") || c.includes("combust")) return Truck;
+  if (c.includes("mantenimiento") || c.includes("repar")) return Wrench;
+  if (c.includes("proveedor") || c.includes("invent") || c.includes("compra") || c.includes("producto")) return Package;
+  if (c.includes("impuesto") || c.includes("banco") || c.includes("comisión") || c.includes("tarjeta")) return CreditCard;
+  if (c.includes("comida") || c.includes("almuerzo") || c.includes("merienda")) return UtensilsCrossed;
+  return Tag;
 }
 
 type SplitStrategy = "PARTES_IGUALES" | "PORCENTAJE_CUSTOM" | "UN_SOLO_DUENO";
@@ -84,6 +107,7 @@ function splitOwnerShare(exp: { splitStrategy: string; osmarPct: number | null; 
 }
 
 export default function GastosPage() {
+  const toast = useToast();
   const today = useMemo(() => utcTodayYmd(), []);
   const [fromDay, setFromDay] = useState(() => today);
   const [toDay, setToDay] = useState(() => today);
@@ -146,6 +170,10 @@ export default function GastosPage() {
 
   const [modalOpen, setModalOpen] = useState(false);
   const [editing, setEditing] = useState<ExpenseDto | null>(null);
+
+  const [confirmDeleteOpen, setConfirmDeleteOpen] = useState(false);
+  const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
+  const [deleteBusy, setDeleteBusy] = useState(false);
 
   function openCreate() {
     setEditing(null);
@@ -237,7 +265,7 @@ export default function GastosPage() {
                   <option value="">Todas</option>
                   {EXPENSE_CATEGORIES.map((c) => (
                     <option key={c.id} value={c.label}>
-                      {c.emoji} {c.label}
+                      {c.label}
                     </option>
                   ))}
                 </select>
@@ -328,7 +356,7 @@ export default function GastosPage() {
                 ) : (
                   visibleRows.map((r) => {
                     const cat = categoryLabel(r.categoryName);
-                    const emo = categoryEmoji(cat);
+                    const Icon = categoryIcon(cat);
                     return (
                       <tr key={r.id} className="hover:bg-tl-canvas-subtle/50">
                         <td className="px-4 py-3 text-xs tabular-nums text-tl-muted">
@@ -340,7 +368,7 @@ export default function GastosPage() {
                         </td>
                         <td className="px-4 py-3">
                           <span className="inline-flex items-center gap-2 rounded-full border border-tl-line bg-tl-canvas-inset px-3 py-1 text-xs font-semibold text-tl-ink">
-                            <span aria-hidden>{emo}</span>
+                            <Icon className="h-4 w-4 text-tl-muted" aria-hidden />
                             {cat}
                           </span>
                         </td>
@@ -365,22 +393,11 @@ export default function GastosPage() {
                               type="button"
                               className="tl-btn tl-btn-secondary !px-2.5 !py-2 text-xs"
                               title="Eliminar"
-                              onClick={async () => {
-                                const ok = window.confirm("¿Eliminar este gasto?");
-                                if (!ok) return;
-                                const res = await fetch(`/api/admin/expenses?id=${encodeURIComponent(r.id)}`, {
-                                  method: "DELETE",
-                                  credentials: "include",
-                                  headers: { "x-tl-csrf": "1" },
-                                });
-                                const raw: unknown = await res.json().catch(() => null);
-                                if (!res.ok) {
-                                  const obj = raw && typeof raw === "object" ? (raw as Record<string, unknown>) : null;
-                                  window.alert((obj && typeof obj.error === "string" ? obj.error : "") || `Error HTTP ${res.status}`);
-                                  return;
-                                }
-                                await load();
+                              onClick={() => {
+                                setConfirmDeleteId(r.id);
+                                setConfirmDeleteOpen(true);
                               }}
+                              disabled={deleteBusy}
                             >
                               <Trash2 className="h-4 w-4" aria-hidden />
                             </button>
@@ -403,6 +420,51 @@ export default function GastosPage() {
           onSaved={async () => {
             setModalOpen(false);
             await load();
+          }}
+        />
+
+        <ConfirmDialog
+          open={confirmDeleteOpen}
+          title="Eliminar gasto"
+          description="Esta acción no se puede deshacer. Se eliminará el registro del gasto."
+          confirmLabel="Eliminar"
+          destructive
+          busy={deleteBusy}
+          onClose={() => {
+            if (deleteBusy) return;
+            setConfirmDeleteOpen(false);
+            setConfirmDeleteId(null);
+          }}
+          onConfirm={() => {
+            if (!confirmDeleteId) return;
+            void (async () => {
+              setDeleteBusy(true);
+              try {
+                const res = await fetch(`/api/admin/expenses?id=${encodeURIComponent(confirmDeleteId)}`, {
+                  method: "DELETE",
+                  credentials: "include",
+                  headers: { "x-tl-csrf": "1" },
+                });
+                const raw: unknown = await res.json().catch(() => null);
+                if (!res.ok) {
+                  const obj = raw && typeof raw === "object" ? (raw as Record<string, unknown>) : null;
+                  toast.push({
+                    kind: "error",
+                    title: "No se pudo eliminar el gasto",
+                    description:
+                      (obj && typeof obj.error === "string" ? obj.error : "") ||
+                      `Error HTTP ${res.status}`,
+                  });
+                  return;
+                }
+                await load();
+                toast.push({ kind: "success", title: "Gasto eliminado" });
+                setConfirmDeleteOpen(false);
+                setConfirmDeleteId(null);
+              } finally {
+                setDeleteBusy(false);
+              }
+            })();
           }}
         />
       </div>
@@ -542,24 +604,14 @@ function ExpenseModal({
   }
 
   return (
-    <>
-      <button type="button" className="fixed inset-0 z-50 bg-black/35" onClick={onClose} aria-label="Cerrar" />
-      <div className="fixed inset-0 z-50 flex items-end justify-center p-4 md:items-center">
-        <div className="w-full max-w-3xl rounded-3xl border border-tl-line bg-tl-canvas shadow-xl">
-          <div className="flex items-start justify-between gap-3 border-b border-tl-line px-5 py-4">
-            <div>
-              <p className="text-lg font-bold text-tl-ink">{editing ? "Editar gasto" : "Nuevo gasto"}</p>
-              <p className="mt-1 text-xs text-tl-muted">
-                Tres estrategias de reparto: <span className="font-semibold">PARTES_IGUALES</span>,{" "}
-                <span className="font-semibold">PORCENTAJE_CUSTOM</span>, <span className="font-semibold">UN_SOLO_DUENO</span>.
-              </p>
-            </div>
-            <button type="button" className="tl-btn tl-btn-secondary !px-3 !py-2 text-xs" onClick={onClose} disabled={busy}>
-              Cerrar
-            </button>
-          </div>
-
-          <div className="grid gap-5 p-5 md:grid-cols-2">
+    <Modal
+      open={open}
+      title={editing ? "Editar gasto" : "Nuevo gasto"}
+      description="Reparto: PARTES_IGUALES, PORCENTAJE_CUSTOM o UN_SOLO_DUENO."
+      onClose={onClose}
+      maxWidthClassName="max-w-3xl"
+    >
+      <div className="grid gap-5 md:grid-cols-2">
             <div className="space-y-4">
               <div>
                 <label className="text-xs font-semibold uppercase tracking-wider text-tl-muted">Concepto</label>
@@ -571,7 +623,7 @@ function ExpenseModal({
                   <select className="tl-input mt-1 h-10" value={categoryName} onChange={(e) => setCategoryName(e.target.value)}>
                     {EXPENSE_CATEGORIES.map((c) => (
                       <option key={c.id} value={c.label}>
-                        {c.emoji} {c.label}
+                        {c.label}
                       </option>
                     ))}
                   </select>
@@ -769,7 +821,7 @@ function ExpenseModal({
             </div>
           </div>
 
-          <div className="flex items-center justify-end gap-2 border-t border-tl-line px-5 py-4">
+      <div className="mt-5 flex items-center justify-end gap-2 border-t border-tl-line pt-4">
             <button type="button" className="tl-btn tl-btn-secondary !px-4 !py-2" onClick={onClose} disabled={busy}>
               Cancelar
             </button>
@@ -777,9 +829,7 @@ function ExpenseModal({
               {busy ? "Guardando…" : editing ? "Guardar cambios" : "Crear gasto"}
             </button>
           </div>
-        </div>
-      </div>
-    </>
+    </Modal>
   );
 }
 

@@ -23,6 +23,8 @@ import { CupUsdMoney } from "@/components/admin/cup-usd-money";
 import { TablePriceCupCell } from "@/components/admin/table-price-cup-cell";
 import { DataTable, type Column } from "@/components/admin/data-table";
 import { cn } from "@/lib/utils";
+import { useToast } from "@/components/ui/toast";
+import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 
 type SupplierRow = {
   supplier: string;
@@ -126,6 +128,7 @@ function fmtShortDate(iso: string | null | undefined) {
 }
 
 export default function SuppliersPage() {
+  const toast = useToast();
   const todayInput = useMemo(() => toInputDate(new Date()), []);
   const defaultAccountsRange = useMemo(() => {
     const t = new Date();
@@ -158,6 +161,8 @@ export default function SuppliersPage() {
   const [eMNotes, setEMNotes] = useState("");
   const [eMBusy, setEMBusy] = useState(false);
   const [deleteBusyId, setDeleteBusyId] = useState<string | null>(null);
+  const [confirmDeleteOpen, setConfirmDeleteOpen] = useState(false);
+  const [confirmDeleteSupplier, setConfirmDeleteSupplier] = useState<MasterSupplier | null>(null);
 
   const [accountsFrom, setAccountsFrom] = useState(defaultAccountsRange.from);
   const [accountsTo, setAccountsTo] = useState(defaultAccountsRange.to);
@@ -283,7 +288,10 @@ export default function SuppliersPage() {
       const res = await fetch(`/api/admin/suppliers/debt?${params.toString()}`, { credentials: "include" });
       const json = (await res.json()) as SupplierDebtResponse;
       setDebtData(json);
-      if (!res.ok) setDebtError((json as any)?.error ?? "No se pudo cargar la deuda.");
+      if (!res.ok) {
+        const err = json && typeof (json as unknown as { error?: unknown }).error === "string" ? (json as unknown as { error: string }).error : null;
+        setDebtError(err ?? "No se pudo cargar la deuda.");
+      }
       else if (json.meta?.dbAvailable === false && json.meta?.message) setDebtError(json.meta.message);
     } catch (e) {
       setDebtError(e instanceof Error ? e.message : "Error de red al cargar la deuda.");
@@ -302,7 +310,10 @@ export default function SuppliersPage() {
       const res = await fetch(`/api/admin/suppliers/payments?${params.toString()}`, { credentials: "include" });
       const json = (await res.json()) as SupplierPaymentsResponse;
       setPaymentsData(json);
-      if (!res.ok) setPaymentsError((json as any)?.error ?? "No se pudo cargar el historial.");
+      if (!res.ok) {
+        const err = json && typeof (json as unknown as { error?: unknown }).error === "string" ? (json as unknown as { error: string }).error : null;
+        setPaymentsError(err ?? "No se pudo cargar el historial.");
+      }
     } catch (e) {
       setPaymentsError(e instanceof Error ? e.message : "Error de red al cargar pagos.");
       setPaymentsData(null);
@@ -437,12 +448,12 @@ export default function SuppliersPage() {
     }
   }
 
-  function openEditMaster(s: MasterSupplier) {
+  const openEditMaster = useCallback((s: MasterSupplier) => {
     setEditMaster(s);
     setEMName(s.name);
     setEMPhone(s.phone ?? "");
     setEMNotes(s.notes ?? "");
-  }
+  }, []);
 
   async function onSaveEditMaster(e: React.FormEvent) {
     e.preventDefault();
@@ -472,7 +483,7 @@ export default function SuppliersPage() {
     }
   }
 
-  async function toggleMasterActive(s: MasterSupplier) {
+  const toggleMasterActive = useCallback(async (s: MasterSupplier) => {
     setMastersErr(null);
     const res = await fetch(`/api/admin/suppliers/${encodeURIComponent(s.id)}`, {
       method: "PATCH",
@@ -485,16 +496,17 @@ export default function SuppliersPage() {
       return;
     }
     await loadMasters();
-  }
+  }, [loadMasters]);
 
-  async function onDeleteMaster(s: MasterSupplier) {
-    if (
-      !window.confirm(
-        `¿Eliminar «${s.name}» del nomenclador?\n\nSolo si no tiene productos vinculados.`,
-      )
-    ) {
-      return;
-    }
+  const onDeleteMaster = useCallback(async (s: MasterSupplier) => {
+    setConfirmDeleteSupplier(s);
+    setConfirmDeleteOpen(true);
+    return;
+  }, []);
+
+  const confirmDeleteMasterNow = useCallback(async () => {
+    const s = confirmDeleteSupplier;
+    if (!s) return;
     setDeleteBusyId(s.id);
     setMastersErr(null);
     try {
@@ -505,20 +517,24 @@ export default function SuppliersPage() {
       });
       const j = (await res.json().catch(() => ({}))) as { error?: string; productCount?: number };
       if (res.status === 409 && j.error === "SUPPLIER_IN_USE") {
-        window.alert(
-          `Hay ${j.productCount ?? 0} producto(s) con este proveedor. Cambia el proveedor en Inventario antes.`,
-        );
+        toast.push({
+          kind: "warning",
+          title: "Proveedor en uso",
+          description: `Hay ${j.productCount ?? 0} producto(s) con este proveedor. Cambia el proveedor en Inventario antes.`,
+          durationMs: 5200,
+        });
         return;
       }
       if (!res.ok) {
-        window.alert("No se pudo eliminar.");
+        toast.push({ kind: "error", title: "No se pudo eliminar", description: "Inténtalo de nuevo." });
         return;
       }
       await loadMasters();
+      toast.push({ kind: "success", title: "Proveedor eliminado" });
     } finally {
       setDeleteBusyId(null);
     }
-  }
+  }, [confirmDeleteSupplier, loadMasters, toast]);
 
   const loadDetail = useCallback(async () => {
     const supplierId = detailSupplierId.trim();
@@ -631,7 +647,7 @@ export default function SuppliersPage() {
         ),
       },
     ],
-    [deleteBusyId],
+    [deleteBusyId, onDeleteMaster, openEditMaster, toggleMasterActive],
   );
 
   const accountsColumns: Column<SupplierRow>[] = useMemo(
@@ -1370,9 +1386,13 @@ export default function SuppliersPage() {
                             note: payNote.trim() || null,
                           }),
                         });
-                        const j = (await res.json().catch(() => ({}))) as any;
+                        const raw: unknown = await res.json().catch(() => ({}));
+                        const j =
+                          raw && typeof raw === "object"
+                            ? (raw as { error?: unknown })
+                            : ({} as { error?: unknown });
                         if (!res.ok) {
-                          setDebtError(j?.error ?? "No se pudo registrar el pago.");
+                          setDebtError(typeof j.error === "string" ? j.error : "No se pudo registrar el pago.");
                           return;
                         }
                         setPayAmount("");
@@ -1806,6 +1826,30 @@ export default function SuppliersPage() {
           </>
         )}
       </div>
+
+      <ConfirmDialog
+        open={confirmDeleteOpen}
+        title="Eliminar proveedor del nomenclador"
+        description={
+          confirmDeleteSupplier
+            ? `Se eliminará «${confirmDeleteSupplier.name}» del nomenclador. Solo es posible si no tiene productos vinculados.`
+            : "Se eliminará el proveedor del nomenclador."
+        }
+        confirmLabel="Eliminar"
+        destructive
+        busy={deleteBusyId != null}
+        onClose={() => {
+          if (deleteBusyId != null) return;
+          setConfirmDeleteOpen(false);
+          setConfirmDeleteSupplier(null);
+        }}
+        onConfirm={() => {
+          void confirmDeleteMasterNow().then(() => {
+            setConfirmDeleteOpen(false);
+            setConfirmDeleteSupplier(null);
+          });
+        }}
+      />
     </AdminShell>
   );
 }

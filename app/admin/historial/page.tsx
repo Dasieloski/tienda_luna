@@ -8,6 +8,8 @@ import { DataTable, type Column } from "@/components/admin/data-table";
 import { cn } from "@/lib/utils";
 import { CupUsdMoney } from "@/components/admin/cup-usd-money";
 import { TablePriceCupCell } from "@/components/admin/table-price-cup-cell";
+import { Modal } from "@/components/ui/modal";
+import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 
 type HistorySale = {
   id: string;
@@ -72,6 +74,18 @@ function SalesHistoryPageClient() {
   const SAVED_VIEWS_KEY = "tl-saved-views:historial";
   const [savedViews, setSavedViews] = useState<SavedView[]>([]);
   const [selectedViewId, setSelectedViewId] = useState<string>("");
+  const [saveViewOpen, setSaveViewOpen] = useState(false);
+  const [saveViewName, setSaveViewName] = useState("");
+  const [confirmDeleteViewOpen, setConfirmDeleteViewOpen] = useState(false);
+
+  const selectedView = useMemo(
+    () => (selectedViewId ? savedViews.find((v) => v.id === selectedViewId) ?? null : null),
+    [savedViews, selectedViewId],
+  );
+
+  function isRecord(v: unknown): v is Record<string, unknown> {
+    return Boolean(v) && typeof v === "object";
+  }
 
   const loadSavedViews = useCallback(() => {
     try {
@@ -82,8 +96,8 @@ function SalesHistoryPageClient() {
         return;
       }
       const parsed = arr
-        .filter((x): x is SavedView => x && typeof x === "object")
-        .map((x: any) => ({
+        .filter((x): x is Record<string, unknown> => isRecord(x))
+        .map((x) => ({
           id: String(x.id ?? ""),
           name: String(x.name ?? ""),
           q: typeof x.q === "string" ? x.q : "",
@@ -349,18 +363,8 @@ function SalesHistoryPageClient() {
                     type="button"
                     className="tl-btn tl-btn-primary tl-interactive !px-3 !py-2 text-xs"
                     onClick={() => {
-                      const name = window.prompt("Nombre para guardar esta vista:", "");
-                      if (!name || !name.trim()) return;
-                      const v: SavedView = {
-                        id: `${Date.now()}_${Math.random().toString(16).slice(2)}`,
-                        name: name.trim(),
-                        q,
-                        from,
-                        to,
-                        createdAt: Date.now(),
-                      };
-                      persistSavedViews([v, ...savedViews].slice(0, 30));
-                      setSelectedViewId(v.id);
+                      setSaveViewName("");
+                      setSaveViewOpen(true);
                     }}
                     title="Guardar filtros actuales"
                   >
@@ -371,11 +375,7 @@ function SalesHistoryPageClient() {
                     className="tl-btn tl-btn-secondary tl-interactive !px-3 !py-2 text-xs"
                     onClick={() => {
                       if (!selectedViewId) return;
-                      const v = savedViews.find((x) => x.id === selectedViewId);
-                      if (!v) return;
-                      if (!window.confirm(`¿Eliminar la vista \"${v.name}\"?`)) return;
-                      persistSavedViews(savedViews.filter((x) => x.id !== selectedViewId));
-                      setSelectedViewId("");
+                      setConfirmDeleteViewOpen(true);
                     }}
                     disabled={!selectedViewId}
                     title="Eliminar vista seleccionada"
@@ -557,6 +557,76 @@ function SalesHistoryPageClient() {
           </aside>
         </div>
       </div>
+
+      <Modal
+        open={saveViewOpen}
+        title="Guardar vista"
+        description="Guarda los filtros actuales para reutilizarlos rápidamente."
+        onClose={() => setSaveViewOpen(false)}
+        maxWidthClassName="max-w-[520px]"
+      >
+        <div className="grid gap-3">
+          <label className="text-xs font-semibold uppercase tracking-wider text-tl-muted">
+            Nombre
+            <input
+              className="tl-input mt-1 h-10"
+              value={saveViewName}
+              onChange={(e) => setSaveViewName(e.target.value)}
+              placeholder="Ej: Semana actual · Caja principal"
+              autoFocus
+            />
+          </label>
+          <div className="mt-2 flex items-center justify-end gap-2">
+            <button
+              type="button"
+              className="tl-btn tl-btn-secondary !px-4 !py-2 text-sm"
+              onClick={() => setSaveViewOpen(false)}
+            >
+              Cancelar
+            </button>
+            <button
+              type="button"
+              className="tl-btn tl-btn-primary !px-4 !py-2 text-sm"
+              onClick={() => {
+                const name = saveViewName.trim();
+                if (!name) return;
+                const v: SavedView = {
+                  id: `${Date.now()}_${Math.random().toString(16).slice(2)}`,
+                  name,
+                  q,
+                  from,
+                  to,
+                  createdAt: Date.now(),
+                };
+                persistSavedViews([v, ...savedViews].slice(0, 30));
+                setSelectedViewId(v.id);
+                setSaveViewOpen(false);
+              }}
+            >
+              Guardar
+            </button>
+          </div>
+        </div>
+      </Modal>
+
+      <ConfirmDialog
+        open={confirmDeleteViewOpen}
+        title="Eliminar vista guardada"
+        description={
+          selectedView
+            ? `Se eliminará la vista «${selectedView.name}». Esta acción no se puede deshacer.`
+            : "Se eliminará la vista seleccionada. Esta acción no se puede deshacer."
+        }
+        confirmLabel="Eliminar"
+        destructive
+        onClose={() => setConfirmDeleteViewOpen(false)}
+        onConfirm={() => {
+          if (!selectedViewId) return;
+          persistSavedViews(savedViews.filter((x) => x.id !== selectedViewId));
+          setSelectedViewId("");
+          setConfirmDeleteViewOpen(false);
+        }}
+      />
     </AdminShell>
   );
 }

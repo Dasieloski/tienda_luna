@@ -5,6 +5,8 @@ import Link from "next/link";
 import { Calendar, CheckCircle2, RefreshCw, ShieldAlert } from "lucide-react";
 import { AdminShell } from "@/components/admin/admin-shell";
 import { cn } from "@/lib/utils";
+import { Modal } from "@/components/ui/modal";
+import { useToast } from "@/components/ui/toast";
 
 type Row = {
   id: string;
@@ -13,7 +15,7 @@ type Row = {
   severity: "INFO" | "WARN" | "ERROR";
   title: string;
   message: string;
-  tags: any;
+  tags: unknown;
   actorType: string;
   actorId: string;
   deviceId: string | null;
@@ -53,6 +55,7 @@ function sevColor(sev: Row["severity"]) {
 }
 
 export default function DailyIncidentsPage() {
+  const toast = useToast();
   const [date, setDate] = useState(() => toInputDate(new Date()));
   const [rows, setRows] = useState<Row[]>([]);
   const [loading, setLoading] = useState(false);
@@ -61,6 +64,12 @@ export default function DailyIncidentsPage() {
   const [q, setQ] = useState("");
   const [status, setStatus] = useState<"" | Row["status"]>("");
   const [severity, setSeverity] = useState<"" | Row["severity"]>("");
+
+  const [noteOpen, setNoteOpen] = useState(false);
+  const [noteBusy, setNoteBusy] = useState(false);
+  const [noteAction, setNoteAction] = useState<"ACK" | "RESOLVE">("ACK");
+  const [noteIncidentId, setNoteIncidentId] = useState<string>("");
+  const [noteValue, setNoteValue] = useState("");
 
   const filtered = useMemo(() => {
     const needle = q.trim().toLowerCase();
@@ -103,30 +112,48 @@ export default function DailyIncidentsPage() {
     void load();
   }, [load]);
 
-  async function patch(id: string, action: "ACK" | "RESOLVE" | "REOPEN") {
+  async function patchNow(id: string, action: "ACK" | "RESOLVE" | "REOPEN", note: string | null) {
     setErr(null);
     try {
-      const note =
-        action === "ACK"
-          ? window.prompt("Nota (opcional) para OK / revisado:", "") ?? ""
-          : action === "RESOLVE"
-            ? window.prompt("Nota (opcional) de resolución:", "") ?? ""
-            : "";
       const res = await fetch("/api/admin/incidents", {
         method: "PATCH",
         credentials: "include",
         headers: { "content-type": "application/json", "x-tl-csrf": "1" },
-        body: JSON.stringify({ id, action, note: note.trim() ? note.trim() : null }),
+        body: JSON.stringify({ id, action, note }),
       });
-      const json = (await res.json()) as any;
+      const raw: unknown = await res.json().catch(() => null);
+      const obj = raw && typeof raw === "object" ? (raw as { error?: unknown }) : null;
       if (!res.ok) {
-        setErr(json?.error ?? "No se pudo actualizar la incidencia.");
+        const msg = typeof obj?.error === "string" ? obj.error : "No se pudo actualizar la incidencia.";
+        setErr(msg);
+        toast.push({ kind: "error", title: "No se pudo actualizar", description: msg });
         return;
       }
       await load();
+      toast.push({
+        kind: "success",
+        title: action === "ACK" ? "Marcada como OK" : action === "RESOLVE" ? "Incidencia resuelta" : "Reabierta",
+        durationMs: 2400,
+      });
     } catch (e) {
       setErr(e instanceof Error ? e.message : "Error de red.");
+      toast.push({
+        kind: "error",
+        title: "Error de red",
+        description: e instanceof Error ? e.message : "Inténtalo de nuevo.",
+      });
     }
+  }
+
+  async function patch(id: string, action: "ACK" | "RESOLVE" | "REOPEN") {
+    if (action === "REOPEN") {
+      await patchNow(id, action, null);
+      return;
+    }
+    setNoteIncidentId(id);
+    setNoteAction(action);
+    setNoteValue("");
+    setNoteOpen(true);
   }
 
   return (
@@ -182,13 +209,21 @@ export default function DailyIncidentsPage() {
               onChange={(e) => setQ(e.target.value)}
               placeholder="Buscar por título, mensaje o dispositivo…"
             />
-            <select className="tl-input h-10 px-3 text-sm" value={status} onChange={(e) => setStatus(e.target.value as any)}>
+            <select
+              className="tl-input h-10 px-3 text-sm"
+              value={status}
+              onChange={(e) => setStatus(e.target.value as "" | Row["status"])}
+            >
               <option value="">Estado (todos)</option>
               <option value="OPEN">Pendiente</option>
               <option value="ACK">OK</option>
               <option value="RESOLVED">Resuelto</option>
             </select>
-            <select className="tl-input h-10 px-3 text-sm" value={severity} onChange={(e) => setSeverity(e.target.value as any)}>
+            <select
+              className="tl-input h-10 px-3 text-sm"
+              value={severity}
+              onChange={(e) => setSeverity(e.target.value as "" | Row["severity"])}
+            >
               <option value="">Severidad (todas)</option>
               <option value="INFO">Info</option>
               <option value="WARN">Warn</option>
@@ -283,6 +318,63 @@ export default function DailyIncidentsPage() {
           </div>
         </section>
       </div>
+
+      <Modal
+        open={noteOpen}
+        title={noteAction === "ACK" ? "Marcar OK / revisado" : "Resolver incidencia"}
+        description="Puedes añadir una nota opcional para dejar trazabilidad."
+        onClose={() => {
+          if (noteBusy) return;
+          setNoteOpen(false);
+        }}
+        maxWidthClassName="max-w-[560px]"
+      >
+        <div className="grid gap-3">
+          <label className="text-xs font-semibold uppercase tracking-wider text-tl-muted">
+            Nota (opcional)
+            <textarea
+              className="tl-input mt-1 min-h-[88px] w-full px-3 py-2 text-sm normal-case"
+              value={noteValue}
+              onChange={(e) => setNoteValue(e.target.value)}
+              placeholder={noteAction === "ACK" ? "Ej: revisado, no procede." : "Ej: resuelto, se repuso inventario."}
+              maxLength={240}
+              disabled={noteBusy}
+              autoFocus
+            />
+          </label>
+          <div className="mt-2 flex items-center justify-end gap-2">
+            <button
+              type="button"
+              className="tl-btn tl-btn-secondary !px-4 !py-2 text-sm"
+              onClick={() => setNoteOpen(false)}
+              disabled={noteBusy}
+            >
+              Cancelar
+            </button>
+            <button
+              type="button"
+              className="tl-btn tl-btn-primary !px-4 !py-2 text-sm"
+              onClick={() => {
+                const id = noteIncidentId;
+                if (!id) return;
+                void (async () => {
+                  setNoteBusy(true);
+                  try {
+                    const note = noteValue.trim() ? noteValue.trim() : null;
+                    await patchNow(id, noteAction, note);
+                    setNoteOpen(false);
+                  } finally {
+                    setNoteBusy(false);
+                  }
+                })();
+              }}
+              disabled={noteBusy || !noteIncidentId}
+            >
+              {noteBusy ? "Guardando…" : noteAction === "ACK" ? "Marcar OK" : "Resolver"}
+            </button>
+          </div>
+        </div>
+      </Modal>
     </AdminShell>
   );
 }

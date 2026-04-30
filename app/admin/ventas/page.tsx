@@ -8,6 +8,9 @@ import { cn } from "@/lib/utils";
 import { formatCup } from "@/lib/money";
 import { CupUsdMoney } from "@/components/admin/cup-usd-money";
 import { TablePriceCupCell } from "@/components/admin/table-price-cup-cell";
+import { useToast } from "@/components/ui/toast";
+import { Modal } from "@/components/ui/modal";
+import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 
 type RecentSale = {
   id: string;
@@ -149,6 +152,7 @@ function previewPaymentStatusLabel(paidCents: number, totalCents: number) {
 }
 
 export default function SalesPage() {
+  const toast = useToast();
   const [sales, setSales] = useState<RecentSale[]>([]);
   const [visibleSales, setVisibleSales] = useState<RecentSale[]>([]);
   const [loading, setLoading] = useState(true);
@@ -172,6 +176,7 @@ export default function SalesPage() {
   const [selectedIds, setSelectedIds] = useState<Set<string>>(() => new Set());
   const [deleteBusy, setDeleteBusy] = useState(false);
   const [deleteMsg, setDeleteMsg] = useState<string | null>(null);
+  const [confirmDeleteOpen, setConfirmDeleteOpen] = useState(false);
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(25);
   const [selectedSaleId, setSelectedSaleId] = useState<string | null>(null);
@@ -180,6 +185,21 @@ export default function SalesPage() {
     () => (selectedSaleId ? sales.find((s) => s.id === selectedSaleId) ?? null : null),
     [selectedSaleId, sales],
   );
+
+  // Abonos (antes: prompt → ahora: modal con validación)
+  const [payOpen, setPayOpen] = useState(false);
+  const [payAmount, setPayAmount] = useState("");
+  const [payMethod, setPayMethod] = useState("cash");
+  const [payBusy, setPayBusy] = useState(false);
+  const [payErr, setPayErr] = useState<string | null>(null);
+
+  // Devolución parcial (antes: prompt → ahora: modal con selección de línea)
+  const [retOpen, setRetOpen] = useState(false);
+  const [retProductId, setRetProductId] = useState("");
+  const [retQty, setRetQty] = useState("1");
+  const [retReason, setRetReason] = useState("");
+  const [retBusy, setRetBusy] = useState(false);
+  const [retErr, setRetErr] = useState<string | null>(null);
 
   const [saleLinesEditOpen, setSaleLinesEditOpen] = useState(false);
   const [saleEditLines, setSaleEditLines] = useState<SaleLineDraft[]>([]);
@@ -201,12 +221,114 @@ export default function SalesPage() {
     setProductSearchQ("");
     setProductSearchHits([]);
     setProductPickTarget(null);
+
+    setPayOpen(false);
+    setPayAmount("");
+    setPayMethod("cash");
+    setPayBusy(false);
+    setPayErr(null);
+
+    setRetOpen(false);
+    setRetProductId("");
+    setRetQty("1");
+    setRetReason("");
+    setRetBusy(false);
+    setRetErr(null);
   }, [selectedSaleId]);
+
+  async function submitPayment() {
+    if (!selectedSale) return;
+    const cents = parseCupMajorToCents(payAmount);
+    if (cents == null || cents <= 0) {
+      setPayErr("El abono debe ser un número mayor que 0.");
+      return;
+    }
+    const method = payMethod.trim() || "cash";
+    setPayErr(null);
+    setPayBusy(true);
+    try {
+      const res = await fetch("/api/admin/sales/apply-payment", {
+        method: "POST",
+        credentials: "include",
+        headers: { "content-type": "application/json", "x-tl-csrf": "1" },
+        body: JSON.stringify({
+          saleId: selectedSale.id,
+          method,
+          currency: "CUP",
+          amountCupCents: cents,
+        }),
+      });
+      const j = await res.json().catch(() => null);
+      if (!res.ok) {
+        const msg = (j && typeof j.error === "string" ? j.error : null) ?? `Error HTTP ${res.status}`;
+        setPayErr(msg);
+        toast.push({ kind: "error", title: "No se pudo registrar el abono", description: msg });
+        return;
+      }
+      await loadSales({ manual: true });
+      setPayOpen(false);
+      toast.push({ kind: "success", title: "Abono registrado" });
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : "Error de red.";
+      setPayErr(msg);
+      toast.push({ kind: "error", title: "Error de red", description: msg });
+    } finally {
+      setPayBusy(false);
+    }
+  }
+
+  async function submitReturn() {
+    if (!selectedSale) return;
+    const pid = retProductId.trim();
+    if (!pid) {
+      setRetErr("Selecciona un producto.");
+      return;
+    }
+    const qty = Number(retQty);
+    if (!Number.isFinite(qty) || !Number.isInteger(qty) || qty <= 0) {
+      setRetErr("La cantidad debe ser un entero mayor que 0.");
+      return;
+    }
+    setRetErr(null);
+    setRetBusy(true);
+    try {
+      const res = await fetch("/api/admin/sales/return", {
+        method: "POST",
+        credentials: "include",
+        headers: { "content-type": "application/json", "x-tl-csrf": "1" },
+        body: JSON.stringify({
+          saleId: selectedSale.id,
+          reason: retReason.trim() || null,
+          lines: [{ productId: pid, quantity: qty }],
+        }),
+      });
+      const j = await res.json().catch(() => null);
+      if (!res.ok) {
+        const msg = (j && typeof j.error === "string" ? j.error : null) ?? `Error HTTP ${res.status}`;
+        setRetErr(msg);
+        toast.push({ kind: "error", title: "No se pudo registrar la devolución", description: msg });
+        return;
+      }
+      await loadSales({ manual: true });
+      setRetOpen(false);
+      toast.push({ kind: "success", title: "Devolución registrada" });
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : "Error de red.";
+      setRetErr(msg);
+      toast.push({ kind: "error", title: "Error de red", description: msg });
+    } finally {
+      setRetBusy(false);
+    }
+  }
 
   const beginSaleLinesEdit = useCallback(() => {
     if (!selectedSale) return;
     if (selectedSale.status !== "COMPLETED") {
-      window.alert("Solo se pueden editar líneas de ventas en estado COMPLETED.");
+      toast.push({
+        kind: "warning",
+        title: "No se puede editar esta venta",
+        description: "Solo se pueden editar líneas de ventas en estado COMPLETED.",
+      });
       return;
     }
     setSaleEditErr(null);
@@ -217,9 +339,12 @@ export default function SalesPage() {
     const withPid = selectedSale.lines.filter((l) => l.productId);
     const skipped = selectedSale.lines.length - withPid.length;
     if (skipped > 0) {
-      window.alert(
-        `Esta venta tiene ${skipped} línea(s) sin producto enlazado; no se pueden editar aquí y no se incluirán al guardar.`,
-      );
+      toast.push({
+        kind: "info",
+        title: "Líneas sin producto enlazado",
+        description: `Esta venta tiene ${skipped} línea(s) sin producto enlazado; no se pueden editar aquí y no se incluirán al guardar.`,
+        durationMs: 5200,
+      });
     }
     setSaleEditLines(
       withPid.map((l) => ({
@@ -232,7 +357,7 @@ export default function SalesPage() {
       })),
     );
     setSaleLinesEditOpen(true);
-  }, [selectedSale]);
+  }, [selectedSale, toast]);
 
   const cancelSaleLinesEdit = useCallback(() => {
     setSaleLinesEditOpen(false);
@@ -634,10 +759,13 @@ export default function SalesPage() {
   async function deleteSelected() {
     const ids = Array.from(selectedIds);
     if (ids.length === 0) return;
-    const ok = window.confirm(
-      `Vas a eliminar ${ids.length} venta(s) de la base de datos.\n\nEsto borra Sale/SaleLine y revierte stock.\nSolo quedará un registro en Historial como “venta eliminada por admin”.\n\n¿Continuar?`,
-    );
-    if (!ok) return;
+    setConfirmDeleteOpen(true);
+    return;
+  }
+
+  async function deleteSelectedNow() {
+    const ids = Array.from(selectedIds);
+    if (ids.length === 0) return;
     setDeleteBusy(true);
     setDeleteMsg(null);
     try {
@@ -1014,64 +1142,28 @@ export default function SalesPage() {
                     <button
                       type="button"
                       className="tl-btn tl-btn-secondary !px-3 !py-2 text-xs"
-                      onClick={async () => {
-                        const raw = window.prompt("Abono (CUP) en pesos, ej. 350.00", "0");
-                        if (raw == null) return;
-                        const n = Number(String(raw).replace(",", "."));
-                        if (!Number.isFinite(n) || n <= 0) return;
-                        const method = window.prompt("Método (cash / transfer / ...)", "cash") ?? "cash";
-                        const amountCupCents = Math.round(n * 100);
-                        const res = await fetch("/api/admin/sales/apply-payment", {
-                          method: "POST",
-                          credentials: "include",
-                          headers: { "content-type": "application/json", "x-tl-csrf": "1" },
-                          body: JSON.stringify({
-                            saleId: selectedSale.id,
-                            method,
-                            currency: "CUP",
-                            amountCupCents,
-                          }),
-                        });
-                        if (!res.ok) {
-                          const j = await res.json().catch(() => null);
-                          window.alert(j?.error ?? `Error HTTP ${res.status}`);
-                          return;
-                        }
-                        await loadSales({ manual: true });
-                        window.alert("Abono registrado.");
+                      onClick={() => {
+                        setPayErr(null);
+                        setPayAmount("");
+                        setPayMethod("cash");
+                        setPayOpen(true);
                       }}
+                      disabled={!selectedSale}
                     >
                       Registrar abono
                     </button>
                     <button
                       type="button"
                       className="tl-btn tl-btn-secondary !px-3 !py-2 text-xs"
-                      onClick={async () => {
-                        const pid = window.prompt("productId a devolver (exacto)", "");
-                        if (!pid) return;
-                        const qraw = window.prompt("Cantidad a devolver (entero)", "1");
-                        if (qraw == null) return;
-                        const qty = Number(qraw);
-                        if (!Number.isFinite(qty) || !Number.isInteger(qty) || qty <= 0) return;
-                        const reason = window.prompt("Motivo (opcional)", "") ?? "";
-                        const res = await fetch("/api/admin/sales/return", {
-                          method: "POST",
-                          credentials: "include",
-                          headers: { "content-type": "application/json", "x-tl-csrf": "1" },
-                          body: JSON.stringify({
-                            saleId: selectedSale.id,
-                            reason: reason.trim() || null,
-                            lines: [{ productId: pid, quantity: qty }],
-                          }),
-                        });
-                        const j = await res.json().catch(() => null);
-                        if (!res.ok) {
-                          window.alert(j?.error ?? `Error HTTP ${res.status}`);
-                          return;
-                        }
-                        await loadSales({ manual: true });
-                        window.alert("Devolución registrada.");
+                      onClick={() => {
+                        const first = selectedSale?.lines?.find((l) => l.productId)?.productId ?? "";
+                        setRetErr(null);
+                        setRetReason("");
+                        setRetQty("1");
+                        setRetProductId(first);
+                        setRetOpen(true);
                       }}
+                      disabled={!selectedSale}
                     >
                       Devolución parcial
                     </button>
@@ -1265,6 +1357,165 @@ export default function SalesPage() {
           </div>
         ) : null}
       </div>
+      <Modal
+        open={payOpen}
+        title="Registrar abono"
+        description="Añade un pago parcial (CUP) a una venta con balance pendiente."
+        onClose={() => {
+          if (payBusy) return;
+          setPayOpen(false);
+        }}
+        maxWidthClassName="max-w-[520px]"
+      >
+        <div className="grid gap-3">
+          <div className="grid gap-2">
+            <label className="text-xs font-semibold uppercase tracking-wider text-tl-muted">Monto (CUP)</label>
+            <input
+              inputMode="decimal"
+              className="tl-input h-10"
+              value={payAmount}
+              onChange={(e) => setPayAmount(e.target.value)}
+              placeholder="Ej: 350.00"
+              disabled={payBusy}
+            />
+            <p className="text-xs text-tl-muted">
+              Consejo: usa punto o coma. Se registrará como CUP.
+            </p>
+          </div>
+          <div className="grid gap-2">
+            <label className="text-xs font-semibold uppercase tracking-wider text-tl-muted">Método</label>
+            <input
+              className="tl-input h-10"
+              value={payMethod}
+              onChange={(e) => setPayMethod(e.target.value)}
+              placeholder="cash / transfer / ..."
+              disabled={payBusy}
+            />
+          </div>
+          {payErr ? (
+            <div role="alert" className="rounded-xl border border-tl-warning/25 bg-tl-warning-subtle px-3 py-2 text-xs text-tl-warning">
+              {payErr}
+            </div>
+          ) : null}
+          <div className="mt-2 flex items-center justify-end gap-2">
+            <button
+              type="button"
+              className="tl-btn tl-btn-secondary !px-4 !py-2 text-sm"
+              onClick={() => setPayOpen(false)}
+              disabled={payBusy}
+            >
+              Cancelar
+            </button>
+            <button
+              type="button"
+              className="tl-btn tl-btn-primary !px-4 !py-2 text-sm"
+              onClick={() => void submitPayment()}
+              disabled={payBusy || !selectedSale}
+            >
+              {payBusy ? "Guardando…" : "Registrar"}
+            </button>
+          </div>
+        </div>
+      </Modal>
+
+      <Modal
+        open={retOpen}
+        title="Devolución parcial"
+        description="Registra una devolución por línea de producto."
+        onClose={() => {
+          if (retBusy) return;
+          setRetOpen(false);
+        }}
+        maxWidthClassName="max-w-[560px]"
+      >
+        <div className="grid gap-3">
+          <div className="grid gap-2">
+            <label className="text-xs font-semibold uppercase tracking-wider text-tl-muted">Producto</label>
+            <select
+              className="tl-input h-10"
+              value={retProductId}
+              onChange={(e) => setRetProductId(e.target.value)}
+              disabled={retBusy}
+            >
+              <option value="">Selecciona…</option>
+              {(selectedSale?.lines ?? [])
+                .filter((l) => l.productId)
+                .map((l) => (
+                  <option key={String(l.productId)} value={String(l.productId)}>
+                    {l.productName} · {l.sku} (x{l.quantity})
+                  </option>
+                ))}
+            </select>
+          </div>
+          <div className="grid gap-2 sm:grid-cols-2">
+            <div className="grid gap-2">
+              <label className="text-xs font-semibold uppercase tracking-wider text-tl-muted">Cantidad</label>
+              <input
+                inputMode="numeric"
+                className="tl-input h-10"
+                value={retQty}
+                onChange={(e) => setRetQty(e.target.value)}
+                disabled={retBusy}
+              />
+            </div>
+            <div className="grid gap-2">
+              <label className="text-xs font-semibold uppercase tracking-wider text-tl-muted">Motivo (opcional)</label>
+              <input
+                className="tl-input h-10"
+                value={retReason}
+                onChange={(e) => setRetReason(e.target.value)}
+                placeholder="Ej: defecto / error de talla"
+                disabled={retBusy}
+              />
+            </div>
+          </div>
+          {retErr ? (
+            <div role="alert" className="rounded-xl border border-tl-warning/25 bg-tl-warning-subtle px-3 py-2 text-xs text-tl-warning">
+              {retErr}
+            </div>
+          ) : null}
+          <div className="mt-2 flex items-center justify-end gap-2">
+            <button
+              type="button"
+              className="tl-btn tl-btn-secondary !px-4 !py-2 text-sm"
+              onClick={() => setRetOpen(false)}
+              disabled={retBusy}
+            >
+              Cancelar
+            </button>
+            <button
+              type="button"
+              className="tl-btn tl-btn-primary !px-4 !py-2 text-sm"
+              onClick={() => void submitReturn()}
+              disabled={retBusy || !selectedSale}
+            >
+              {retBusy ? "Guardando…" : "Registrar devolución"}
+            </button>
+          </div>
+        </div>
+      </Modal>
+
+      <ConfirmDialog
+        open={confirmDeleteOpen}
+        title="Eliminar ventas (admin)"
+        description={
+          selectedIds.size > 0
+            ? `Vas a eliminar ${selectedIds.size} venta(s) de la base de datos. Esto borra Sale/SaleLine y revierte stock. Solo quedará un registro en Historial como “venta eliminada por admin”.`
+            : "Selecciona al menos una venta."
+        }
+        confirmLabel="Eliminar"
+        destructive
+        busy={deleteBusy}
+        onClose={() => {
+          if (deleteBusy) return;
+          setConfirmDeleteOpen(false);
+        }}
+        onConfirm={() => {
+          void deleteSelectedNow().then(() => {
+            setConfirmDeleteOpen(false);
+          });
+        }}
+      />
     </AdminShell>
   );
 }
