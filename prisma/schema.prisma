@@ -78,6 +78,7 @@ model Store {
   cashClosingRevisions CashClosingRevision[]
   cashClosingNotes CashClosingNote[]
   cashClosingFindings CashClosingFinding[]
+  dailyIncidents DailyIncident[]
   auditLogs AuditLog[]
 }
 

@@ -86,26 +86,84 @@ export async function processBatch(
   const batchSeen = new Set<string>();
   const results: ProcessedEventResult[] = [];
 
-  await prisma.$transaction(async (tx: Tx) => {
+  // Procesamos eventos uno por uno (transacciones separadas) para evitar que
+  // un solo evento con error tumbe todo el batch y deje ventas “atascadas”.
+  const init = await prisma.$transaction(async (tx: Tx) => {
     const store = await tx.store.findUnique({
       where: { id: params.storeId },
       select: { usdRateCup: true },
     });
     const storeUsdRateCup =
-      typeof store?.usdRateCup === "number" && Number.isFinite(store.usdRateCup) && store.usdRateCup > 0
+      typeof store?.usdRateCup === "number" &&
+      Number.isFinite(store.usdRateCup) &&
+      store.usdRateCup > 0
         ? store.usdRateCup
         : Number(process.env.NEXT_PUBLIC_USD_RATE_CUP ?? "250") || 250;
 
     const products = await loadCatalogProducts(tx, params.storeId);
-    const stock = new Map(products.map((p) => [p.id, p.stockQty]));
-    const productById = new Map(products.map((p) => [p.id, p]));
-    const productIdBySku = new Map(
-      products.map((p) => [p.sku, p.id] as const),
-    );
+    return { storeUsdRateCup, products };
+  });
 
-    const pendingSales = new Map<string, DraftSale>();
+  const storeUsdRateCup = init.storeUsdRateCup;
+  const products = init.products;
+  const stock = new Map(products.map((p) => [p.id, p.stockQty]));
+  const productById = new Map(products.map((p) => [p.id, p]));
+  const productIdBySku = new Map(products.map((p) => [p.sku, p.id] as const));
 
-    for (const ev of sorted) {
+  const pendingSales = new Map<string, DraftSale>();
+
+  const recordServerException = async (
+    ev: ClientSyncEvent,
+    ph: string,
+    relatedSaleId: string | undefined,
+    error: unknown,
+  ) => {
+    const msg =
+      error instanceof Error
+        ? `${error.name}:${error.message}`.slice(0, 300)
+        : String(error ?? "UNKNOWN").slice(0, 300);
+    try {
+      const row = await prisma.event.create({
+        data: {
+          clientEventId: ev.id,
+          type: ev.type,
+          payload: ev.payload as Prisma.InputJsonValue,
+          payloadHash: ph,
+          storeId: params.storeId,
+          deviceId: params.deviceId,
+          clientTimestamp: BigInt(ev.timestamp),
+          status: "REJECTED",
+          isFraud: false,
+          fraudReason: null,
+          correctionNote: `SERVER_EXCEPTION:${msg}`,
+          relatedClientSaleId: relatedSaleId ?? null,
+        },
+      });
+      results.push({
+        clientEventId: ev.id,
+        type: ev.type,
+        status: "REJECTED",
+        serverEventId: row.id,
+        isFraud: false,
+        correctionNote: `SERVER_EXCEPTION:${msg}`,
+      });
+    } catch {
+      results.push({
+        clientEventId: ev.id,
+        type: ev.type,
+        status: "REJECTED",
+        serverEventId: "SERVER_EXCEPTION",
+        isFraud: false,
+        correctionNote: "SERVER_EXCEPTION",
+      });
+    }
+  };
+
+  for (const ev of sorted) {
+    const phOuter = payloadHash(ev.payload);
+    const relatedSaleIdOuter = getPayloadString(ev.payload, "saleId") ?? undefined;
+    try {
+      await prisma.$transaction(async (tx: Tx) => {
       const ph = payloadHash(ev.payload);
       const dupKey = buildDuplicateKey(params.deviceId, ev.timestamp, ev.payload);
       const dupBatch = checkDuplicateInBatch(dupKey, batchSeen);
@@ -136,10 +194,10 @@ export async function processBatch(
           fraudReason: existing.fraudReason ?? undefined,
           skipped: true,
         });
-        continue;
+        return;
       }
 
-      const relatedSaleId = getPayloadString(ev.payload, "saleId");
+      const relatedSaleId = relatedSaleIdOuter ?? getPayloadString(ev.payload, "saleId");
 
       const hardFraud =
         dupBatch.isFraud ? dupBatch : dupDb.isFraud ? dupDb : tsFraud.isFraud ? tsFraud : null;
@@ -172,7 +230,7 @@ export async function processBatch(
           fraudReason: hardFraud.fraudReason,
           correctionNote: "HARD_FRAUD_OR_DUPLICATE",
         });
-        continue;
+        return;
       }
 
       let fraudMerged = { isFraud: false as boolean, fraudReason: undefined as string | undefined };
@@ -1994,8 +2052,11 @@ export async function processBatch(
           );
         }
       }
+      });
+    } catch (e) {
+      await recordServerException(ev, phOuter, relatedSaleIdOuter, e);
     }
-  });
+  }
 
   return results;
 }

@@ -53,11 +53,21 @@ export async function POST(request: Request) {
       processed: results,
     });
   } catch (e) {
+    const requestId =
+      typeof crypto !== "undefined" && "randomUUID" in crypto
+        ? crypto.randomUUID()
+        : `${Date.now()}-${Math.random().toString(16).slice(2)}`;
     const msg = e instanceof Error ? e.message : "SYNC_ERROR";
     if (msg === "STORE_NOT_FOUND") {
       return NextResponse.json({ error: msg }, { status: 404 });
     }
-    console.error(e);
-    return NextResponse.json({ error: "SYNC_ERROR" }, { status: 500 });
+    console.error("SYNC_ERROR", {
+      requestId,
+      storeId,
+      deviceId,
+      eventsCount: events.length,
+      error: e,
+    });
+    return NextResponse.json({ error: "SYNC_ERROR", requestId }, { status: 500 });
   }
 }

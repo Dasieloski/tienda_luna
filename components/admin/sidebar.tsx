@@ -49,6 +49,7 @@ const NAV_ITEMS = [
       { href: "/admin/cambios", label: "Cambios", icon: ArrowRightLeft },
       { href: "/admin/duenos", label: "Dueños", icon: Users },
       { href: "/admin/control-diario", label: "Control diario", icon: ClipboardList },
+      { href: "/admin/control-diario/incidencias", label: "Incidencias", icon: AlertTriangle },
     ],
   },
   {
