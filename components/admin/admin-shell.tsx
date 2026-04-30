@@ -5,7 +5,6 @@ import { Sidebar } from "./sidebar";
 import { Topbar } from "./topbar";
 import { CommandK } from "./command-k";
 import { cn } from "@/lib/utils";
-import { ToastProvider } from "@/components/ui/toast";
 
 interface AdminShellProps {
   children: React.ReactNode;
@@ -61,39 +60,37 @@ export function AdminShell({ children, title = "Dashboard" }: AdminShellProps) {
   }, []);
 
   return (
-    <ToastProvider>
-      <div className="flex min-h-screen bg-tl-canvas">
-        <CommandK />
-        <Sidebar
-          collapsed={sidebarCollapsed}
-          onCollapsedChange={setSidebarCollapsed}
-          mobileOpen={mobileSidebarOpen}
-          onMobileOpenChange={setMobileSidebarOpen}
+    <div className="flex min-h-screen bg-tl-canvas">
+      <CommandK />
+      <Sidebar
+        collapsed={sidebarCollapsed}
+        onCollapsedChange={setSidebarCollapsed}
+        mobileOpen={mobileSidebarOpen}
+        onMobileOpenChange={setMobileSidebarOpen}
+      />
+      <div
+        className={cn(
+          "tl-admin-main-column flex min-w-0 flex-1 flex-col transition-all duration-300",
+          sidebarCollapsed ? "lg:ml-[72px]" : "lg:ml-[260px]",
+        )}
+      >
+        <Topbar
+          title={title}
+          onMenuClick={() => setMobileSidebarOpen((prev) => !prev)}
+          usdRateCup={usdRateCup}
+          onUsdRateCupChange={(next) => {
+            setUsdRateCup(next);
+            (globalThis as unknown as { __TL_USD_RATE_CUP__?: number }).__TL_USD_RATE_CUP__ = next;
+          }}
         />
-        <div
-          className={cn(
-            "tl-admin-main-column flex min-w-0 flex-1 flex-col transition-all duration-300",
-            sidebarCollapsed ? "lg:ml-[72px]" : "lg:ml-[260px]",
-          )}
+        <main
+          id="admin-main"
+          className="flex-1 overflow-y-auto px-4 py-4 sm:px-5 sm:py-5 lg:px-6 lg:py-6"
+          tabIndex={-1}
         >
-          <Topbar
-            title={title}
-            onMenuClick={() => setMobileSidebarOpen((prev) => !prev)}
-            usdRateCup={usdRateCup}
-            onUsdRateCupChange={(next) => {
-              setUsdRateCup(next);
-              (globalThis as unknown as { __TL_USD_RATE_CUP__?: number }).__TL_USD_RATE_CUP__ = next;
-            }}
-          />
-          <main
-            id="admin-main"
-            className="flex-1 overflow-y-auto px-4 py-4 sm:px-5 sm:py-5 lg:px-6 lg:py-6"
-            tabIndex={-1}
-          >
-            {children}
-          </main>
-        </div>
+          {children}
+        </main>
       </div>
-    </ToastProvider>
+    </div>
   );
 }

@@ -75,11 +75,6 @@ function InventoryMovementsPageClient() {
   const [saveViewName, setSaveViewName] = useState("");
   const [confirmDeleteViewOpen, setConfirmDeleteViewOpen] = useState(false);
 
-  const selectedView = useMemo(
-    () => (selectedViewId ? savedViews.find((v) => v.id === selectedViewId) ?? null : null),
-    [savedViews, selectedViewId],
-  );
-
   type SavedView = {
     id: string;
     name: string;
@@ -93,6 +88,11 @@ function InventoryMovementsPageClient() {
   const SAVED_VIEWS_KEY = "tl-saved-views:movements";
   const [savedViews, setSavedViews] = useState<SavedView[]>([]);
   const [selectedViewId, setSelectedViewId] = useState<string>("");
+
+  const selectedView = useMemo(
+    () => (selectedViewId ? savedViews.find((v) => v.id === selectedViewId) ?? null : null),
+    [savedViews, selectedViewId],
+  );
 
   const loadSavedViews = useCallback(() => {
     try {

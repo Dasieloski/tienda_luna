@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { ToastProvider } from "@/components/ui/toast";
 
 export const metadata: Metadata = {
   title: "Admin · Tienda Luna POS",
@@ -15,7 +16,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
       >
         Saltar al contenido admin
       </a>
-      {children}
+      <ToastProvider>{children}</ToastProvider>
     </div>
   );
 }
