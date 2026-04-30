@@ -21,55 +21,103 @@ async function queryDailyReportModern(
   to: Date,
 ): Promise<DailyReportRawRow[]> {
   return prisma.$queryRaw<DailyReportRawRow[]>`
+    WITH pay_by_sale AS (
+      SELECT
+        sp."saleId" AS sale_id,
+        COALESCE(SUM(
+          CASE
+            WHEN sp.currency::text = 'USD'
+              OR COALESCE(NULLIF(trim(sp.method), ''), '') ILIKE '%usd%'
+              OR COALESCE(NULLIF(trim(sp.method), ''), '') ILIKE '%dolar%'
+              OR COALESCE(NULLIF(trim(sp.method), ''), '') ILIKE '%dólar%'
+              OR COALESCE(NULLIF(trim(sp.method), ''), '') ILIKE '%usd_cash%'
+              OR COALESCE(NULLIF(trim(sp.method), ''), '') ILIKE '%usd_channel%'
+            THEN sp."amountCupCents"
+            ELSE 0
+          END
+        ), 0)::bigint AS usd_cents,
+        COALESCE(SUM(
+          CASE
+            WHEN COALESCE(NULLIF(trim(sp.method), ''), '') ILIKE '%trans%'
+              OR COALESCE(NULLIF(trim(sp.method), ''), '') ILIKE '%bank%'
+              OR COALESCE(NULLIF(trim(sp.method), ''), '') ILIKE '%banco%'
+            THEN sp."amountCupCents"
+            ELSE 0
+          END
+        ), 0)::bigint AS transfer_cents,
+        COALESCE(SUM(
+          CASE
+            WHEN sp.currency::text = 'USD'
+              OR COALESCE(NULLIF(trim(sp.method), ''), '') ILIKE '%usd%'
+              OR COALESCE(NULLIF(trim(sp.method), ''), '') ILIKE '%dolar%'
+              OR COALESCE(NULLIF(trim(sp.method), ''), '') ILIKE '%dólar%'
+              OR COALESCE(NULLIF(trim(sp.method), ''), '') ILIKE '%usd_cash%'
+              OR COALESCE(NULLIF(trim(sp.method), ''), '') ILIKE '%usd_channel%'
+            THEN 0
+            WHEN COALESCE(NULLIF(trim(sp.method), ''), '') ILIKE '%trans%'
+              OR COALESCE(NULLIF(trim(sp.method), ''), '') ILIKE '%bank%'
+              OR COALESCE(NULLIF(trim(sp.method), ''), '') ILIKE '%banco%'
+            THEN 0
+            ELSE sp."amountCupCents"
+          END
+        ), 0)::bigint AS efectivo_cents
+      FROM "SalePayment" sp
+      INNER JOIN "Sale" s ON s.id = sp."saleId"
+      WHERE sp."storeId" = ${storeId}
+        AND sp."paidAt" >= ${from}
+        AND sp."paidAt" < ${to}
+        AND s.status = 'COMPLETED'
+      GROUP BY sp."saleId"
+    ),
+    line_by_sale_product AS (
+      SELECT
+        sl."saleId" AS sale_id,
+        sl."productId" AS product_id,
+        COALESCE(SUM(sl.quantity), 0)::bigint AS qty,
+        COALESCE(SUM(sl."subtotalCents"), 0)::bigint AS subtotal_cents
+      FROM "SaleLine" sl
+      WHERE sl."productId" IS NOT NULL
+      GROUP BY sl."saleId", sl."productId"
+    ),
+    sale_totals AS (
+      SELECT
+        sale_id,
+        COALESCE(SUM(subtotal_cents), 0)::bigint AS sale_subtotal_cents
+      FROM line_by_sale_product
+      GROUP BY sale_id
+    )
     SELECT
       p.id AS product_id,
       p.name,
       p.sku,
       p."priceCents" AS price_cents,
       p."priceUsdCents" AS price_usd_cents,
-      COALESCE(SUM(sl.quantity), 0)::bigint AS qty,
+      COALESCE(SUM(l.qty), 0)::bigint AS qty,
       COALESCE(SUM(
         CASE
-          WHEN (COALESCE(e.payload->>'paymentMethod','')) ILIKE '%usd%'
-            OR (COALESCE(e.payload->>'paymentMethod','')) ILIKE '%dolar%'
-            OR (COALESCE(e.payload->>'paymentMethod','')) ILIKE '%dólar%'
-          THEN 0
-          WHEN (COALESCE(e.payload->>'paymentMethod','')) ILIKE '%trans%'
-            OR (COALESCE(e.payload->>'paymentMethod','')) ILIKE '%bank%'
-            OR (COALESCE(e.payload->>'paymentMethod','')) ILIKE '%banco%'
-          THEN 0
-          ELSE sl."subtotalCents"
+          WHEN st.sale_subtotal_cents > 0
+          THEN ROUND((l.subtotal_cents::numeric * pay.efectivo_cents::numeric) / st.sale_subtotal_cents::numeric)
+          ELSE 0
         END
       ), 0)::bigint AS efectivo_cents,
       COALESCE(SUM(
         CASE
-          WHEN (COALESCE(e.payload->>'paymentMethod','')) ILIKE '%trans%'
-            OR (COALESCE(e.payload->>'paymentMethod','')) ILIKE '%bank%'
-            OR (COALESCE(e.payload->>'paymentMethod','')) ILIKE '%banco%'
-          THEN sl."subtotalCents"
+          WHEN st.sale_subtotal_cents > 0
+          THEN ROUND((l.subtotal_cents::numeric * pay.transfer_cents::numeric) / st.sale_subtotal_cents::numeric)
           ELSE 0
         END
       ), 0)::bigint AS transfer_cents,
       COALESCE(SUM(
         CASE
-          WHEN (COALESCE(e.payload->>'paymentMethod','')) ILIKE '%usd%'
-            OR (COALESCE(e.payload->>'paymentMethod','')) ILIKE '%dolar%'
-            OR (COALESCE(e.payload->>'paymentMethod','')) ILIKE '%dólar%'
-          THEN sl."subtotalCents"
+          WHEN st.sale_subtotal_cents > 0
+          THEN ROUND((l.subtotal_cents::numeric * pay.usd_cents::numeric) / st.sale_subtotal_cents::numeric)
           ELSE 0
         END
       ), 0)::bigint AS usd_cents
-    FROM "Sale" s
-    JOIN "SaleLine" sl ON sl."saleId" = s.id
-    JOIN "Product" p ON p.id = sl."productId"
-    LEFT JOIN "Event" e
-      ON e."storeId" = s."storeId"
-     AND e.type = 'SALE_COMPLETED'
-     AND e.status IN ('ACCEPTED', 'CORRECTED')
-     AND (e.payload->>'saleId') = s."clientSaleId"
-    WHERE s."storeId" = ${storeId}
-      AND s."completedAt" >= ${from}
-      AND s."completedAt" < ${to}
+    FROM pay_by_sale pay
+    INNER JOIN sale_totals st ON st.sale_id = pay.sale_id
+    INNER JOIN line_by_sale_product l ON l.sale_id = pay.sale_id
+    INNER JOIN "Product" p ON p.id = l.product_id
     GROUP BY p.id, p.name, p.sku, p."priceCents", p."priceUsdCents"
     ORDER BY p.name
   `;
@@ -83,55 +131,103 @@ async function queryDailyReportLegacy(
   to: Date,
 ): Promise<DailyReportRawRow[]> {
   return prisma.$queryRaw<DailyReportRawRow[]>`
+    WITH pay_by_sale AS (
+      SELECT
+        sp."saleId" AS sale_id,
+        COALESCE(SUM(
+          CASE
+            WHEN sp.currency::text = 'USD'
+              OR COALESCE(NULLIF(trim(sp.method), ''), '') ILIKE '%usd%'
+              OR COALESCE(NULLIF(trim(sp.method), ''), '') ILIKE '%dolar%'
+              OR COALESCE(NULLIF(trim(sp.method), ''), '') ILIKE '%dólar%'
+              OR COALESCE(NULLIF(trim(sp.method), ''), '') ILIKE '%usd_cash%'
+              OR COALESCE(NULLIF(trim(sp.method), ''), '') ILIKE '%usd_channel%'
+            THEN sp."amountCupCents"
+            ELSE 0
+          END
+        ), 0)::bigint AS usd_cents,
+        COALESCE(SUM(
+          CASE
+            WHEN COALESCE(NULLIF(trim(sp.method), ''), '') ILIKE '%trans%'
+              OR COALESCE(NULLIF(trim(sp.method), ''), '') ILIKE '%bank%'
+              OR COALESCE(NULLIF(trim(sp.method), ''), '') ILIKE '%banco%'
+            THEN sp."amountCupCents"
+            ELSE 0
+          END
+        ), 0)::bigint AS transfer_cents,
+        COALESCE(SUM(
+          CASE
+            WHEN sp.currency::text = 'USD'
+              OR COALESCE(NULLIF(trim(sp.method), ''), '') ILIKE '%usd%'
+              OR COALESCE(NULLIF(trim(sp.method), ''), '') ILIKE '%dolar%'
+              OR COALESCE(NULLIF(trim(sp.method), ''), '') ILIKE '%dólar%'
+              OR COALESCE(NULLIF(trim(sp.method), ''), '') ILIKE '%usd_cash%'
+              OR COALESCE(NULLIF(trim(sp.method), ''), '') ILIKE '%usd_channel%'
+            THEN 0
+            WHEN COALESCE(NULLIF(trim(sp.method), ''), '') ILIKE '%trans%'
+              OR COALESCE(NULLIF(trim(sp.method), ''), '') ILIKE '%bank%'
+              OR COALESCE(NULLIF(trim(sp.method), ''), '') ILIKE '%banco%'
+            THEN 0
+            ELSE sp."amountCupCents"
+          END
+        ), 0)::bigint AS efectivo_cents
+      FROM "SalePayment" sp
+      INNER JOIN "Sale" s ON s.id = sp."saleId"
+      WHERE sp."storeId" = ${storeId}
+        AND sp."paidAt" >= ${from}
+        AND sp."paidAt" < ${to}
+        AND s.status = 'COMPLETED'
+      GROUP BY sp."saleId"
+    ),
+    line_by_sale_product AS (
+      SELECT
+        sl."saleId" AS sale_id,
+        sl."productId" AS product_id,
+        COALESCE(SUM(sl.quantity), 0)::bigint AS qty,
+        COALESCE(SUM(sl."subtotalCents"), 0)::bigint AS subtotal_cents
+      FROM "SaleLine" sl
+      WHERE sl."productId" IS NOT NULL
+      GROUP BY sl."saleId", sl."productId"
+    ),
+    sale_totals AS (
+      SELECT
+        sale_id,
+        COALESCE(SUM(subtotal_cents), 0)::bigint AS sale_subtotal_cents
+      FROM line_by_sale_product
+      GROUP BY sale_id
+    )
     SELECT
       p.id AS product_id,
       p.name,
       p.sku,
       p."priceCents" AS price_cents,
       0::int AS price_usd_cents,
-      COALESCE(SUM(sl.quantity), 0)::bigint AS qty,
+      COALESCE(SUM(l.qty), 0)::bigint AS qty,
       COALESCE(SUM(
         CASE
-          WHEN (COALESCE(e.payload->>'paymentMethod','')) ILIKE '%usd%'
-            OR (COALESCE(e.payload->>'paymentMethod','')) ILIKE '%dolar%'
-            OR (COALESCE(e.payload->>'paymentMethod','')) ILIKE '%dólar%'
-          THEN 0
-          WHEN (COALESCE(e.payload->>'paymentMethod','')) ILIKE '%trans%'
-            OR (COALESCE(e.payload->>'paymentMethod','')) ILIKE '%bank%'
-            OR (COALESCE(e.payload->>'paymentMethod','')) ILIKE '%banco%'
-          THEN 0
-          ELSE sl."subtotalCents"
+          WHEN st.sale_subtotal_cents > 0
+          THEN ROUND((l.subtotal_cents::numeric * pay.efectivo_cents::numeric) / st.sale_subtotal_cents::numeric)
+          ELSE 0
         END
       ), 0)::bigint AS efectivo_cents,
       COALESCE(SUM(
         CASE
-          WHEN (COALESCE(e.payload->>'paymentMethod','')) ILIKE '%trans%'
-            OR (COALESCE(e.payload->>'paymentMethod','')) ILIKE '%bank%'
-            OR (COALESCE(e.payload->>'paymentMethod','')) ILIKE '%banco%'
-          THEN sl."subtotalCents"
+          WHEN st.sale_subtotal_cents > 0
+          THEN ROUND((l.subtotal_cents::numeric * pay.transfer_cents::numeric) / st.sale_subtotal_cents::numeric)
           ELSE 0
         END
       ), 0)::bigint AS transfer_cents,
       COALESCE(SUM(
         CASE
-          WHEN (COALESCE(e.payload->>'paymentMethod','')) ILIKE '%usd%'
-            OR (COALESCE(e.payload->>'paymentMethod','')) ILIKE '%dolar%'
-            OR (COALESCE(e.payload->>'paymentMethod','')) ILIKE '%dólar%'
-          THEN sl."subtotalCents"
+          WHEN st.sale_subtotal_cents > 0
+          THEN ROUND((l.subtotal_cents::numeric * pay.usd_cents::numeric) / st.sale_subtotal_cents::numeric)
           ELSE 0
         END
       ), 0)::bigint AS usd_cents
-    FROM "Sale" s
-    JOIN "SaleLine" sl ON sl."saleId" = s.id
-    JOIN "Product" p ON p.id = sl."productId"
-    LEFT JOIN "Event" e
-      ON e."storeId" = s."storeId"
-     AND e.type = 'SALE_COMPLETED'
-     AND e.status IN ('ACCEPTED', 'CORRECTED')
-     AND (e.payload->>'saleId') = s."clientSaleId"
-    WHERE s."storeId" = ${storeId}
-      AND s."completedAt" >= ${from}
-      AND s."completedAt" < ${to}
+    FROM pay_by_sale pay
+    INNER JOIN sale_totals st ON st.sale_id = pay.sale_id
+    INNER JOIN line_by_sale_product l ON l.sale_id = pay.sale_id
+    INNER JOIN "Product" p ON p.id = l.product_id
     GROUP BY p.id, p.name, p.sku, p."priceCents"
     ORDER BY p.name
   `;

@@ -66,7 +66,8 @@ async function computeExpected(storeId: string, from: Date, to: Date) {
           sp."saleId" AS sale_id,
           s."deviceId" AS device_id,
           sp."amountCupCents" AS amount_cup_cents,
-          COALESCE(NULLIF(trim(sp.method), ''), '(sin método)') AS method,
+          COALESCE(NULLIF(trim(sp.method), ''), '') AS method_raw,
+          LOWER(COALESCE(NULLIF(trim(sp.method), ''), '')) AS method_norm,
           sp.currency AS currency
         FROM "SalePayment" sp
         INNER JOIN "Sale" s ON s.id = sp."saleId"
@@ -87,24 +88,27 @@ async function computeExpected(storeId: string, from: Date, to: Date) {
         COALESCE(SUM(
           CASE
             WHEN pd.currency::text = 'USD'
-              OR pd.method ILIKE '%usd%'
-              OR pd.method ILIKE '%dolar%'
-              OR pd.method ILIKE '%dólar%'
+              OR pd.method_norm IN ('usd', 'usd_cash', 'usd_channel')
+              OR pd.method_raw ILIKE '%usd%'
+              OR pd.method_raw ILIKE '%dolar%'
+              OR pd.method_raw ILIKE '%dólar%'
             THEN 0
-            WHEN pd.method ILIKE '%trans%'
-              OR pd.method ILIKE '%bank%'
-              OR pd.method ILIKE '%banco%'
+            WHEN pd.method_norm IN ('transfer', 'transferencia', 'bank', 'banco')
+              OR pd.method_raw ILIKE '%trans%'
+              OR pd.method_raw ILIKE '%bank%'
+              OR pd.method_raw ILIKE '%banco%'
             THEN 0
-            WHEN pd.method = '(sin método)'
+            WHEN pd.method_norm = ''
             THEN 0
             ELSE pd.amount_cup_cents
           END
         ), 0)::bigint AS cash_cents,
         COALESCE(SUM(
           CASE
-            WHEN pd.method ILIKE '%trans%'
-              OR pd.method ILIKE '%bank%'
-              OR pd.method ILIKE '%banco%'
+            WHEN pd.method_norm IN ('transfer', 'transferencia', 'bank', 'banco')
+              OR pd.method_raw ILIKE '%trans%'
+              OR pd.method_raw ILIKE '%bank%'
+              OR pd.method_raw ILIKE '%banco%'
             THEN pd.amount_cup_cents
             ELSE 0
           END
@@ -112,14 +116,15 @@ async function computeExpected(storeId: string, from: Date, to: Date) {
         COALESCE(SUM(
           CASE
             WHEN pd.currency::text = 'USD'
-              OR pd.method ILIKE '%usd%'
-              OR pd.method ILIKE '%dolar%'
-              OR pd.method ILIKE '%dólar%'
+              OR pd.method_norm IN ('usd', 'usd_cash', 'usd_channel')
+              OR pd.method_raw ILIKE '%usd%'
+              OR pd.method_raw ILIKE '%dolar%'
+              OR pd.method_raw ILIKE '%dólar%'
             THEN pd.amount_cup_cents
             ELSE 0
           END
         ), 0)::bigint AS usd_cents,
-        COALESCE(SUM(CASE WHEN pd.method = '(sin método)' THEN 1 ELSE 0 END), 0)::bigint AS unknown_method_sales
+        COALESCE(SUM(CASE WHEN pd.method_norm = '' THEN 1 ELSE 0 END), 0)::bigint AS unknown_method_sales
       FROM pday pd
       LEFT JOIN lines_by_sale lbs ON lbs.sale_id = pd.sale_id
       GROUP BY pd.device_id
@@ -503,6 +508,26 @@ export async function POST(request: Request) {
         message: parsed.data.note.trim(),
         actorUserId: guard.user.id,
       },
+    });
+  }
+
+  // Persistir findings automáticos (diagnóstico) para trazabilidad histórica.
+  // Se recalculan en cada validación/actualización para reflejar el estado real del día.
+  await prisma.cashClosingFinding.deleteMany({
+    where: { storeId, cashClosingDayId: next.id },
+  });
+  if (computed.findings.length > 0) {
+    await prisma.cashClosingFinding.createMany({
+      data: computed.findings.map((f) => ({
+        storeId,
+        cashClosingDayId: next.id,
+        code: f.code,
+        severity: f.severity,
+        title: f.title,
+        detail: f.detail,
+        suggestion: f.suggestion ?? null,
+        evidence: "evidence" in f ? ((f as any).evidence ?? null) : null,
+      })),
     });
   }
 

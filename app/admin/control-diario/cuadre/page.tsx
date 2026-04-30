@@ -47,6 +47,13 @@ type ApiPayload = {
       usdChannelExpectedCents: number;
       unknownPaymentMethodSales: number;
     }[];
+    fxByDevice: {
+      deviceId: string;
+      fxCount: number;
+      cupGivenCents: number;
+      usdValueCupCents: number;
+      spreadCupCents: number;
+    }[];
     findings: Finding[];
   };
   audit: null | {
@@ -104,6 +111,7 @@ export default function CashClosingAuditPage() {
   const [data, setData] = useState<ApiPayload | null>(null);
   const [loading, setLoading] = useState(false);
   const [err, setErr] = useState<string | null>(null);
+  const [findingsMode, setFindingsMode] = useState<"LIVE" | "LAST_VALIDATED">("LIVE");
 
   const expected = data?.computed?.totals ?? null;
   const expectedTotal =
@@ -143,6 +151,7 @@ export default function CashClosingAuditPage() {
       setData(json);
 
       if (json.audit) {
+        setFindingsMode("LAST_VALIDATED");
         setStatus(json.audit.status);
         setCashCounted(centsToCupInput(json.audit.counted.cashCountedCents));
         setTransferCounted(centsToCupInput(json.audit.counted.transferCountedCents));
@@ -150,6 +159,7 @@ export default function CashClosingAuditPage() {
         setCategory(json.audit.category ?? "DESYNC");
         setObservation(json.audit.observation ?? "");
       } else {
+        setFindingsMode("LIVE");
         setStatus("CORRECT");
         setCashCounted(centsToCupInput(json.computed?.totals?.cashExpectedCents ?? 0));
         setTransferCounted(centsToCupInput(json.computed?.totals?.transferExpectedCents ?? 0));
@@ -233,11 +243,11 @@ export default function CashClosingAuditPage() {
               Actualizar
             </button>
             <Link
-              href="/admin/economia"
+              href="/admin/control-diario"
               className="tl-btn tl-btn-secondary tl-interactive tl-hover-lift tl-press tl-focus !px-3 !py-2 text-xs sm:text-sm no-underline"
             >
               <ClipboardList className="h-4 w-4" aria-hidden />
-              Volver a Economía
+              Volver a Control diario
             </Link>
           </div>
         </div>
@@ -318,7 +328,12 @@ export default function CashClosingAuditPage() {
                   placeholder="0"
                 />
               </label>
-              <button type="button" className="tl-btn tl-btn-primary inline-flex h-10 items-center gap-2 self-end" onClick={() => void save()} disabled={saving || loading || !data}>
+              <button
+                type="button"
+                className="tl-btn tl-btn-primary inline-flex h-10 items-center gap-2 self-end"
+                onClick={() => void save()}
+                disabled={saving || loading || !data}
+              >
                 <BadgeCheck className={cn("h-4 w-4", saving && "animate-pulse")} aria-hidden />
                 {saving ? "Guardando…" : "Guardar"}
               </button>
@@ -341,7 +356,12 @@ export default function CashClosingAuditPage() {
               </label>
               <label className="lg:col-span-2 flex flex-col gap-1 text-xs font-medium text-tl-muted">
                 Observaciones (obligatorio)
-                <input className="tl-input h-10 px-3 text-sm" value={observation} onChange={(e) => setObservation(e.target.value)} placeholder="Qué pasó, dónde viste el error, etc." />
+                <input
+                  className="tl-input h-10 px-3 text-sm"
+                  value={observation}
+                  onChange={(e) => setObservation(e.target.value)}
+                  placeholder="Qué pasó, dónde viste el error, etc."
+                />
               </label>
             </div>
           ) : null}
@@ -349,7 +369,12 @@ export default function CashClosingAuditPage() {
           <div className="mt-4">
             <label className="flex flex-col gap-1 text-xs font-medium text-tl-muted">
               Nota adicional (historial)
-              <input className="tl-input h-10 px-3 text-sm" value={note} onChange={(e) => setNote(e.target.value)} placeholder="Acciones tomadas, hipótesis, etc." />
+              <input
+                className="tl-input h-10 px-3 text-sm"
+                value={note}
+                onChange={(e) => setNote(e.target.value)}
+                placeholder="Acciones tomadas, hipótesis, etc."
+              />
             </label>
           </div>
         </section>
@@ -386,10 +411,18 @@ export default function CashClosingAuditPage() {
                         <tr key={d.deviceId}>
                           <td className="px-3 py-2 font-mono text-xs text-tl-ink">{d.deviceId}</td>
                           <td className="px-3 py-2 text-right tabular-nums text-tl-ink">{d.salesCount}</td>
-                          <td className="px-3 py-2 text-right"><TablePriceCupCell cupCents={d.cashExpectedCents} compact /></td>
-                          <td className="px-3 py-2 text-right"><TablePriceCupCell cupCents={d.transferExpectedCents} compact /></td>
-                          <td className="px-3 py-2 text-right"><TablePriceCupCell cupCents={d.usdChannelExpectedCents} compact /></td>
-                          <td className="px-3 py-2 text-right"><TablePriceCupCell cupCents={tot} compact /></td>
+                          <td className="px-3 py-2 text-right">
+                            <TablePriceCupCell cupCents={d.cashExpectedCents} compact />
+                          </td>
+                          <td className="px-3 py-2 text-right">
+                            <TablePriceCupCell cupCents={d.transferExpectedCents} compact />
+                          </td>
+                          <td className="px-3 py-2 text-right">
+                            <TablePriceCupCell cupCents={d.usdChannelExpectedCents} compact />
+                          </td>
+                          <td className="px-3 py-2 text-right">
+                            <TablePriceCupCell cupCents={tot} compact />
+                          </td>
                           <td className="px-3 py-2 text-right tabular-nums text-tl-muted">{d.unknownPaymentMethodSales}</td>
                         </tr>
                       );
@@ -398,6 +431,46 @@ export default function CashClosingAuditPage() {
                 </tbody>
               </table>
             </div>
+
+            {(data?.computed?.fxByDevice ?? []).length > 0 ? (
+              <div className="mt-4">
+                <h3 className="text-xs font-semibold uppercase tracking-wider text-tl-muted">Cambios USD→CUP por dispositivo</h3>
+                <p className="mt-1 text-xs text-tl-muted">
+                  Estos movimientos alteran la caja: <span className="font-semibold text-tl-ink">sale CUP</span> y{" "}
+                  <span className="font-semibold text-tl-ink">entra USD</span> (valorizado en CUP).
+                </p>
+                <div className="mt-3 overflow-x-auto tl-glass rounded-xl">
+                  <table className="w-full min-w-[760px] text-left text-sm">
+                    <thead className="border-b border-tl-line bg-tl-canvas-subtle text-xs uppercase tracking-wide text-tl-muted">
+                      <tr>
+                        <th className="px-3 py-2">Dispositivo</th>
+                        <th className="px-3 py-2 text-right">Cambios</th>
+                        <th className="px-3 py-2 text-right">CUP entregado</th>
+                        <th className="px-3 py-2 text-right">USD (en CUP)</th>
+                        <th className="px-3 py-2 text-right">Spread (CUP)</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-tl-line-subtle">
+                      {(data?.computed?.fxByDevice ?? []).map((fx) => (
+                        <tr key={`fx-${fx.deviceId}`}>
+                          <td className="px-3 py-2 font-mono text-xs text-tl-ink">{fx.deviceId}</td>
+                          <td className="px-3 py-2 text-right tabular-nums text-tl-ink">{fx.fxCount}</td>
+                          <td className="px-3 py-2 text-right">
+                            <TablePriceCupCell cupCents={fx.cupGivenCents} compact />
+                          </td>
+                          <td className="px-3 py-2 text-right">
+                            <TablePriceCupCell cupCents={fx.usdValueCupCents} compact />
+                          </td>
+                          <td className={cn("px-3 py-2 text-right", fx.spreadCupCents < 0 ? "text-tl-warning" : "text-tl-ink")}>
+                            <TablePriceCupCell cupCents={fx.spreadCupCents} compact />
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            ) : null}
           </div>
 
           <div className="rounded-2xl border border-tl-line-subtle bg-tl-canvas-inset p-4 shadow-sm sm:p-5">
@@ -406,13 +479,60 @@ export default function CashClosingAuditPage() {
               Hallazgos automáticos basados en patrones del día. Se enfocan en sync, enlaces de eventos, y consistencia.
             </p>
 
-            <div className="mt-3 space-y-3">
-              {(data?.computed?.findings ?? []).length === 0 ? (
-                <div className="rounded-xl border border-tl-line-subtle bg-tl-canvas px-4 py-3 text-sm text-tl-muted">
-                  No se detectaron inconsistencias automáticas para este día.
-                </div>
+            <div className="mt-3 flex flex-wrap items-center justify-between gap-2">
+              <div className="inline-flex overflow-hidden rounded-full border border-tl-line-subtle bg-tl-canvas">
+                <button
+                  type="button"
+                  className={cn(
+                    "px-3 py-1 text-xs font-semibold",
+                    findingsMode === "LIVE" ? "bg-tl-canvas-inset text-tl-ink" : "text-tl-muted",
+                  )}
+                  onClick={() => setFindingsMode("LIVE")}
+                >
+                  En vivo
+                </button>
+                <button
+                  type="button"
+                  className={cn(
+                    "px-3 py-1 text-xs font-semibold",
+                    findingsMode === "LAST_VALIDATED" ? "bg-tl-canvas-inset text-tl-ink" : "text-tl-muted",
+                  )}
+                  onClick={() => setFindingsMode("LAST_VALIDATED")}
+                  disabled={!data?.audit}
+                  title={!data?.audit ? "Aún no has validado este día" : undefined}
+                >
+                  Última validación
+                </button>
+              </div>
+              {findingsMode === "LAST_VALIDATED" && data?.audit ? (
+                <p className="text-[11px] text-tl-muted">
+                  Generados al validar · {new Date(data.audit.updatedAt).toLocaleString("es-ES")}
+                </p>
               ) : (
-                (data?.computed?.findings ?? []).map((f) => (
+                <p className="text-[11px] text-tl-muted">Calculados en tiempo real con el estado actual del servidor</p>
+              )}
+            </div>
+
+            <div className="mt-3 space-y-3">
+              {(() => {
+                const live = data?.computed?.findings ?? [];
+                const validated =
+                  data?.audit?.findings?.map((f) => ({
+                    code: f.code,
+                    severity: (f.severity as Finding["severity"]) ?? "INFO",
+                    title: f.title,
+                    detail: f.detail,
+                    suggestion: f.suggestion,
+                  })) ?? [];
+                const list = findingsMode === "LAST_VALIDATED" ? validated : live;
+                if (list.length === 0) {
+                  return (
+                    <div className="rounded-xl border border-tl-line-subtle bg-tl-canvas px-4 py-3 text-sm text-tl-muted">
+                      No se detectaron inconsistencias automáticas para este día.
+                    </div>
+                  );
+                }
+                return list.map((f) => (
                   <div key={`${f.code}-${f.title}`} className={cn("rounded-xl border px-4 py-3 text-sm", severityColor(f.severity))}>
                     <div className="flex items-start justify-between gap-3">
                       <div className="min-w-0">
@@ -427,16 +547,16 @@ export default function CashClosingAuditPage() {
                       <AlertTriangle className={cn("h-5 w-5 shrink-0", f.severity === "ERROR" ? "text-tl-warning" : "text-amber-700")} aria-hidden />
                     </div>
                   </div>
-                ))
-              )}
+                ));
+              })()}
             </div>
 
             {data?.computed?.totals?.unknownPaymentMethodSales ? (
               <div className="mt-4 rounded-xl border border-amber-500/25 bg-amber-500/[0.08] px-4 py-3 text-xs text-amber-700">
                 <p className="font-semibold">Nota</p>
                 <p className="mt-1">
-                  El esperado por método depende del `paymentMethod` del evento. Si faltan enlaces evento↔venta, parte del total puede quedar
-                  “sin clasificar”. Eso es una señal de sync o de ventas sin evento.
+                  El esperado por método se calcula desde los pagos persistidos (`SalePayment.method` + `paidAt`). Si hay pagos con método vacío o
+                  inconsistencias de sync, parte del total puede quedar “sin clasificar”.
                 </p>
                 <p className="mt-2 font-mono">unknownPaymentMethodSales: {String(data.computed.totals.unknownPaymentMethodSales)}</p>
               </div>

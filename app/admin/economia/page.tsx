@@ -775,7 +775,7 @@ export default function EconomyPage() {
               </p>
             </div>
             <Link
-              href="/admin/economia/cuadre"
+              href="/admin/control-diario/cuadre"
               className="tl-btn tl-btn-primary tl-interactive tl-hover-lift tl-press tl-focus !px-4 !py-2 text-sm no-underline"
             >
               Abrir auditoría
