@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { prisma } from "@/lib/db";
-import { requireAdminRequest } from "@/lib/admin-auth";
+import { canSync, getSessionFromRequest } from "@/lib/auth";
 import { LOCAL_ADMIN_STORE_ID } from "@/lib/static-admin-auth";
 import {
   computeCashClosingExpected,
@@ -11,6 +11,7 @@ import {
 
 const querySchema = z.object({
   date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Formato esperado: YYYY-MM-DD"),
+  scope: z.enum(["store", "device"]).optional().default("device"),
 });
 
 const upsertSchema = z.object({
@@ -27,63 +28,82 @@ const upsertSchema = z.object({
   note: z.string().trim().optional().nullable(),
 });
 
-// computeCashClosingExpected() vive en lib/cash-closing.ts para reutilizarlo en endpoints para la APK.
-
+/**
+ * Endpoint para la APK (sesión device/cajero) para consumir el cuadre:
+ * - Esperado por método (SalePayment.paidAt)
+ * - FX USD→CUP
+ * - Findings automáticos (en vivo)
+ * - Último estado validado (si existe) + findings persistidos
+ */
 export async function GET(request: Request) {
-  const guard = await requireAdminRequest(request);
-  if (!guard.ok) return guard.res;
-  if (guard.session.storeId === LOCAL_ADMIN_STORE_ID) {
+  const session = await getSessionFromRequest(request);
+  if (!session || !canSync(session)) {
+    return NextResponse.json({ error: "UNAUTHORIZED" }, { status: 401 });
+  }
+  if (session.storeId === LOCAL_ADMIN_STORE_ID) {
     return NextResponse.json({ meta: { dbAvailable: false as const, message: "DB_NOT_AVAILABLE" } }, { status: 200 });
   }
 
   const url = new URL(request.url);
-  const parsed = querySchema.safeParse({ date: url.searchParams.get("date") ?? "" });
-  if (!parsed.success) return NextResponse.json({ error: "INVALID_QUERY" }, { status: 400 });
+  const parsed = querySchema.safeParse({
+    date: url.searchParams.get("date") ?? "",
+    scope: url.searchParams.get("scope") ?? undefined,
+  });
+  if (!parsed.success) {
+    return NextResponse.json({ error: "INVALID_QUERY" }, { status: 400 });
+  }
 
+  const storeId = session.storeId;
   const offset = storeTzOffsetMinutes();
   const { from, to } = utcRangeForLocalDate(parsed.data.date, offset);
-  const storeId = guard.session.storeId;
 
   try {
     const computed = await computeCashClosingExpected(storeId, from, to);
+
     const day = await prisma.cashClosingDay.findUnique({
       where: { storeId_dayYmd: { storeId, dayYmd: parsed.data.date } },
       include: {
-        notes: { orderBy: { createdAt: "desc" }, take: 40 },
         findings: { orderBy: { createdAt: "desc" }, take: 60 },
-        revisions: { orderBy: { createdAt: "desc" }, take: 20 },
       },
     });
 
+    const scope = parsed.data.scope;
+    const deviceId = session.typ === "device" ? session.sub : null;
+
+    const byDevice = computed.byDevice
+      .map((r) => ({
+        deviceId: r.device_id,
+        salesCount: Number(r.sales_count ?? BigInt(0)),
+        cashExpectedCents: Number(r.cash_cents ?? BigInt(0)),
+        transferExpectedCents: Number(r.transfer_cents ?? BigInt(0)),
+        usdChannelExpectedCents: Number(r.usd_cents ?? BigInt(0)),
+        unknownPaymentMethodSales: Number(r.unknown_method_sales ?? BigInt(0)),
+      }))
+      .filter((r) => (scope === "store" ? true : deviceId ? r.deviceId === deviceId : true));
+
+    const fxByDevice = computed.fxByDevice
+      .map((r) => ({
+        deviceId: r.device_id,
+        fxCount: Number(r.fx_count ?? BigInt(0)),
+        cupGivenCents: Number(r.cup_given_cents ?? BigInt(0)),
+        usdValueCupCents: Number(r.usd_value_cup_cents ?? BigInt(0)),
+        spreadCupCents: Number(r.spread_cup_cents ?? BigInt(0)),
+      }))
+      .filter((r) => (scope === "store" ? true : deviceId ? r.deviceId === deviceId : true));
+
     return NextResponse.json({
-      meta: { dbAvailable: true as const, tzOffsetMinutes: offset },
+      meta: { dbAvailable: true as const, tzOffsetMinutes: offset, scope, deviceId },
       dayYmd: parsed.data.date,
       utcRange: { from: from.toISOString(), to: to.toISOString() },
       computed: {
         totals: computed.totals,
-        byDevice: computed.byDevice.map((r) => ({
-          deviceId: r.device_id,
-          salesCount: Number(r.sales_count ?? BigInt(0)),
-          cashExpectedCents: Number(r.cash_cents ?? BigInt(0)),
-          transferExpectedCents: Number(r.transfer_cents ?? BigInt(0)),
-          usdChannelExpectedCents: Number(r.usd_cents ?? BigInt(0)),
-          unknownPaymentMethodSales: Number(r.unknown_method_sales ?? BigInt(0)),
-        })),
-        fxByDevice: computed.fxByDevice.map((r) => ({
-          deviceId: r.device_id,
-          fxCount: Number(r.fx_count ?? BigInt(0)),
-          cupGivenCents: Number(r.cup_given_cents ?? BigInt(0)),
-          usdValueCupCents: Number(r.usd_value_cup_cents ?? BigInt(0)),
-          spreadCupCents: Number(r.spread_cup_cents ?? BigInt(0)),
-        })),
+        byDevice,
+        fxByDevice,
         findings: computed.findings,
       },
-      audit: day
+      lastValidated: day
         ? {
-            id: day.id,
             status: day.status,
-            category: day.category,
-            observation: day.observation,
             counted: {
               cashCountedCents: day.cashCountedCents,
               transferCountedCents: day.transferCountedCents,
@@ -95,35 +115,21 @@ export async function GET(request: Request) {
               usdChannelExpectedCents: day.usdChannelExpectedCents,
             },
             diffTotalCents: day.diffTotalCents,
-            validatedByUserId: day.validatedByUserId,
             updatedAt: day.updatedAt.toISOString(),
-            notes: day.notes.map((n) => ({
-              id: n.id,
-              category: n.category,
-              message: n.message,
-              actorUserId: n.actorUserId,
-              createdAt: n.createdAt.toISOString(),
-            })),
             findings: day.findings.map((f) => ({
-              id: f.id,
               code: f.code,
               severity: f.severity,
               title: f.title,
               detail: f.detail,
               suggestion: f.suggestion,
+              evidence: f.evidence,
               createdAt: f.createdAt.toISOString(),
-            })),
-            revisions: day.revisions.map((r) => ({
-              id: r.id,
-              actorUserId: r.actorUserId,
-              action: r.action,
-              createdAt: r.createdAt.toISOString(),
             })),
           }
         : null,
     });
   } catch (err) {
-    console.error("[api/admin/cash-closing/day]", err);
+    console.error("[api/cash-closing/day]", err);
     return NextResponse.json(
       { meta: { dbAvailable: false as const, message: err instanceof Error ? err.message : "DB" } },
       { status: 200 },
@@ -131,10 +137,16 @@ export async function GET(request: Request) {
   }
 }
 
+/**
+ * Endpoint para la APK (sesión device/cajero) para validar/guardar el "contado" del día.
+ * No usa CSRF (se autentica por Bearer/session `canSync`).
+ */
 export async function POST(request: Request) {
-  const guard = await requireAdminRequest(request, { csrf: true });
-  if (!guard.ok) return guard.res;
-  if (guard.session.storeId === LOCAL_ADMIN_STORE_ID) {
+  const session = await getSessionFromRequest(request);
+  if (!session || !canSync(session)) {
+    return NextResponse.json({ error: "UNAUTHORIZED" }, { status: 401 });
+  }
+  if (session.storeId === LOCAL_ADMIN_STORE_ID) {
     return NextResponse.json({ error: "DB_NOT_AVAILABLE" }, { status: 400 });
   }
 
@@ -142,14 +154,17 @@ export async function POST(request: Request) {
   const parsed = upsertSchema.safeParse(body);
   if (!parsed.success) return NextResponse.json({ error: "INVALID_BODY" }, { status: 400 });
 
-  const { from, to } = utcRangeForLocalDate(parsed.data.date, storeTzOffsetMinutes());
-  const storeId = guard.session.storeId;
-
   if (parsed.data.status === "INCORRECT") {
     const obs = parsed.data.observation?.trim() ?? "";
     if (!obs) return NextResponse.json({ error: "OBSERVATION_REQUIRED" }, { status: 400 });
     if (!parsed.data.category) return NextResponse.json({ error: "CATEGORY_REQUIRED" }, { status: 400 });
   }
+
+  const storeId = session.storeId;
+  const offset = storeTzOffsetMinutes();
+  const { from, to } = utcRangeForLocalDate(parsed.data.date, offset);
+
+  const actorId = session.typ === "device" ? `device:${session.sub}` : session.sub;
 
   const computed = await computeCashClosingExpected(storeId, from, to);
   const expectedTotal =
@@ -177,7 +192,7 @@ export async function POST(request: Request) {
       diffTotalCents,
       category: parsed.data.category ?? null,
       observation: parsed.data.observation ?? null,
-      validatedByUserId: guard.user.id,
+      validatedByUserId: actorId,
     },
     update: {
       status: parsed.data.status,
@@ -190,7 +205,7 @@ export async function POST(request: Request) {
       diffTotalCents,
       category: parsed.data.category ?? null,
       observation: parsed.data.observation ?? null,
-      validatedByUserId: guard.user.id,
+      validatedByUserId: actorId,
     },
   });
 
@@ -198,8 +213,8 @@ export async function POST(request: Request) {
     data: {
       storeId,
       cashClosingDayId: next.id,
-      actorUserId: guard.user.id,
-      action: existing ? "UPDATE" : "CREATE",
+      actorUserId: actorId,
+      action: existing ? "UPDATE_DEVICE" : "CREATE_DEVICE",
       before: existing as any,
       after: next as any,
       meta: {
@@ -223,13 +238,12 @@ export async function POST(request: Request) {
         cashClosingDayId: next.id,
         category: parsed.data.category ?? null,
         message: parsed.data.note.trim(),
-        actorUserId: guard.user.id,
+        actorUserId: actorId,
       },
     });
   }
 
   // Persistir findings automáticos (diagnóstico) para trazabilidad histórica.
-  // Se recalculan en cada validación/actualización para reflejar el estado real del día.
   await prisma.cashClosingFinding.deleteMany({
     where: { storeId, cashClosingDayId: next.id },
   });
@@ -248,6 +262,6 @@ export async function POST(request: Request) {
     });
   }
 
-  return NextResponse.json({ ok: true, id: next.id });
+  return NextResponse.json({ ok: true, id: next.id, diffTotalCents });
 }
 

@@ -200,6 +200,70 @@ El login web (`POST /api/auth/login`) puede fijar cookie `httpOnly`. La APK norm
 
 ---
 
+### 4.3.1 `GET /api/cash-closing/day` (cuadre + diagnóstico para la APK)
+
+**Archivo**: `app/api/cash-closing/day/route.ts`
+
+Este endpoint permite que la APK consuma el **cuadre esperado** y la **detección de errores** (findings) sin depender del panel admin.
+
+| Aspecto | Detalle |
+|---------|---------|
+| **Método** | `GET` |
+| **Auth** | Sesión con `canSync` (`device` o `ADMIN`/`CASHIER`) |
+| **Query** | `date=YYYY-MM-DD` (obligatorio), `scope=device|store` (opcional, default `device`) |
+| **200** | `{ meta, dayYmd, utcRange, computed, lastValidated }` |
+| **401** | `UNAUTHORIZED` |
+| **400** | `INVALID_QUERY` |
+
+#### Respuesta (shape)
+
+- **`computed`**: cálculo en vivo desde BD (fuente de verdad), basado en `SalePayment.paidAt` + FX USD→CUP.
+- **`computed.findings`**: hallazgos automáticos en vivo.
+- **`lastValidated`**: último estado guardado del día (si existe), incluyendo findings persistidos en BD.
+
+Notas importantes para la APK:
+- **`scope=device`**: filtra `byDevice` y `fxByDevice` al `deviceId` de la sesión (recomendado).
+- **`scope=store`**: devuelve agregados por todos los dispositivos de la tienda (recomendado solo para apps de supervisión).
+
+---
+
+### 4.3.2 `POST /api/cash-closing/day` (enviar contado / validar el día)
+
+**Archivo**: `app/api/cash-closing/day/route.ts`
+
+Este endpoint permite que la APK envíe el **contado** (efectivo/transferencia/USD canal en CUP céntimos) y marque el día como **CORRECT** o **INCORRECT**.
+
+| Aspecto | Detalle |
+|---------|---------|
+| **Método** | `POST` |
+| **Auth** | Sesión con `canSync` (`device` o `ADMIN`/`CASHIER`) |
+| **CSRF** | No aplica (APK usa Bearer) |
+| **200** | `{ ok: true, id, diffTotalCents }` |
+| **401** | `UNAUTHORIZED` |
+| **400** | `INVALID_BODY` / `OBSERVATION_REQUIRED` / `CATEGORY_REQUIRED` |
+
+#### Body JSON
+
+```json
+{
+  "date": "YYYY-MM-DD",
+  "status": "CORRECT | INCORRECT",
+  "cashCountedCents": 0,
+  "transferCountedCents": 0,
+  "usdChannelCountedCents": 0,
+  "category": "CASH_SHORT | CASH_OVER | HUMAN_ERROR | SYSTEM_BUG | DESYNC | TZ_DRIFT | OTHER",
+  "observation": "string (requerido si status=INCORRECT)",
+  "note": "string (opcional)"
+}
+```
+
+Reglas:
+- Si `status=INCORRECT`, entonces `observation` y `category` son **obligatorios**.
+- El servidor recalcula el **esperado** (desde `SalePayment.paidAt` + FX) y guarda `diffTotalCents = contado - esperado`.
+- El servidor persiste findings automáticos (`CashClosingFinding`) en cada validación, para trazabilidad y diagnóstico histórico.
+
+---
+
 ### 4.4 `GET /api/exchange-rate`
 
 **Archivo**: `app/api/exchange-rate/route.ts`
