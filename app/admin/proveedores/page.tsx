@@ -122,6 +122,7 @@ type SupplierDebtResponse = {
   meta: { dbAvailable: boolean; message?: string };
   range: { from: string; to: string } | null;
   supplierId: string | null;
+  transferPoolCents?: number;
   suppliers: {
     supplierId: string | null;
     supplierName: string;
@@ -133,6 +134,7 @@ type SupplierDebtResponse = {
       withdrawalsRetailCents: number;
     };
     pendingCents: number;
+    pendingInRangeCents?: number;
   }[];
 };
 
@@ -506,6 +508,10 @@ export default function SuppliersPage() {
     if (!id) return null;
     return masters.find((m) => m.id === id) ?? null;
   }, [detailSupplierId, masters]);
+
+  const osmarSupplier = useMemo(() => {
+    return masters.find((m) => m.name.trim().toLowerCase() === "osmar") ?? null;
+  }, [masters]);
 
   const accTopUnits = useMemo(() => {
     const s = (accountsData?.suppliers ?? []).slice().sort((a, b) => b.units - a.units);
@@ -1722,7 +1728,57 @@ export default function SuppliersPage() {
                   variant="accent"
                   icon={<Wallet className="h-4 w-4" />}
                 />
+                <KpiCard
+                  label="Deuda neta (informativo)"
+                  value={
+                    (() => {
+                      const payable = detailData?.totals?.payableCents ?? 0;
+                      const transfer = debtData?.transferPoolCents ?? 0;
+                      const net = payable - transfer;
+                      return <CupUsdMoney cents={net} compact />;
+                    })()
+                  }
+                  hint={
+                    detailSupplier && osmarSupplier && detailSupplier.id === osmarSupplier.id
+                      ? "A pagar − transferencias del rango (la transferencia la recibe Osmar)"
+                      : "—"
+                  }
+                  variant="default"
+                  icon={<Banknote className="h-4 w-4" />}
+                />
               </div>
+
+              {detailSupplier && osmarSupplier && detailSupplier.id === osmarSupplier.id ? (
+                <div className="mt-4 rounded-xl border border-sky-500/20 bg-sky-500/[0.06] px-4 py-3 text-sm">
+                  <p className="font-semibold text-tl-ink">Transferencias vs deuda con Osmar (informativo)</p>
+                  <div className="mt-2 grid gap-2 sm:grid-cols-3">
+                    <div className="rounded-lg border border-tl-line-subtle bg-tl-canvas px-3 py-2">
+                      <p className="text-xs font-semibold text-tl-muted">Transferencias (rango)</p>
+                      <p className="mt-1 font-semibold text-tl-ink">
+                        <TablePriceCupCell cupCents={debtData?.transferPoolCents ?? 0} compact />
+                      </p>
+                    </div>
+                    <div className="rounded-lg border border-tl-line-subtle bg-tl-canvas px-3 py-2">
+                      <p className="text-xs font-semibold text-tl-muted">A pagar a Osmar (rango)</p>
+                      <p className="mt-1 font-semibold text-tl-ink">
+                        <TablePriceCupCell cupCents={detailData?.totals?.payableCents ?? 0} compact />
+                      </p>
+                    </div>
+                    <div className="rounded-lg border border-tl-line-subtle bg-tl-canvas px-3 py-2">
+                      <p className="text-xs font-semibold text-tl-muted">Neto sugerido</p>
+                      <p className="mt-1 font-semibold text-tl-ink">
+                        <TablePriceCupCell
+                          cupCents={(detailData?.totals?.payableCents ?? 0) - (debtData?.transferPoolCents ?? 0)}
+                          compact
+                        />
+                      </p>
+                    </div>
+                  </div>
+                  <p className="mt-2 text-xs text-tl-muted">
+                    Interpretación: si el neto es negativo, las transferencias del rango “cubren” la deuda con Osmar. Esto no aplica pagos automáticamente.
+                  </p>
+                </div>
+              ) : null}
             </section>
 
             <section className="rounded-2xl border border-tl-line-subtle bg-tl-canvas-inset p-4 shadow-sm sm:p-5">

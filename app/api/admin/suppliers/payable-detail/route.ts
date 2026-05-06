@@ -66,6 +66,15 @@ export async function GET(request: Request) {
   const toExclusive = addDays(startOfDay(toD), 1);
 
   try {
+    const sup = await prisma.supplier.findFirst({
+      where: { id: parsed.data.supplierId, storeId: session.storeId },
+      select: { name: true },
+    });
+    if (!sup) {
+      return NextResponse.json({ error: "SUPPLIER_NOT_FOUND" }, { status: 404 });
+    }
+    const supplierName = sup.name;
+
     const rows = await prisma.$queryRaw<Row[]>`
       WITH base AS (
         SELECT
@@ -83,7 +92,10 @@ export async function GET(request: Request) {
           AND s."status" = 'COMPLETED'
           AND s."completedAt" >= ${from}
           AND s."completedAt" < ${toExclusive}
-          AND p."supplierId" = ${parsed.data.supplierId}
+          AND (
+            p."supplierId" = ${parsed.data.supplierId}
+            OR (p."supplierId" IS NULL AND p."supplierName" = ${supplierName})
+          )
       )
       SELECT
         product_id,

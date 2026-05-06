@@ -26,7 +26,7 @@ export async function GET(request: Request) {
   const guard = await requireAdminRequest(request);
   if (!guard.ok) return guard.res;
   if (guard.session.storeId === LOCAL_ADMIN_STORE_ID) {
-    return NextResponse.json({ meta: { dbAvailable: false as const }, range: null, suppliers: [] });
+    return NextResponse.json({ meta: { dbAvailable: false as const }, range: null, suppliers: [], transferPoolCents: 0 });
   }
 
   const url = new URL(request.url);
@@ -58,7 +58,29 @@ export async function GET(request: Request) {
     withdrawals_cost_cents: bigint;
     withdrawals_retail_cents: bigint;
     balance_pending_cents: bigint;
+    pending_in_range_cents: bigint;
   };
+
+  // Bolsa de transferencias: total transfer recibido por la tienda en el rango (por pagos persistidos).
+  // Nota: se usa `paidAt` porque representa cuándo entró el dinero, no necesariamente cuándo se completó la venta.
+  const transferPool = await prisma.$queryRaw<{ transfer_cents: bigint }[]>`
+    SELECT
+      COALESCE(SUM(
+        CASE
+          WHEN COALESCE(NULLIF(trim(sp.method), ''), '') ILIKE '%trans%'
+            OR COALESCE(NULLIF(trim(sp.method), ''), '') ILIKE '%bank%'
+            OR COALESCE(NULLIF(trim(sp.method), ''), '') ILIKE '%banco%'
+          THEN sp."amountCupCents"
+          ELSE 0
+        END
+      ), 0)::bigint AS transfer_cents
+    FROM "SalePayment" sp
+    INNER JOIN "Sale" s ON s.id = sp."saleId"
+    WHERE sp."storeId" = ${storeId}
+      AND sp."paidAt" >= ${from}
+      AND sp."paidAt" < ${toExclusive}
+      AND s."status" = 'COMPLETED'
+  `;
 
   // Pendiente (rolling) = ventas a costo - pagos - retiros a costo
   // Nota: ventas a costo usan snapshot SaleLine.unitCostCents y, si falta (ventas antiguas), Product.costCents.
@@ -126,7 +148,12 @@ export async function GET(request: Request) {
       COALESCE(p.payments_cents,0)::bigint AS payments_cents,
       COALESCE(w.withdrawals_cost_cents,0)::bigint AS withdrawals_cost_cents,
       COALESCE(w.withdrawals_retail_cents,0)::bigint AS withdrawals_retail_cents,
-      COALESCE(b.balance_pending_cents,0)::bigint AS balance_pending_cents
+      COALESCE(b.balance_pending_cents,0)::bigint AS balance_pending_cents,
+      (
+        s.sales_cost_cents
+        - COALESCE(p.payments_cents,0)::bigint
+        - COALESCE(w.withdrawals_cost_cents,0)::bigint
+      )::bigint AS pending_in_range_cents
     FROM sales s
     LEFT JOIN payments p ON p.supplier_id = s.supplier_id
     LEFT JOIN withdrawals w ON w.supplier_id = s.supplier_id
@@ -138,6 +165,7 @@ export async function GET(request: Request) {
     meta: { dbAvailable: true as const },
     range: { from: parsed.data.from, to: parsed.data.to },
     supplierId,
+    transferPoolCents: Number(transferPool?.[0]?.transfer_cents ?? BigInt(0)),
     suppliers: rows.map((r) => ({
       supplierId: r.supplier_id,
       supplierName: r.supplier_name,
@@ -149,6 +177,7 @@ export async function GET(request: Request) {
         withdrawalsRetailCents: Number(r.withdrawals_retail_cents ?? BigInt(0)),
       },
       pendingCents: Number(r.balance_pending_cents ?? BigInt(0)),
+      pendingInRangeCents: Number(r.pending_in_range_cents ?? BigInt(0)),
     })),
   });
 }
