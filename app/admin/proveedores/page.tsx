@@ -70,6 +70,11 @@ type ProductMatrixResponse = {
     sku: string;
     supplierId: string | null;
     supplierName: string | null;
+    stockQty: number;
+    lowStockAt: number;
+    unitsPerBox: number;
+    priceCents: number;
+    catalogCostCents: number | null;
     qtyTotal: number;
     revenueCents: number;
     revenueCashCents: number;
@@ -186,6 +191,35 @@ export default function SuppliersPage() {
   const [matrixLoading, setMatrixLoading] = useState(false);
   const [matrixError, setMatrixError] = useState<string | null>(null);
   const [matrixQuery, setMatrixQuery] = useState("");
+  const [matrixOpen, setMatrixOpen] = useState(false);
+  const [matrixSelected, setMatrixSelected] = useState<ProductMatrixResponse["rows"][number] | null>(null);
+  const [matrixConfigOpen, setMatrixConfigOpen] = useState(false);
+  const [matrixSupplierFilter, setMatrixSupplierFilter] = useState<Record<string, boolean>>({});
+
+  useEffect(() => {
+    // Al cargar lista de proveedores, por defecto mostramos todos.
+    const ids = (matrixData?.suppliers ?? []).map((s) => s.id);
+    if (ids.length === 0) return;
+    setMatrixSupplierFilter((prev) => {
+      const next: Record<string, boolean> = { ...prev };
+      let changed = false;
+      for (const id of ids) {
+        if (next[id] == null) {
+          next[id] = true;
+          changed = true;
+        }
+      }
+      return changed ? next : prev;
+    });
+  }, [matrixData?.suppliers]);
+
+  const visibleMatrixSuppliers = useMemo(() => {
+    const list = matrixData?.suppliers ?? [];
+    if (list.length === 0) return [];
+    const anySelected = list.some((s) => matrixSupplierFilter[s.id] === true);
+    if (!anySelected) return list; // fallback: evitar tabla vacía
+    return list.filter((s) => matrixSupplierFilter[s.id] === true);
+  }, [matrixData?.suppliers, matrixSupplierFilter]);
 
   const loadMatrix = useCallback(async () => {
     setMatrixLoading(true);
@@ -473,11 +507,6 @@ export default function SuppliersPage() {
     return masters.find((m) => m.id === id) ?? null;
   }, [detailSupplierId, masters]);
 
-  const accTopRevenue = useMemo(() => {
-    const s = (accountsData?.suppliers ?? []).slice().sort((a, b) => b.revenueCents - a.revenueCents);
-    return s[0] ?? null;
-  }, [accountsData]);
-
   const accTopUnits = useMemo(() => {
     const s = (accountsData?.suppliers ?? []).slice().sort((a, b) => b.units - a.units);
     return s[0] ?? null;
@@ -642,6 +671,14 @@ export default function SuppliersPage() {
     }
   }, [accountsFrom, accountsTo, detailSupplierId]);
 
+  useEffect(() => {
+    if (pageTab !== "cuentas") return;
+    if (!detailSupplierId?.trim()) return;
+    void loadDetail();
+    void loadDebt();
+    void loadPayments();
+  }, [accountsFrom, accountsTo, detailSupplierId, loadDebt, loadDetail, loadPayments, pageTab]);
+
   const masterColumns: Column<MasterSupplier>[] = useMemo(
     () => [
       {
@@ -744,14 +781,6 @@ export default function SuppliersPage() {
         render: (row) => <span className="tabular-nums text-tl-ink">{row.units.toLocaleString("es-ES")}</span>,
       },
       {
-        key: "revenueCents",
-        label: "Ingresos venta",
-        sortable: true,
-        align: "right",
-        width: "140px",
-        render: (row) => <TablePriceCupCell cupCents={row.revenueCents} compact />,
-      },
-      {
         key: "payableCents",
         label: "A pagar prov.",
         sortable: true,
@@ -762,14 +791,6 @@ export default function SuppliersPage() {
             <TablePriceCupCell cupCents={row.payableCents ?? 0} compact />
           </span>
         ),
-      },
-      {
-        key: "profitCents",
-        label: "Ganancia est.",
-        sortable: true,
-        align: "right",
-        width: "140px",
-        render: (row) => <TablePriceCupCell cupCents={row.profitCents} compact />,
       },
       {
         key: "products",
@@ -819,14 +840,6 @@ export default function SuppliersPage() {
         render: (row) => <span className="tabular-nums text-tl-ink">{row.units.toLocaleString("es-ES")}</span>,
       },
       {
-        key: "unitPriceCents",
-        label: "Precio venta",
-        sortable: true,
-        align: "right",
-        width: "140px",
-        render: (row) => <TablePriceCupCell cupCents={row.unitPriceCents} compact />,
-      },
-      {
         key: "costCents",
         label: "Precio prov.",
         sortable: true,
@@ -852,14 +865,6 @@ export default function SuppliersPage() {
             <TablePriceCupCell cupCents={row.payableCents ?? 0} compact />
           </span>
         ),
-      },
-      {
-        key: "revenueCents",
-        label: "Ingreso",
-        sortable: true,
-        align: "right",
-        width: "140px",
-        render: (row) => <TablePriceCupCell cupCents={row.revenueCents} compact />,
       },
       {
         key: "linesMissingCost",
@@ -1128,22 +1133,83 @@ export default function SuppliersPage() {
                   <FileText className="h-5 w-5 text-tl-accent" aria-hidden />
                   <div>
                     <h2 className="text-base font-semibold text-tl-ink">Productos × Proveedores</h2>
-                    <p className="text-xs text-tl-muted">
-                      Ventas: efectivo/transferencia/total (unidades). Proveedores: total a pagar (coste × unidades).
-                    </p>
+                    <p className="text-xs text-tl-muted">Haz click en una fila para ver detalles (ventas, stock y precios).</p>
                   </div>
                 </div>
-                <input
-                  value={matrixQuery}
-                  onChange={(e) => setMatrixQuery(e.target.value)}
-                  placeholder="Buscar producto…"
-                  className="tl-input h-10 w-full sm:max-w-xs"
-                  type="search"
-                  aria-label="Buscar producto (matriz)"
-                />
+                <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row sm:items-center">
+                  <button
+                    type="button"
+                    className="tl-btn tl-btn-secondary inline-flex h-10 items-center justify-center gap-2"
+                    onClick={() => setMatrixConfigOpen((v) => !v)}
+                    aria-expanded={matrixConfigOpen}
+                  >
+                    <Layers className="h-4 w-4" aria-hidden />
+                    Configurar tabla
+                  </button>
+                  <input
+                    value={matrixQuery}
+                    onChange={(e) => setMatrixQuery(e.target.value)}
+                    placeholder="Buscar producto…"
+                    className="tl-input h-10 w-full sm:w-[320px]"
+                    type="search"
+                    aria-label="Buscar producto (matriz)"
+                  />
+                </div>
               </div>
 
               <div className="px-4 pb-4 sm:px-6">
+                {matrixConfigOpen ? (
+                  <div className="mb-4 rounded-xl border border-tl-line-subtle bg-tl-canvas p-4">
+                    <div className="flex flex-wrap items-start justify-between gap-3">
+                      <div>
+                        <p className="text-sm font-semibold text-tl-ink">Columnas de proveedores</p>
+                        <p className="mt-1 text-xs text-tl-muted">Por defecto se muestran todos. Puedes dejar solo uno.</p>
+                      </div>
+                      <div className="flex flex-wrap gap-2">
+                        <button
+                          type="button"
+                          className="tl-btn tl-btn-secondary !px-3 !py-2 text-xs"
+                          onClick={() => {
+                            const ids = (matrixData?.suppliers ?? []).map((s) => s.id);
+                            setMatrixSupplierFilter(Object.fromEntries(ids.map((id) => [id, true])));
+                          }}
+                        >
+                          Mostrar todos
+                        </button>
+                        <button
+                          type="button"
+                          className="tl-btn tl-btn-secondary !px-3 !py-2 text-xs"
+                          onClick={() => {
+                            const ids = (matrixData?.suppliers ?? []).map((s) => s.id);
+                            setMatrixSupplierFilter(Object.fromEntries(ids.map((id) => [id, false])));
+                          }}
+                          title="Si dejas todo desmarcado, se mostrarán todos (fallback)."
+                        >
+                          Ocultar todos
+                        </button>
+                      </div>
+                    </div>
+
+                    <div className="mt-3 grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
+                      {(matrixData?.suppliers ?? []).map((s) => (
+                        <label key={`cfg-${s.id}`} className="flex items-center gap-2 rounded-lg border border-tl-line-subtle bg-tl-canvas-inset px-3 py-2 text-sm">
+                          <input
+                            type="checkbox"
+                            checked={matrixSupplierFilter[s.id] !== false}
+                            onChange={(e) => {
+                              const checked = e.target.checked;
+                              setMatrixSupplierFilter((prev) => ({ ...prev, [s.id]: checked }));
+                            }}
+                          />
+                          <span className="min-w-0 truncate font-medium text-tl-ink">
+                            {s.name} {!s.active ? <span className="text-xs text-tl-muted">(Inactivo)</span> : null}
+                          </span>
+                        </label>
+                      ))}
+                    </div>
+                  </div>
+                ) : null}
+
                 <div className="overflow-x-auto">
                   <table className="w-full min-w-[1250px] border-separate border-spacing-0 text-left text-sm">
                     <thead className="sticky top-0 z-10 border-b border-tl-line bg-tl-canvas text-xs uppercase tracking-wide text-tl-muted">
@@ -1151,13 +1217,13 @@ export default function SuppliersPage() {
                         <th className="sticky left-0 z-20 bg-tl-canvas px-4 py-3 text-left border-b border-tl-line-subtle">
                           Producto
                         </th>
-                        <th className="px-4 py-3 text-left border-b border-tl-line-subtle border-l border-tl-line-subtle">
+                        <th className="px-4 py-3 text-left border-b border-tl-line-subtle border-l border-tl-line-subtle bg-sky-500/5">
                           Ventas
                         </th>
-                        {(matrixData?.suppliers ?? []).map((s) => (
+                        {visibleMatrixSuppliers.map((s) => (
                           <th
                             key={s.id}
-                            className="px-4 py-3 text-right border-b border-tl-line-subtle border-l border-tl-line-subtle whitespace-nowrap"
+                            className="px-4 py-3 text-right border-b border-tl-line-subtle border-l border-tl-line-subtle whitespace-nowrap bg-amber-500/5"
                             title={s.name}
                           >
                             {s.name}
@@ -1181,21 +1247,31 @@ export default function SuppliersPage() {
                         if (filtered.length === 0) {
                           return (
                             <tr>
-                              <td colSpan={7 + (matrixData?.suppliers?.length ?? 0)} className="px-3 py-8 text-center text-sm text-tl-muted">
+                              <td colSpan={7 + visibleMatrixSuppliers.length} className="px-3 py-8 text-center text-sm text-tl-muted">
                                 {matrixLoading ? "Cargando…" : "No hay datos para mostrar (o no coincide la búsqueda)."}
                               </td>
                             </tr>
                           );
                         }
-                        return filtered.map((r) => (
-                          <tr key={r.productId}>
+                        return filtered.map((r, idx) => (
+                          <tr
+                            key={r.productId}
+                            className={cn(
+                              "cursor-pointer hover:bg-tl-canvas/60",
+                              idx % 2 === 0 ? "bg-tl-canvas-inset/30" : "bg-transparent",
+                            )}
+                            onClick={() => {
+                              setMatrixSelected(r);
+                              setMatrixOpen(true);
+                            }}
+                          >
                             <td className="sticky left-0 z-10 bg-tl-canvas-inset px-4 py-3 border-b border-tl-line-subtle">
                               <div className="min-w-0">
                                 <p className="truncate font-medium text-tl-ink">{r.name}</p>
                                 <p className="truncate text-xs text-tl-muted">{r.sku || "—"}</p>
                               </div>
                             </td>
-                            <td className="px-4 py-3 border-b border-tl-line-subtle border-l border-tl-line-subtle">
+                            <td className="px-4 py-3 border-b border-tl-line-subtle border-l border-tl-line-subtle bg-sky-500/5">
                               <div className="flex flex-col gap-1.5">
                                 <div className="flex items-center justify-between gap-3">
                                   <span className="text-xs font-semibold text-tl-muted">Unidades</span>
@@ -1213,17 +1289,23 @@ export default function SuppliersPage() {
                                     <TablePriceCupCell cupCents={r.revenueTransferCents} compact />
                                   </span>
                                 </div>
+                                <div className="flex items-center justify-between gap-3 pt-1 border-t border-tl-line-subtle">
+                                  <span className="text-[11px] font-semibold text-tl-muted">Total</span>
+                                  <span className="tabular-nums font-semibold text-tl-ink">
+                                    <TablePriceCupCell cupCents={r.revenueCashCents + r.revenueTransferCents} compact />
+                                  </span>
+                                </div>
                               </div>
                             </td>
 
-                            {(matrixData?.suppliers ?? []).map((s) => {
+                            {visibleMatrixSuppliers.map((s) => {
                               const v = r.bySupplierPayableCents?.[s.id];
                               const missing = r.bySupplierMissingCostLines?.[s.id] ?? 0;
                               if (v == null) {
                                 return (
                                   <td
                                     key={`${r.productId}:${s.id}`}
-                                    className="px-4 py-3 text-right text-xs text-tl-muted border-b border-tl-line-subtle border-l border-tl-line-subtle"
+                                    className="px-4 py-3 text-right text-xs text-tl-muted border-b border-tl-line-subtle border-l border-tl-line-subtle bg-amber-500/5"
                                   >
                                     —
                                   </td>
@@ -1232,7 +1314,7 @@ export default function SuppliersPage() {
                               return (
                                 <td
                                   key={`${r.productId}:${s.id}`}
-                                  className="px-4 py-3 text-right border-b border-tl-line-subtle border-l border-tl-line-subtle"
+                                  className="px-4 py-3 text-right border-b border-tl-line-subtle border-l border-tl-line-subtle bg-amber-500/5"
                                 >
                                   {v === 0 && missing > 0 ? (
                                     <span className="text-xs font-semibold text-tl-warning">Sin coste</span>
@@ -1261,7 +1343,7 @@ export default function SuppliersPage() {
                         <td className="sticky left-0 z-20 bg-tl-canvas-inset px-4 py-3 font-semibold text-tl-ink border-t border-tl-line-subtle">
                           Totales
                         </td>
-                        <td className="px-4 py-3 border-t border-tl-line-subtle border-l border-tl-line-subtle">
+                        <td className="px-4 py-3 border-t border-tl-line-subtle border-l border-tl-line-subtle bg-sky-500/5">
                           <div className="flex flex-col gap-1.5">
                             <div className="flex items-center justify-between gap-3">
                               <span className="text-xs font-semibold text-tl-muted">Unidades</span>
@@ -1281,12 +1363,21 @@ export default function SuppliersPage() {
                                 <TablePriceCupCell cupCents={matrixData?.totals?.revenueTransferCents ?? 0} compact />
                               </span>
                             </div>
+                            <div className="flex items-center justify-between gap-3 pt-1 border-t border-tl-line-subtle">
+                              <span className="text-[11px] font-semibold text-tl-muted">Total</span>
+                              <span className="tabular-nums font-semibold text-tl-ink">
+                                <TablePriceCupCell
+                                  cupCents={(matrixData?.totals?.revenueCashCents ?? 0) + (matrixData?.totals?.revenueTransferCents ?? 0)}
+                                  compact
+                                />
+                              </span>
+                            </div>
                           </div>
                         </td>
-                        {(matrixData?.suppliers ?? []).map((s) => (
+                        {visibleMatrixSuppliers.map((s) => (
                           <td
                             key={`tot:${s.id}`}
-                            className="px-4 py-3 text-right font-semibold text-amber-900 dark:text-amber-100/95 border-t border-tl-line-subtle border-l border-tl-line-subtle"
+                            className="px-4 py-3 text-right font-semibold text-amber-900 dark:text-amber-100/95 border-t border-tl-line-subtle border-l border-tl-line-subtle bg-amber-500/5"
                           >
                             <TablePriceCupCell cupCents={matrixData?.totals?.bySupplierPayableCents?.[s.id] ?? 0} compact />
                           </td>
@@ -1621,13 +1712,6 @@ export default function SuppliersPage() {
                   icon={<Package className="h-4 w-4" />}
                 />
                 <KpiCard
-                  label="Ingresos venta (rango)"
-                  value={detailLoading ? "…" : <CupUsdMoney cents={detailData?.totals?.revenueCents ?? 0} compact />}
-                  hint="Solo para referencia"
-                  variant="info"
-                  icon={<TrendingUp className="h-4 w-4" />}
-                />
-                <KpiCard
                   label="Total a pagar proveedor"
                   value={detailLoading ? "…" : <CupUsdMoney cents={detailData?.totals?.payableCents ?? 0} compact />}
                   hint={
@@ -1637,20 +1721,6 @@ export default function SuppliersPage() {
                   }
                   variant="accent"
                   icon={<Wallet className="h-4 w-4" />}
-                />
-                <KpiCard
-                  label="Saldo pendiente (acumulado)"
-                  value={
-                    debtLoading ? "…" : (
-                      <CupUsdMoney
-                        cents={(debtData?.suppliers ?? []).find((x) => x.supplierId === detailSupplierId)?.pendingCents ?? 0}
-                        compact
-                      />
-                    )
-                  }
-                  hint="Ventas a costo − pagos − retiros"
-                  variant="warning"
-                  icon={<Banknote className="h-4 w-4" />}
                 />
               </div>
             </section>
@@ -1814,32 +1884,11 @@ export default function SuppliersPage() {
                     icon={<Calendar className="h-4 w-4" />}
                   />
                   <KpiCard
-                    label="Ventas (PVP)"
-                    value={detailLoading ? "…" : <CupUsdMoney cents={detailData?.totals?.revenueCents ?? 0} compact />}
-                    hint="Ingresos por venta en el rango"
-                    variant="info"
-                    icon={<TrendingUp className="h-4 w-4" />}
-                  />
-                  <KpiCard
                     label="A pagar en el rango"
                     value={detailLoading ? "…" : <CupUsdMoney cents={detailData?.totals?.payableCents ?? 0} compact />}
                     hint="Costo proveedor × unidades (rango)"
                     variant="accent"
                     icon={<Wallet className="h-4 w-4" />}
-                  />
-                  <KpiCard
-                    label="Saldo pendiente (acumulado)"
-                    value={
-                      debtLoading ? "…" : (
-                        <CupUsdMoney
-                          cents={(debtData?.suppliers ?? []).find((x) => x.supplierId === detailSupplierId)?.pendingCents ?? 0}
-                          compact
-                        />
-                      )
-                    }
-                    hint="Ventas a costo − pagos − retiros"
-                    variant="warning"
-                    icon={<Banknote className="h-4 w-4" />}
                   />
                 </div>
 
@@ -1895,15 +1944,6 @@ export default function SuppliersPage() {
                 Quién destaca en este periodo
               </h2>
               <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-                <KpiCard
-                  label="Más ingresos por ventas"
-                  value={
-                    accountsLoading ? "…" : accTopRevenue ? <CupUsdMoney cents={accTopRevenue.revenueCents} /> : "—"
-                  }
-                  hint={accTopRevenue?.supplier ?? "Sin datos"}
-                  variant="info"
-                  icon={<TrendingUp className="h-4 w-4" />}
-                />
                 <KpiCard
                   label="Más unidades vendidas"
                   value={accountsLoading ? "…" : accTopUnits ? accTopUnits.units.toLocaleString("es-ES") : "—"}
@@ -2162,6 +2202,103 @@ export default function SuppliersPage() {
           </>
         )}
       </div>
+
+      {matrixOpen && matrixSelected ? (
+        <div
+          className="fixed inset-0 z-[110] flex items-end justify-center bg-black/50 p-4 sm:items-center"
+          role="dialog"
+          aria-modal="true"
+          aria-label="Detalle de producto"
+          onClick={() => {
+            setMatrixOpen(false);
+            setMatrixSelected(null);
+          }}
+        >
+          <div
+            className="tl-glass w-full max-w-2xl rounded-2xl p-6 shadow-xl"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-start justify-between gap-4">
+              <div className="min-w-0">
+                <h2 className="truncate text-lg font-semibold text-tl-ink">{matrixSelected.name}</h2>
+                <p className="mt-1 text-xs text-tl-muted">
+                  SKU: {matrixSelected.sku || "—"} · Proveedor: {matrixSelected.supplierName ?? "—"}
+                </p>
+                <p className="mt-1 text-xs text-tl-muted">
+                  Rango: {fmtShortDate(from + "T12:00:00.000Z")} — {fmtShortDate(to + "T12:00:00.000Z")}
+                </p>
+              </div>
+              <button
+                type="button"
+                className="tl-btn tl-btn-secondary !px-3 !py-2 text-xs"
+                onClick={() => {
+                  setMatrixOpen(false);
+                  setMatrixSelected(null);
+                }}
+              >
+                Cerrar
+              </button>
+            </div>
+
+            <div className="mt-5 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+              <KpiCard
+                label="Unidades vendidas (rango)"
+                value={matrixSelected.qtyTotal.toLocaleString("es-ES")}
+                hint="Cantidad total"
+                variant="warning"
+                icon={<Package className="h-4 w-4" />}
+              />
+              <KpiCard
+                label="Stock actual"
+                value={matrixSelected.stockQty.toLocaleString("es-ES")}
+                hint={matrixSelected.stockQty <= matrixSelected.lowStockAt ? "Bajo stock" : "OK"}
+                variant={matrixSelected.stockQty <= matrixSelected.lowStockAt ? "warning" : "default"}
+                icon={<Layers className="h-4 w-4" />}
+              />
+              <KpiCard
+                label="Precio venta (CUP)"
+                value={<CupUsdMoney cents={matrixSelected.priceCents} compact />}
+                hint={`Caja: ${matrixSelected.unitsPerBox || 1} u.`}
+                variant="info"
+                icon={<TrendingUp className="h-4 w-4" />}
+              />
+              <KpiCard
+                label="Efectivo (dinero)"
+                value={<CupUsdMoney cents={matrixSelected.revenueCashCents} compact />}
+                hint="Distribución por pagos"
+                variant="default"
+                icon={<Banknote className="h-4 w-4" />}
+              />
+              <KpiCard
+                label="Transferencia (dinero)"
+                value={<CupUsdMoney cents={matrixSelected.revenueTransferCents} compact />}
+                hint="Distribución por pagos"
+                variant="default"
+                icon={<Wallet className="h-4 w-4" />}
+              />
+              <KpiCard
+                label="Ganancia (estimada)"
+                value={<CupUsdMoney cents={matrixSelected.profitCents} compact />}
+                hint={matrixSelected.marginPct == null ? "Sin margen" : `${matrixSelected.marginPct.toFixed(1).replace(/\\.0$/, "")}% margen`}
+                variant="success"
+                icon={<TrendingUp className="h-4 w-4" />}
+              />
+            </div>
+
+            <div className="mt-5 rounded-xl border border-tl-line-subtle bg-tl-canvas-inset px-4 py-3 text-xs text-tl-muted">
+              <p className="font-semibold text-tl-ink">Notas</p>
+              <p className="mt-1">
+                “Stock actual” es el stock vigente en el sistema (no histórico por fecha). “A pagar proveedor” depende de coste; si falta coste, no suma.
+              </p>
+              {matrixSelected.catalogCostCents == null ? (
+                <p className="mt-2 text-tl-warning">
+                  Este producto no tiene “coste” en catálogo. Para calcular pagos/ganancia de forma correcta, completa el coste.
+                </p>
+              ) : null}
+            </div>
+          </div>
+        </div>
+      ) : null}
 
       <ConfirmDialog
         open={confirmDeleteOpen}

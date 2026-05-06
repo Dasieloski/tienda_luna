@@ -31,6 +31,11 @@ type ProductMatrixRowRaw = {
   sku: string;
   supplier_id: string | null;
   supplier_name: string | null;
+  stock_qty: bigint;
+  low_stock_at: bigint;
+  units_per_box: bigint;
+  price_cents: bigint;
+  catalog_cost_cents: bigint | null;
   qty_total: bigint;
   revenue_cents: bigint;
   revenue_cash_cents: bigint;
@@ -103,7 +108,12 @@ export async function GET(request: Request) {
           p.name,
           p.sku,
           p."supplierId" AS supplier_id,
-          COALESCE(su.name, p."supplierName") AS supplier_name
+          COALESCE(su.name, p."supplierName") AS supplier_name,
+          p."stockQty"::bigint AS stock_qty,
+          p."lowStockAt"::bigint AS low_stock_at,
+          p."unitsPerBox"::bigint AS units_per_box,
+          p."priceCents"::bigint AS price_cents,
+          p."costCents"::bigint AS catalog_cost_cents
         FROM "Product" p
         LEFT JOIN "Supplier" su ON su.id = p."supplierId"
         WHERE p."storeId" = ${guard.session.storeId}
@@ -230,6 +240,11 @@ export async function GET(request: Request) {
         pb.sku,
         pb.supplier_id,
         pb.supplier_name,
+        pb.stock_qty,
+        pb.low_stock_at,
+        pb.units_per_box,
+        pb.price_cents,
+        pb.catalog_cost_cents,
         COALESCE(a.qty_total, 0)::bigint AS qty_total,
         COALESCE(a.revenue_cents, 0)::bigint AS revenue_cents,
         COALESCE(a.revenue_cash_cents, 0)::bigint AS revenue_cash_cents,
@@ -258,6 +273,11 @@ export async function GET(request: Request) {
       const revenueCostKnownCents = Number(r.revenue_cost_known_cents ?? BigInt(0));
       const profitCostKnownCents = Number(r.profit_cost_known_cents ?? BigInt(0));
       const linesMissingCost = Number(r.lines_missing_cost ?? BigInt(0));
+      const stockQty = Number(r.stock_qty ?? BigInt(0));
+      const lowStockAt = Number(r.low_stock_at ?? BigInt(0));
+      const unitsPerBox = Number(r.units_per_box ?? BigInt(1));
+      const priceCents = Number(r.price_cents ?? BigInt(0));
+      const catalogCostCents = r.catalog_cost_cents == null ? null : Number(r.catalog_cost_cents);
 
       const marginPct =
         revenueCostKnownCents > 0 ? (profitCostKnownCents / revenueCostKnownCents) * 100 : null;
@@ -278,6 +298,11 @@ export async function GET(request: Request) {
         sku: r.sku,
         supplierId: r.supplier_id,
         supplierName: r.supplier_name,
+        stockQty,
+        lowStockAt,
+        unitsPerBox,
+        priceCents,
+        catalogCostCents,
         qtyTotal,
         revenueCents,
         revenueCashCents,
