@@ -32,9 +32,9 @@ type ProductMatrixRowRaw = {
   supplier_id: string | null;
   supplier_name: string | null;
   qty_total: bigint;
-  qty_cash: bigint;
-  qty_transfer: bigint;
   revenue_cents: bigint;
+  revenue_cash_cents: bigint;
+  revenue_transfer_cents: bigint;
   cost_cents: bigint;
   profit_cents: bigint;
   revenue_cost_known_cents: bigint;
@@ -53,10 +53,10 @@ export async function GET(request: Request) {
       suppliers: [],
       rows: [],
       totals: {
-        qtyCash: 0,
-        qtyTransfer: 0,
         qtyTotal: 0,
         revenueCents: 0,
+        revenueCashCents: 0,
+        revenueTransferCents: 0,
         costCents: 0,
         profitCents: 0,
         linesMissingCost: 0,
@@ -177,21 +177,23 @@ export async function GET(request: Request) {
           bl.supplier_id,
           bl.supplier_name,
           COALESCE(SUM(bl.qty), 0)::bigint AS qty_total,
-          COALESCE(SUM(
-            CASE
-              WHEN (pay.cash_cents + pay.transfer_cents) > 0
-              THEN ROUND((bl.qty::numeric * pay.cash_cents::numeric) / (pay.cash_cents + pay.transfer_cents)::numeric)
-              ELSE 0
-            END
-          ), 0)::bigint AS qty_cash,
-          COALESCE(SUM(
-            CASE
-              WHEN (pay.cash_cents + pay.transfer_cents) > 0
-              THEN ROUND((bl.qty::numeric * pay.transfer_cents::numeric) / (pay.cash_cents + pay.transfer_cents)::numeric)
-              ELSE 0
-            END
-          ), 0)::bigint AS qty_transfer,
           COALESCE(SUM(bl.revenue_cents), 0)::bigint AS revenue_cents,
+          COALESCE(SUM(
+            CASE
+              WHEN pay.sale_id IS NULL THEN bl.revenue_cents
+              WHEN (pay.cash_cents + pay.transfer_cents) > 0
+              THEN ROUND((bl.revenue_cents::numeric * pay.cash_cents::numeric) / (pay.cash_cents + pay.transfer_cents)::numeric)
+              ELSE bl.revenue_cents
+            END
+          ), 0)::bigint AS revenue_cash_cents,
+          COALESCE(SUM(
+            CASE
+              WHEN pay.sale_id IS NULL THEN 0
+              WHEN (pay.cash_cents + pay.transfer_cents) > 0
+              THEN ROUND((bl.revenue_cents::numeric * pay.transfer_cents::numeric) / (pay.cash_cents + pay.transfer_cents)::numeric)
+              ELSE 0
+            END
+          ), 0)::bigint AS revenue_transfer_cents,
           COALESCE(SUM(
             CASE
               WHEN bl.cost_cents IS NULL THEN 0
@@ -219,7 +221,7 @@ export async function GET(request: Request) {
           COALESCE(SUM(CASE WHEN bl.cost_cents IS NULL THEN 1 ELSE 0 END), 0)::bigint AS lines_missing_cost
         FROM base_lines bl
         INNER JOIN sale_totals st ON st.sale_id = bl.sale_id
-        INNER JOIN pay_by_sale pay ON pay.sale_id = bl.sale_id
+        LEFT JOIN pay_by_sale pay ON pay.sale_id = bl.sale_id
         GROUP BY bl.product_id, bl.name, bl.sku, bl.supplier_id, bl.supplier_name
       )
       SELECT
@@ -229,9 +231,9 @@ export async function GET(request: Request) {
         pb.supplier_id,
         pb.supplier_name,
         COALESCE(a.qty_total, 0)::bigint AS qty_total,
-        COALESCE(a.qty_cash, 0)::bigint AS qty_cash,
-        COALESCE(a.qty_transfer, 0)::bigint AS qty_transfer,
         COALESCE(a.revenue_cents, 0)::bigint AS revenue_cents,
+        COALESCE(a.revenue_cash_cents, 0)::bigint AS revenue_cash_cents,
+        COALESCE(a.revenue_transfer_cents, 0)::bigint AS revenue_transfer_cents,
         COALESCE(a.cost_cents, 0)::bigint AS cost_cents,
         COALESCE(a.profit_cents, 0)::bigint AS profit_cents,
         COALESCE(a.revenue_cost_known_cents, 0)::bigint AS revenue_cost_known_cents,
@@ -248,9 +250,9 @@ export async function GET(request: Request) {
 
     const rows = rowsRaw.map((r) => {
       const qtyTotal = Number(r.qty_total ?? BigInt(0));
-      const qtyCash = Number(r.qty_cash ?? BigInt(0));
-      const qtyTransfer = Number(r.qty_transfer ?? BigInt(0));
       const revenueCents = Number(r.revenue_cents ?? BigInt(0));
+      const revenueCashCents = Number(r.revenue_cash_cents ?? BigInt(0));
+      const revenueTransferCents = Number(r.revenue_transfer_cents ?? BigInt(0));
       const costCents = Number(r.cost_cents ?? BigInt(0));
       const profitCents = Number(r.profit_cents ?? BigInt(0));
       const revenueCostKnownCents = Number(r.revenue_cost_known_cents ?? BigInt(0));
@@ -276,10 +278,10 @@ export async function GET(request: Request) {
         sku: r.sku,
         supplierId: r.supplier_id,
         supplierName: r.supplier_name,
-        qtyCash,
-        qtyTransfer,
         qtyTotal,
         revenueCents,
+        revenueCashCents,
+        revenueTransferCents,
         costCents,
         profitCents,
         marginPct,
@@ -291,20 +293,20 @@ export async function GET(request: Request) {
 
     const totals = rows.reduce(
       (acc, r) => {
-        acc.qtyCash += r.qtyCash;
-        acc.qtyTransfer += r.qtyTransfer;
         acc.qtyTotal += r.qtyTotal;
         acc.revenueCents += r.revenueCents;
+        acc.revenueCashCents += r.revenueCashCents;
+        acc.revenueTransferCents += r.revenueTransferCents;
         acc.costCents += r.costCents;
         acc.profitCents += r.profitCents;
         acc.linesMissingCost += r.linesMissingCost;
         return acc;
       },
       {
-        qtyCash: 0,
-        qtyTransfer: 0,
         qtyTotal: 0,
         revenueCents: 0,
+        revenueCashCents: 0,
+        revenueTransferCents: 0,
         costCents: 0,
         profitCents: 0,
         linesMissingCost: 0,
@@ -331,10 +333,10 @@ export async function GET(request: Request) {
         suppliers: [],
         rows: [],
         totals: {
-          qtyCash: 0,
-          qtyTransfer: 0,
           qtyTotal: 0,
           revenueCents: 0,
+          revenueCashCents: 0,
+          revenueTransferCents: 0,
           costCents: 0,
           profitCents: 0,
           linesMissingCost: 0,

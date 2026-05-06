@@ -70,10 +70,10 @@ type ProductMatrixResponse = {
     sku: string;
     supplierId: string | null;
     supplierName: string | null;
-    qtyCash: number;
-    qtyTransfer: number;
     qtyTotal: number;
     revenueCents: number;
+    revenueCashCents: number;
+    revenueTransferCents: number;
     costCents: number;
     profitCents: number;
     marginPct: number | null;
@@ -82,10 +82,10 @@ type ProductMatrixResponse = {
     bySupplierMissingCostLines: Record<string, number>;
   }[];
   totals: {
-    qtyCash: number;
-    qtyTransfer: number;
     qtyTotal: number;
     revenueCents: number;
+    revenueCashCents: number;
+    revenueTransferCents: number;
     costCents: number;
     profitCents: number;
     linesMissingCost: number;
@@ -1145,21 +1145,29 @@ export default function SuppliersPage() {
 
               <div className="px-4 pb-4 sm:px-6">
                 <div className="overflow-x-auto">
-                  <table className="w-full min-w-[1100px] text-left text-sm">
-                    <thead className="border-b border-tl-line bg-tl-canvas-inset text-xs uppercase tracking-wide text-tl-muted">
+                  <table className="w-full min-w-[1250px] border-separate border-spacing-0 text-left text-sm">
+                    <thead className="sticky top-0 z-10 border-b border-tl-line bg-tl-canvas text-xs uppercase tracking-wide text-tl-muted">
                       <tr>
-                        <th className="px-3 py-3">Producto</th>
-                        <th className="px-3 py-3 text-right">Efectivo (u.)</th>
-                        <th className="px-3 py-3 text-right">Transfer. (u.)</th>
-                        <th className="px-3 py-3 text-right">Total (u.)</th>
+                        <th className="sticky left-0 z-20 bg-tl-canvas px-4 py-3 text-left border-b border-tl-line-subtle">
+                          Producto
+                        </th>
+                        <th className="px-4 py-3 text-left border-b border-tl-line-subtle border-l border-tl-line-subtle">
+                          Ventas
+                        </th>
                         {(matrixData?.suppliers ?? []).map((s) => (
-                          <th key={s.id} className="px-3 py-3 text-right">
+                          <th
+                            key={s.id}
+                            className="px-4 py-3 text-right border-b border-tl-line-subtle border-l border-tl-line-subtle whitespace-nowrap"
+                            title={s.name}
+                          >
                             {s.name}
                             {!s.active ? <span className="ml-1 text-[10px] font-semibold text-tl-muted">(Inactivo)</span> : null}
                           </th>
                         ))}
-                        <th className="px-3 py-3 text-right">Ganancia</th>
-                        <th className="px-3 py-3 text-right">% margen</th>
+                        <th className="px-4 py-3 text-right border-b border-tl-line-subtle border-l border-tl-line-subtle whitespace-nowrap">
+                          Ganancia
+                        </th>
+                        <th className="px-4 py-3 text-right border-b border-tl-line-subtle whitespace-nowrap">% margen</th>
                       </tr>
                     </thead>
 
@@ -1181,28 +1189,51 @@ export default function SuppliersPage() {
                         }
                         return filtered.map((r) => (
                           <tr key={r.productId}>
-                            <td className="px-3 py-3">
+                            <td className="sticky left-0 z-10 bg-tl-canvas-inset px-4 py-3 border-b border-tl-line-subtle">
                               <div className="min-w-0">
                                 <p className="truncate font-medium text-tl-ink">{r.name}</p>
                                 <p className="truncate text-xs text-tl-muted">{r.sku || "—"}</p>
                               </div>
                             </td>
-                            <td className="px-3 py-3 text-right tabular-nums text-tl-ink">{r.qtyCash.toLocaleString("es-ES")}</td>
-                            <td className="px-3 py-3 text-right tabular-nums text-tl-ink">{r.qtyTransfer.toLocaleString("es-ES")}</td>
-                            <td className="px-3 py-3 text-right tabular-nums font-semibold text-tl-ink">{r.qtyTotal.toLocaleString("es-ES")}</td>
+                            <td className="px-4 py-3 border-b border-tl-line-subtle border-l border-tl-line-subtle">
+                              <div className="flex flex-col gap-1.5">
+                                <div className="flex items-center justify-between gap-3">
+                                  <span className="text-xs font-semibold text-tl-muted">Unidades</span>
+                                  <span className="tabular-nums font-semibold text-tl-ink">{r.qtyTotal.toLocaleString("es-ES")}</span>
+                                </div>
+                                <div className="flex items-center justify-between gap-3">
+                                  <span className="text-xs text-tl-muted">Efectivo</span>
+                                  <span className="tabular-nums text-tl-ink">
+                                    <TablePriceCupCell cupCents={r.revenueCashCents} compact />
+                                  </span>
+                                </div>
+                                <div className="flex items-center justify-between gap-3">
+                                  <span className="text-xs text-tl-muted">Transfer.</span>
+                                  <span className="tabular-nums text-tl-ink">
+                                    <TablePriceCupCell cupCents={r.revenueTransferCents} compact />
+                                  </span>
+                                </div>
+                              </div>
+                            </td>
 
                             {(matrixData?.suppliers ?? []).map((s) => {
                               const v = r.bySupplierPayableCents?.[s.id];
                               const missing = r.bySupplierMissingCostLines?.[s.id] ?? 0;
                               if (v == null) {
                                 return (
-                                  <td key={`${r.productId}:${s.id}`} className="px-3 py-3 text-right text-xs text-tl-muted">
+                                  <td
+                                    key={`${r.productId}:${s.id}`}
+                                    className="px-4 py-3 text-right text-xs text-tl-muted border-b border-tl-line-subtle border-l border-tl-line-subtle"
+                                  >
                                     —
                                   </td>
                                 );
                               }
                               return (
-                                <td key={`${r.productId}:${s.id}`} className="px-3 py-3 text-right">
+                                <td
+                                  key={`${r.productId}:${s.id}`}
+                                  className="px-4 py-3 text-right border-b border-tl-line-subtle border-l border-tl-line-subtle"
+                                >
                                   {v === 0 && missing > 0 ? (
                                     <span className="text-xs font-semibold text-tl-warning">Sin coste</span>
                                   ) : (
@@ -1214,10 +1245,10 @@ export default function SuppliersPage() {
                               );
                             })}
 
-                            <td className="px-3 py-3 text-right">
+                            <td className="px-4 py-3 text-right border-b border-tl-line-subtle border-l border-tl-line-subtle">
                               <TablePriceCupCell cupCents={r.profitCents} compact />
                             </td>
-                            <td className="px-3 py-3 text-right tabular-nums text-tl-ink">
+                            <td className="px-4 py-3 text-right tabular-nums text-tl-ink border-b border-tl-line-subtle">
                               {r.marginPct == null ? "—" : `${r.marginPct.toFixed(1).replace(/\.0$/, "")}%`}
                             </td>
                           </tr>
@@ -1227,25 +1258,43 @@ export default function SuppliersPage() {
 
                     <tfoot className="border-t border-tl-line bg-tl-canvas-inset text-sm">
                       <tr>
-                        <td className="px-3 py-3 font-semibold text-tl-ink">Totales</td>
-                        <td className="px-3 py-3 text-right tabular-nums font-semibold text-tl-ink">
-                          {(matrixData?.totals?.qtyCash ?? 0).toLocaleString("es-ES")}
+                        <td className="sticky left-0 z-20 bg-tl-canvas-inset px-4 py-3 font-semibold text-tl-ink border-t border-tl-line-subtle">
+                          Totales
                         </td>
-                        <td className="px-3 py-3 text-right tabular-nums font-semibold text-tl-ink">
-                          {(matrixData?.totals?.qtyTransfer ?? 0).toLocaleString("es-ES")}
-                        </td>
-                        <td className="px-3 py-3 text-right tabular-nums font-semibold text-tl-ink">
-                          {(matrixData?.totals?.qtyTotal ?? 0).toLocaleString("es-ES")}
+                        <td className="px-4 py-3 border-t border-tl-line-subtle border-l border-tl-line-subtle">
+                          <div className="flex flex-col gap-1.5">
+                            <div className="flex items-center justify-between gap-3">
+                              <span className="text-xs font-semibold text-tl-muted">Unidades</span>
+                              <span className="tabular-nums font-semibold text-tl-ink">
+                                {(matrixData?.totals?.qtyTotal ?? 0).toLocaleString("es-ES")}
+                              </span>
+                            </div>
+                            <div className="flex items-center justify-between gap-3">
+                              <span className="text-xs text-tl-muted">Efectivo</span>
+                              <span className="tabular-nums font-semibold text-tl-ink">
+                                <TablePriceCupCell cupCents={matrixData?.totals?.revenueCashCents ?? 0} compact />
+                              </span>
+                            </div>
+                            <div className="flex items-center justify-between gap-3">
+                              <span className="text-xs text-tl-muted">Transfer.</span>
+                              <span className="tabular-nums font-semibold text-tl-ink">
+                                <TablePriceCupCell cupCents={matrixData?.totals?.revenueTransferCents ?? 0} compact />
+                              </span>
+                            </div>
+                          </div>
                         </td>
                         {(matrixData?.suppliers ?? []).map((s) => (
-                          <td key={`tot:${s.id}`} className="px-3 py-3 text-right font-semibold text-amber-900 dark:text-amber-100/95">
+                          <td
+                            key={`tot:${s.id}`}
+                            className="px-4 py-3 text-right font-semibold text-amber-900 dark:text-amber-100/95 border-t border-tl-line-subtle border-l border-tl-line-subtle"
+                          >
                             <TablePriceCupCell cupCents={matrixData?.totals?.bySupplierPayableCents?.[s.id] ?? 0} compact />
                           </td>
                         ))}
-                        <td className="px-3 py-3 text-right font-semibold text-tl-ink">
+                        <td className="px-4 py-3 text-right font-semibold text-tl-ink border-t border-tl-line-subtle border-l border-tl-line-subtle">
                           <TablePriceCupCell cupCents={matrixData?.totals?.profitCents ?? 0} compact />
                         </td>
-                        <td className="px-3 py-3 text-right tabular-nums font-semibold text-tl-ink">
+                        <td className="px-4 py-3 text-right tabular-nums font-semibold text-tl-ink border-t border-tl-line-subtle">
                           {(() => {
                             const revenue = matrixData?.totals?.revenueCents ?? 0;
                             const profit = matrixData?.totals?.profitCents ?? 0;
