@@ -124,10 +124,21 @@ export async function GET(request: Request) {
               ) = ${dayYmd}
           )
           SELECT
-            COALESCE(SUM(CASE WHEN sl."unitCostCents" IS NOT NULL THEN sl."subtotalCents" ELSE 0 END), 0)::bigint AS revenue,
-            COALESCE(SUM(CASE WHEN sl."unitCostCents" IS NOT NULL THEN sl."unitCostCents" * sl.quantity ELSE 0 END), 0)::bigint AS cost
+            COALESCE(SUM(
+              CASE
+                WHEN COALESCE(sl."unitCostCents", p."costCents") IS NOT NULL THEN sl."subtotalCents"
+                ELSE 0
+              END
+            ), 0)::bigint AS revenue,
+            COALESCE(SUM(
+              CASE
+                WHEN COALESCE(sl."unitCostCents", p."costCents") IS NOT NULL THEN COALESCE(sl."unitCostCents", p."costCents") * sl.quantity
+                ELSE 0
+              END
+            ), 0)::bigint AS cost
           FROM "SaleLine" sl
           INNER JOIN day_sales ds ON ds.id = sl."saleId"
+          INNER JOIN "Product" p ON p.id = sl."productId"
         `,
     );
 
