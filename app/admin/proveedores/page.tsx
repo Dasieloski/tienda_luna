@@ -60,6 +60,40 @@ type SuppliersResponse = {
   };
 };
 
+type ProductMatrixResponse = {
+  meta: { dbAvailable: boolean; message?: string };
+  range: { from: string; to: string } | null;
+  suppliers: { id: string; name: string; active: boolean }[];
+  rows: {
+    productId: string;
+    name: string;
+    sku: string;
+    supplierId: string | null;
+    supplierName: string | null;
+    qtyCash: number;
+    qtyTransfer: number;
+    qtyTotal: number;
+    revenueCents: number;
+    costCents: number;
+    profitCents: number;
+    marginPct: number | null;
+    linesMissingCost: number;
+    bySupplierPayableCents: Record<string, number>;
+    bySupplierMissingCostLines: Record<string, number>;
+  }[];
+  totals: {
+    qtyCash: number;
+    qtyTransfer: number;
+    qtyTotal: number;
+    revenueCents: number;
+    costCents: number;
+    profitCents: number;
+    linesMissingCost: number;
+    bySupplierPayableCents: Record<string, number>;
+    bySupplierMissingCostLines: Record<string, number>;
+  };
+};
+
 type SupplierPayableDetailResponse = {
   meta: { dbAvailable: boolean; message?: string };
   range?: { from: string; to: string };
@@ -137,7 +171,7 @@ export default function SuppliersPage() {
     return { from: toInputDate(f), to: toInputDate(t) };
   }, []);
 
-  const [pageTab, setPageTab] = useState<"ranking" | "maestro" | "cuentas">("ranking");
+  const [pageTab, setPageTab] = useState<"productos" | "ranking" | "maestro" | "cuentas">("productos");
   const [mode, setMode] = useState<"days" | "range">("days");
   const [days, setDays] = useState(30);
   const [from, setFrom] = useState(() => todayInput);
@@ -147,6 +181,42 @@ export default function SuppliersPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [query, setQuery] = useState("");
+
+  const [matrixData, setMatrixData] = useState<ProductMatrixResponse | null>(null);
+  const [matrixLoading, setMatrixLoading] = useState(false);
+  const [matrixError, setMatrixError] = useState<string | null>(null);
+  const [matrixQuery, setMatrixQuery] = useState("");
+
+  const loadMatrix = useCallback(async () => {
+    setMatrixLoading(true);
+    setMatrixError(null);
+    try {
+      const start = new Date(from + "T12:00:00");
+      const end = new Date(to + "T12:00:00");
+      if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())) {
+        setMatrixError("Fechas no válidas.");
+        setMatrixData(null);
+        return;
+      }
+      if (start > end) {
+        setMatrixError("La fecha inicial no puede ser posterior a la final.");
+        setMatrixData(null);
+        return;
+      }
+      const params = new URLSearchParams({ from, to, includeInactiveSuppliers: "1" });
+      const res = await fetch(`/api/admin/suppliers/product-matrix?${params.toString()}`, { credentials: "include" });
+      const json = (await res.json()) as ProductMatrixResponse;
+      setMatrixData(json);
+      if (!res.ok || json.meta?.dbAvailable === false) {
+        setMatrixError(json.meta?.message ?? "No se pudo cargar el resumen por producto.");
+      }
+    } catch (e) {
+      setMatrixError(e instanceof Error ? e.message : "Error de red.");
+      setMatrixData(null);
+    } finally {
+      setMatrixLoading(false);
+    }
+  }, [from, to]);
 
   const [masters, setMasters] = useState<MasterSupplier[]>([]);
   const [mastersLoading, setMastersLoading] = useState(false);
@@ -243,6 +313,11 @@ export default function SuppliersPage() {
   useEffect(() => {
     void load();
   }, [load]);
+
+  useEffect(() => {
+    if (pageTab !== "productos") return;
+    void loadMatrix();
+  }, [pageTab, loadMatrix]);
 
   const loadAccounts = useCallback(async () => {
     setAccountsLoading(true);
@@ -902,13 +977,20 @@ export default function SuppliersPage() {
             <div className="min-w-0">
               <h1 className="tl-welcome-header">Proveedores</h1>
               <p className="mt-2 max-w-xl text-sm leading-relaxed text-tl-muted">
-                {pageTab === "ranking"
-                  ? "Compara ventas por origen de compra y revisa qué proveedor aporta más en el periodo que elijas."
-                  : pageTab === "cuentas"
-                    ? "Calcula cuánto pagar a cada proveedor según lo vendido y el precio de compra en el producto."
-                    : "Administra la lista de proveedores: son los que podrás elegir al crear productos."}
+                {pageTab === "productos"
+                  ? "Matriz por producto: ventas por método de pago y cuánto corresponde pagar a cada proveedor en el rango seleccionado."
+                  : pageTab === "ranking"
+                    ? "Compara ventas por origen de compra y revisa qué proveedor aporta más en el periodo que elijas."
+                    : pageTab === "cuentas"
+                      ? "Calcula cuánto pagar a cada proveedor según lo vendido y el precio de compra en el producto."
+                      : "Administra la lista de proveedores: son los que podrás elegir al crear productos."}
               </p>
-              {pageTab === "ranking" ? (
+              {pageTab === "productos" ? (
+                <p className="mt-2 inline-flex items-center gap-2 rounded-lg bg-tl-accent/8 px-3 py-1.5 text-xs font-medium text-tl-ink-secondary">
+                  <Calendar className="h-3.5 w-3.5 shrink-0 text-tl-accent" aria-hidden />
+                  {`${fmtShortDate(from + "T12:00:00.000Z")} — ${fmtShortDate(to + "T12:00:00.000Z")}`}
+                </p>
+              ) : pageTab === "ranking" ? (
                 <p className="mt-2 inline-flex items-center gap-2 rounded-lg bg-tl-accent/8 px-3 py-1.5 text-xs font-medium text-tl-ink-secondary">
                   <Calendar className="h-3.5 w-3.5 shrink-0 text-tl-accent" aria-hidden />
                   {periodDescription}
@@ -927,6 +1009,21 @@ export default function SuppliersPage() {
               aria-label="Sección"
             >
               <div className="flex flex-wrap gap-1 rounded-xl border border-tl-line-subtle bg-tl-canvas p-1 shadow-inner">
+                <button
+                  type="button"
+                  role="tab"
+                  aria-selected={pageTab === "productos"}
+                  onClick={() => setPageTab("productos")}
+                  className={cn(
+                    "inline-flex items-center gap-1.5 rounded-lg px-3 py-2 text-xs font-semibold transition-all sm:gap-2 sm:px-4 sm:text-sm",
+                    pageTab === "productos"
+                      ? "bg-tl-accent text-tl-accent-fg shadow-sm"
+                      : "text-tl-muted hover:text-tl-ink",
+                  )}
+                >
+                  <Package className="h-4 w-4 shrink-0" aria-hidden />
+                  Productos
+                </button>
                 <button
                   type="button"
                   role="tab"
@@ -977,7 +1074,197 @@ export default function SuppliersPage() {
           </div>
         </section>
 
-        {pageTab === "maestro" ? (
+        {pageTab === "productos" ? (
+          <>
+            {matrixError ? (
+              <div className="rounded-xl border border-tl-warning/25 bg-tl-warning-subtle px-4 py-3 text-sm text-tl-warning">
+                {matrixError}
+              </div>
+            ) : null}
+
+            <section className="rounded-2xl border border-tl-line-subtle bg-tl-canvas-inset p-4 sm:p-5">
+              <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
+                <div>
+                  <h2 className="text-sm font-semibold text-tl-ink">Rango de fechas</h2>
+                  <p className="mt-1 text-xs text-tl-muted">
+                    Se muestran todos los productos. Las ventas se calculan en el rango seleccionado (por defecto, hoy).
+                  </p>
+                </div>
+                <div className="flex flex-wrap items-end gap-3">
+                  <label className="flex flex-col gap-1 text-xs font-medium text-tl-muted">
+                    Desde
+                    <input
+                      type="date"
+                      value={from}
+                      onChange={(e) => setFrom(e.target.value)}
+                      className="tl-input h-10 px-3 text-sm"
+                    />
+                  </label>
+                  <label className="flex flex-col gap-1 text-xs font-medium text-tl-muted">
+                    Hasta
+                    <input
+                      type="date"
+                      value={to}
+                      onChange={(e) => setTo(e.target.value)}
+                      className="tl-input h-10 px-3 text-sm"
+                    />
+                  </label>
+                  <button
+                    type="button"
+                    onClick={() => void loadMatrix()}
+                    className="tl-btn tl-btn-secondary inline-flex h-10 items-center gap-2 self-end"
+                    disabled={matrixLoading}
+                  >
+                    <RefreshCw className={cn("h-4 w-4", matrixLoading && "animate-spin")} aria-hidden />
+                    Calcular
+                  </button>
+                </div>
+              </div>
+            </section>
+
+            <section className="overflow-hidden rounded-2xl border border-tl-line-subtle bg-tl-canvas-inset shadow-sm">
+              <div className="flex flex-col gap-3 border-b border-tl-line-subtle px-4 py-4 sm:flex-row sm:items-center sm:justify-between sm:px-6">
+                <div className="flex items-center gap-2">
+                  <FileText className="h-5 w-5 text-tl-accent" aria-hidden />
+                  <div>
+                    <h2 className="text-base font-semibold text-tl-ink">Productos × Proveedores</h2>
+                    <p className="text-xs text-tl-muted">
+                      Ventas: efectivo/transferencia/total (unidades). Proveedores: total a pagar (coste × unidades).
+                    </p>
+                  </div>
+                </div>
+                <input
+                  value={matrixQuery}
+                  onChange={(e) => setMatrixQuery(e.target.value)}
+                  placeholder="Buscar producto…"
+                  className="tl-input h-10 w-full sm:max-w-xs"
+                  type="search"
+                  aria-label="Buscar producto (matriz)"
+                />
+              </div>
+
+              <div className="px-4 pb-4 sm:px-6">
+                <div className="overflow-x-auto">
+                  <table className="w-full min-w-[1100px] text-left text-sm">
+                    <thead className="border-b border-tl-line bg-tl-canvas-inset text-xs uppercase tracking-wide text-tl-muted">
+                      <tr>
+                        <th className="px-3 py-3">Producto</th>
+                        <th className="px-3 py-3 text-right">Efectivo (u.)</th>
+                        <th className="px-3 py-3 text-right">Transfer. (u.)</th>
+                        <th className="px-3 py-3 text-right">Total (u.)</th>
+                        {(matrixData?.suppliers ?? []).map((s) => (
+                          <th key={s.id} className="px-3 py-3 text-right">
+                            {s.name}
+                            {!s.active ? <span className="ml-1 text-[10px] font-semibold text-tl-muted">(Inactivo)</span> : null}
+                          </th>
+                        ))}
+                        <th className="px-3 py-3 text-right">Ganancia</th>
+                        <th className="px-3 py-3 text-right">% margen</th>
+                      </tr>
+                    </thead>
+
+                    <tbody className="divide-y divide-tl-line-subtle">
+                      {(() => {
+                        const rows = matrixData?.rows ?? [];
+                        const q = matrixQuery.trim().toLowerCase();
+                        const filtered = !q
+                          ? rows
+                          : rows.filter((r) => `${r.name} ${r.sku ?? ""}`.toLowerCase().includes(q));
+                        if (filtered.length === 0) {
+                          return (
+                            <tr>
+                              <td colSpan={7 + (matrixData?.suppliers?.length ?? 0)} className="px-3 py-8 text-center text-sm text-tl-muted">
+                                {matrixLoading ? "Cargando…" : "No hay datos para mostrar (o no coincide la búsqueda)."}
+                              </td>
+                            </tr>
+                          );
+                        }
+                        return filtered.map((r) => (
+                          <tr key={r.productId}>
+                            <td className="px-3 py-3">
+                              <div className="min-w-0">
+                                <p className="truncate font-medium text-tl-ink">{r.name}</p>
+                                <p className="truncate text-xs text-tl-muted">{r.sku || "—"}</p>
+                              </div>
+                            </td>
+                            <td className="px-3 py-3 text-right tabular-nums text-tl-ink">{r.qtyCash.toLocaleString("es-ES")}</td>
+                            <td className="px-3 py-3 text-right tabular-nums text-tl-ink">{r.qtyTransfer.toLocaleString("es-ES")}</td>
+                            <td className="px-3 py-3 text-right tabular-nums font-semibold text-tl-ink">{r.qtyTotal.toLocaleString("es-ES")}</td>
+
+                            {(matrixData?.suppliers ?? []).map((s) => {
+                              const v = r.bySupplierPayableCents?.[s.id];
+                              const missing = r.bySupplierMissingCostLines?.[s.id] ?? 0;
+                              if (v == null) {
+                                return (
+                                  <td key={`${r.productId}:${s.id}`} className="px-3 py-3 text-right text-xs text-tl-muted">
+                                    —
+                                  </td>
+                                );
+                              }
+                              return (
+                                <td key={`${r.productId}:${s.id}`} className="px-3 py-3 text-right">
+                                  {v === 0 && missing > 0 ? (
+                                    <span className="text-xs font-semibold text-tl-warning">Sin coste</span>
+                                  ) : (
+                                    <span className="text-amber-900 dark:text-amber-100/95">
+                                      <TablePriceCupCell cupCents={v} compact />
+                                    </span>
+                                  )}
+                                </td>
+                              );
+                            })}
+
+                            <td className="px-3 py-3 text-right">
+                              <TablePriceCupCell cupCents={r.profitCents} compact />
+                            </td>
+                            <td className="px-3 py-3 text-right tabular-nums text-tl-ink">
+                              {r.marginPct == null ? "—" : `${r.marginPct.toFixed(1).replace(/\.0$/, "")}%`}
+                            </td>
+                          </tr>
+                        ));
+                      })()}
+                    </tbody>
+
+                    <tfoot className="border-t border-tl-line bg-tl-canvas-inset text-sm">
+                      <tr>
+                        <td className="px-3 py-3 font-semibold text-tl-ink">Totales</td>
+                        <td className="px-3 py-3 text-right tabular-nums font-semibold text-tl-ink">
+                          {(matrixData?.totals?.qtyCash ?? 0).toLocaleString("es-ES")}
+                        </td>
+                        <td className="px-3 py-3 text-right tabular-nums font-semibold text-tl-ink">
+                          {(matrixData?.totals?.qtyTransfer ?? 0).toLocaleString("es-ES")}
+                        </td>
+                        <td className="px-3 py-3 text-right tabular-nums font-semibold text-tl-ink">
+                          {(matrixData?.totals?.qtyTotal ?? 0).toLocaleString("es-ES")}
+                        </td>
+                        {(matrixData?.suppliers ?? []).map((s) => (
+                          <td key={`tot:${s.id}`} className="px-3 py-3 text-right font-semibold text-amber-900 dark:text-amber-100/95">
+                            <TablePriceCupCell cupCents={matrixData?.totals?.bySupplierPayableCents?.[s.id] ?? 0} compact />
+                          </td>
+                        ))}
+                        <td className="px-3 py-3 text-right font-semibold text-tl-ink">
+                          <TablePriceCupCell cupCents={matrixData?.totals?.profitCents ?? 0} compact />
+                        </td>
+                        <td className="px-3 py-3 text-right tabular-nums font-semibold text-tl-ink">
+                          {(() => {
+                            const revenue = matrixData?.totals?.revenueCents ?? 0;
+                            const profit = matrixData?.totals?.profitCents ?? 0;
+                            if (revenue <= 0) return "—";
+                            const pct = (profit / revenue) * 100;
+                            return `${pct.toFixed(1).replace(/\.0$/, "")}%`;
+                          })()}
+                        </td>
+                      </tr>
+                    </tfoot>
+                  </table>
+                </div>
+              </div>
+              <p className="border-t border-tl-line-subtle px-5 py-3 text-xs leading-relaxed text-tl-muted">
+                Nota: si a un producto le falta coste, no suma “a pagar proveedor” (se muestra «Sin coste»).
+              </p>
+            </section>
+          </>
+        ) : pageTab === "maestro" ? (
           <>
             {mastersErr ? (
               <div className="rounded-xl border border-tl-warning/25 bg-tl-warning-subtle px-4 py-3 text-sm text-tl-warning">
