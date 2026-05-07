@@ -246,25 +246,18 @@ export default function AdminResumenPage() {
             variant="info"
             label="Vendido total"
             value={<CupUsdMoney cents={totals.vendidoTotal} />}
-            hint="Total vendido en el rango (todas las líneas)"
             icon={<FileText className="h-5 w-5" aria-hidden />}
           />
           <KpiCard
             variant="success"
             label="Ganancia de la tienda"
             value={<CupUsdMoney cents={totals.ganancia} />}
-            hint="Solo líneas con coste en catálogo (PVP − coste)"
             icon={<FileText className="h-5 w-5" aria-hidden />}
           />
           <KpiCard
             variant="default"
             label="Margen sobre venta"
             value={totals.margenPct != null ? `${totals.margenPct.toFixed(1)} %` : "—"}
-            hint={
-              totals.vendidoConCoste > 0
-                ? `Base (con coste): ${formatCup(totals.vendidoConCoste)}`
-                : "Sin base con coste en el rango"
-            }
             icon={<FileText className="h-5 w-5" aria-hidden />}
           />
         </section>
@@ -506,10 +499,6 @@ export default function AdminResumenPage() {
             </div>
           </div>
 
-          <p className="border-t border-tl-line-subtle px-5 py-3 text-xs leading-relaxed text-tl-muted">
-            Nota: si a un producto le falta coste, no suma “a pagar proveedor” (se muestra «Sin coste»). La ganancia y el margen se calculan
-            solo con líneas que tienen coste.
-          </p>
         </section>
       </div>
     </AdminShell>
