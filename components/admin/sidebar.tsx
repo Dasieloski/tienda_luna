@@ -31,6 +31,7 @@ const NAV_ITEMS = [
     section: "Principal",
     items: [
       { href: "/admin", label: "Dashboard", icon: LayoutDashboard },
+      { href: "/admin/resumen", label: "Resumen", icon: BarChart3 },
       { href: "/admin/ventas", label: "Ventas", icon: Radio },
       { href: "/admin/historial", label: "Historial", icon: Clock },
     ],

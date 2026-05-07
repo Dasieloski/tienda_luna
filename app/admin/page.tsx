@@ -199,6 +199,13 @@ export default function AdminOverviewPage() {
                 Ventas
               </Link>
               <Link
+                href="/admin/resumen"
+                className="tl-btn tl-btn-secondary tl-interactive tl-hover-lift tl-press tl-focus !px-3 !py-2 text-xs sm:text-sm no-underline"
+              >
+                <TrendingUp className="h-4 w-4" aria-hidden />
+                Resumen
+              </Link>
+              <Link
                 href="/admin/control-diario/cuadre"
                 className="tl-btn tl-btn-primary tl-interactive tl-hover-lift tl-press tl-focus !px-3 !py-2 text-xs sm:text-sm no-underline"
               >
