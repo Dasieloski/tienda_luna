@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
-import type { Prisma } from "@prisma/client";
+import type { DailyIncidentSeverity, DailyIncidentStatus, Prisma } from "@prisma/client";
 import { prisma } from "@/lib/db";
 import { requireAdminRequest } from "@/lib/admin-auth";
 import { LOCAL_ADMIN_STORE_ID } from "@/lib/static-admin-auth";
@@ -63,8 +63,8 @@ export async function GET(request: Request) {
   const where: Prisma.DailyIncidentWhereInput = {
     storeId: guard.session.storeId,
     ...dayFilter,
-    ...(parsed.data.status ? { status: parsed.data.status as any } : {}),
-    ...(parsed.data.severity ? { severity: parsed.data.severity as any } : {}),
+    ...(parsed.data.status ? { status: parsed.data.status as DailyIncidentStatus } : {}),
+    ...(parsed.data.severity ? { severity: parsed.data.severity as DailyIncidentSeverity } : {}),
     ...(parsed.data.deviceId ? { deviceId: parsed.data.deviceId } : {}),
     ...(needle
       ? {

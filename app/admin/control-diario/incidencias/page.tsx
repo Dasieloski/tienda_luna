@@ -40,13 +40,6 @@ type ApiList = {
   nextCursor: string | null;
 };
 
-function toInputDate(date: Date) {
-  const y = date.getFullYear();
-  const m = String(date.getMonth() + 1).padStart(2, "0");
-  const d = String(date.getDate()).padStart(2, "0");
-  return `${y}-${m}-${d}`;
-}
-
 function badgeColor(status: Row["status"]) {
   if (status === "RESOLVED") return "bg-tl-success/15 text-tl-success border-tl-success/25";
   if (status === "ACK") return "bg-tl-accent/10 text-tl-accent border-tl-accent/20";
