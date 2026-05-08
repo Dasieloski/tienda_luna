@@ -7,6 +7,9 @@ import { LOCAL_ADMIN_STORE_ID } from "@/lib/static-admin-auth";
 
 const querySchema = z.object({
   date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
+  from: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
+  to: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
+  year: z.coerce.number().int().min(2000).max(2100).optional(),
   status: z.enum(["OPEN", "ACK", "RESOLVED"]).optional(),
   severity: z.enum(["INFO", "WARN", "ERROR"]).optional(),
   deviceId: z.string().trim().optional(),
@@ -31,6 +34,9 @@ export async function GET(request: Request) {
   const url = new URL(request.url);
   const parsed = querySchema.safeParse({
     date: url.searchParams.get("date") ?? undefined,
+    from: url.searchParams.get("from") ?? undefined,
+    to: url.searchParams.get("to") ?? undefined,
+    year: url.searchParams.get("year") ?? undefined,
     status: url.searchParams.get("status") ?? undefined,
     severity: url.searchParams.get("severity") ?? undefined,
     deviceId: url.searchParams.get("deviceId") ?? undefined,
@@ -41,9 +47,22 @@ export async function GET(request: Request) {
   if (!parsed.success) return NextResponse.json({ error: "INVALID_QUERY" }, { status: 400 });
 
   const needle = parsed.data.q?.toLowerCase().trim() ?? "";
+  const dayFilter: Prisma.DailyIncidentWhereInput =
+    parsed.data.date
+      ? { dayYmd: parsed.data.date }
+      : parsed.data.year
+        ? { dayYmd: { gte: `${parsed.data.year}-01-01`, lte: `${parsed.data.year}-12-31` } }
+        : parsed.data.from || parsed.data.to
+          ? {
+              dayYmd: {
+                ...(parsed.data.from ? { gte: parsed.data.from } : {}),
+                ...(parsed.data.to ? { lte: parsed.data.to } : {}),
+              },
+            }
+          : {};
   const where: Prisma.DailyIncidentWhereInput = {
     storeId: guard.session.storeId,
-    ...(parsed.data.date ? { dayYmd: parsed.data.date } : {}),
+    ...dayFilter,
     ...(parsed.data.status ? { status: parsed.data.status as any } : {}),
     ...(parsed.data.severity ? { severity: parsed.data.severity as any } : {}),
     ...(parsed.data.deviceId ? { deviceId: parsed.data.deviceId } : {}),
