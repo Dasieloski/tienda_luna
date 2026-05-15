@@ -1,6 +1,6 @@
 "use client";
 
-import { Suspense, useCallback, useEffect, useMemo, useState } from "react";
+import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { FilterIcon as Filter, RefreshCwIcon as RefreshCw } from "@/components/ui/icons";
 import { AdminShell } from "@/components/admin/admin-shell";
@@ -51,6 +51,15 @@ function fromDatetimeLocalValue(v: string) {
   return Number.isNaN(d.getTime()) ? null : d.toISOString();
 }
 
+function useDebouncedValue<T>(value: T, delayMs: number) {
+  const [debounced, setDebounced] = useState(value);
+  useEffect(() => {
+    const id = window.setTimeout(() => setDebounced(value), Math.max(0, delayMs));
+    return () => window.clearTimeout(id);
+  }, [delayMs, value]);
+  return debounced;
+}
+
 function InventoryMovementsPageClient() {
   const searchParams = useSearchParams();
   const [rows, setRows] = useState<MovementRow[]>([]);
@@ -65,6 +74,8 @@ function InventoryMovementsPageClient() {
   const [q, setQ] = useState("");
   const [from, setFrom] = useState<string>("");
   const [to, setTo] = useState<string>("");
+
+  const qDebounced = useDebouncedValue(q, 350);
 
   const [sorting, setSorting] = useState<DataTableSorting>({ key: "createdAt", dir: "desc" });
   const [filters, setFilters] = useState<DataTableFilters>({});
@@ -201,14 +212,21 @@ function InventoryMovementsPageClient() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  const inFlightRef = useRef<AbortController | null>(null);
+
   const load = useCallback(async () => {
+    inFlightRef.current?.abort();
+    const controller = new AbortController();
+    inFlightRef.current = controller;
+
     setLoading(true);
     setError(null);
     try {
       const params = new URLSearchParams();
       params.set("page", String(page));
       params.set("limit", String(limit));
-      if (q.trim()) params.set("q", q.trim());
+      const needle = qDebounced.trim();
+      if (needle.length >= 2) params.set("q", needle);
       if (from) {
         const iso = fromDatetimeLocalValue(from);
         if (iso) params.set("from", iso);
@@ -236,7 +254,10 @@ function InventoryMovementsPageClient() {
         }
       }
 
-      const res = await fetch(`/api/admin/inventory/movements?${params.toString()}`, { credentials: "include" });
+      const res = await fetch(`/api/admin/inventory/movements?${params.toString()}`, {
+        credentials: "include",
+        signal: controller.signal,
+      });
       const json = (await res.json()) as ApiResponse;
       if (!res.ok) {
         setError("No se pudo cargar Entradas/Salidas.");
@@ -253,11 +274,12 @@ function InventoryMovementsPageClient() {
       setTotal(json.meta.total ?? 0);
       setTotalPages(json.meta.totalPages ?? 1);
     } catch (e) {
+      if (e instanceof DOMException && e.name === "AbortError") return;
       setError(e instanceof Error ? e.message : "Error de red.");
     } finally {
       setLoading(false);
     }
-  }, [filters, from, limit, page, q, sorting.dir, sorting.key, to]);
+  }, [filters, from, limit, page, qDebounced, sorting.dir, sorting.key, to]);
 
   useEffect(() => {
     void load();

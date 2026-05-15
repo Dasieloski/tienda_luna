@@ -110,7 +110,7 @@ function parseCupMajorToCents(raw: string): number | null {
   const s = raw.trim().replace(",", ".").replace(/[^\d.]/g, "");
   if (!s) return null;
   const n = Number(s);
-  if (!Number.isFinite(n) || n < 0) return null;
+  if (!Number.isFinite(n) || n <= 0) return null;
   return Math.round(n * 100);
 }
 
@@ -126,6 +126,9 @@ function buildEditPayloadLines(
 
   const byPid = new Map<string, { qty: number; unit: number }>();
   for (const l of valid) {
+    if (l.unitPriceCupCents <= 0) {
+      return { ok: false, error: "El precio unitario debe ser mayor que cero en todas las líneas." };
+    }
     const cur = byPid.get(l.productId);
     if (!cur) byPid.set(l.productId, { qty: l.quantity, unit: l.unitPriceCupCents });
     else {
@@ -1326,7 +1329,10 @@ export default function SalesPage() {
                                   key={`${row.key}-u${row.unitPriceCupCents}`}
                                   onBlur={(e) => {
                                     const c = parseCupMajorToCents(e.currentTarget.value);
-                                    if (c == null) return;
+                                    if (c == null) {
+                                      e.currentTarget.value = centsToCupMajorInput(row.unitPriceCupCents);
+                                      return;
+                                    }
                                     setSaleEditLines((prev) => prev.map((r) => (r.key === row.key ? { ...r, unitPriceCupCents: c } : r)));
                                   }}
                                 />

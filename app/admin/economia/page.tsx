@@ -35,6 +35,9 @@ type EconomySummary = {
     efectivoCents: number;
     transferenciaCents: number;
     usdCents: number;
+    gastosCents: number;
+    gastosCount: number;
+    cajaNetaCents: number;
   };
   buckets: {
     method: string;
@@ -692,9 +695,12 @@ export default function EconomyPage() {
     efectivoCents: 0,
     transferenciaCents: 0,
     usdCents: 0,
+    gastosCents: 0,
+    gastosCount: 0,
+    cajaNetaCents: 0,
   };
 
-  const cajaCup = totals.efectivoCents + totals.transferenciaCents + totals.usdCents;
+  const cajaCup = totals.cajaNetaCents;
 
   const t = analytics?.totals;
   const avg = analytics?.averages;
@@ -906,9 +912,9 @@ export default function EconomyPage() {
             />
             <KpiCard
               variant="default"
-              label="Total en CUP (caja)"
+              label="Total en CUP (caja neta)"
               value={formatCup(cajaCup)}
-              hint="Efectivo + transferencias + USD en CUP"
+              hint="Ingresos − gastos del día"
               icon={<Banknote className="h-5 w-5" aria-hidden />}
             />
             <KpiCard
@@ -920,7 +926,7 @@ export default function EconomyPage() {
             />
           </div>
 
-          <div className="grid gap-4 sm:grid-cols-3">
+          <div className="grid gap-4 sm:grid-cols-4">
             <KpiCard
               variant="success"
               label="Efectivo CUP"
@@ -939,6 +945,13 @@ export default function EconomyPage() {
               value={<CupUsdMoney cents={totals.usdCents} />}
               hint="Como quedó en caja"
               icon={<DollarSign className="h-5 w-5" aria-hidden />}
+            />
+            <KpiCard
+              variant="accent"
+              label="Gastos del día"
+              value={<CupUsdMoney cents={totals.gastosCents} />}
+              hint={`${totals.gastosCount} registro(s)`}
+              icon={<ReceiptText className="h-5 w-5" aria-hidden />}
             />
           </div>
         </section>

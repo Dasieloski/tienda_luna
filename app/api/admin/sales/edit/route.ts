@@ -5,6 +5,7 @@ import { prisma } from "@/lib/db";
 import { requireAdminRequest } from "@/lib/admin-auth";
 import { upsertDailySnapshot } from "@/services/snapshot-service";
 import { auditRequestMeta } from "@/lib/audit-meta";
+import { resolveSaleLineUnitPriceCupCents } from "@/lib/pricing";
 
 const bodySchema = z.object({
   saleId: z.string().min(1), // Sale.id (server)
@@ -14,7 +15,7 @@ const bodySchema = z.object({
       z.object({
         productId: z.string().min(1),
         quantity: z.number().int().min(0),
-        unitPriceCupCentsOverride: z.number().int().min(0).optional(),
+        unitPriceCupCentsOverride: z.number().int().min(1).optional(),
       }),
     )
     .min(1)
@@ -119,7 +120,9 @@ export async function POST(request: Request) {
           select: { id: true, name: true, sku: true, costCents: true, priceCents: true },
         });
         if (!p) continue;
-        const unitPriceCents = typeof d.override === "number" ? d.override : actual.get(pid)?.unitPriceCents ?? p.priceCents;
+        const fallbackCup = actual.get(pid)?.unitPriceCents ?? p.priceCents;
+        const unitPriceCents = resolveSaleLineUnitPriceCupCents(d.override, fallbackCup);
+        if (unitPriceCents <= 0) return { ok: false as const, error: "ZERO_UNIT_PRICE" as const };
         const subtotalCents = d.quantity * unitPriceCents;
         nextTotal += subtotalCents;
         const unitCostCents = p.costCents ?? null;

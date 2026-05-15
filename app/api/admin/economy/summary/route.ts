@@ -42,6 +42,9 @@ export async function GET(request: Request) {
         efectivoCents: 0,
         transferenciaCents: 0,
         usdCents: 0,
+        gastosCents: 0,
+        gastosCount: 0,
+        cajaNetaCents: 0,
       },
       buckets: [],
     });
@@ -108,6 +111,23 @@ export async function GET(request: Request) {
         `,
     );
 
+    const expenseRows = await cacheGetOrSet(
+      `economy-summary-expenses:${session.storeId}:${dayYmd}:tz${offsetMinutes}:v1`,
+      30_000,
+      () =>
+        prisma.$queryRaw<{ total_cents: bigint; count: bigint }[]>`
+          SELECT
+            COALESCE(SUM(e."amountCents"), 0)::bigint AS total_cents,
+            COUNT(*)::bigint AS count
+          FROM "Expense" e
+          WHERE e."storeId" = ${session.storeId}
+            AND to_char(
+              date_trunc('day', (e."occurredAt" + (${offsetInterval}::interval))),
+              'YYYY-MM-DD'
+            ) = ${dayYmd}
+        `,
+    );
+
     const marginRows = await cacheGetOrSet(
       `economy-summary-margin:${session.storeId}:${dayYmd}:tz${offsetMinutes}:v1`,
       30_000,
@@ -166,6 +186,12 @@ export async function GET(request: Request) {
     const totalCents = buckets.reduce((acc, b) => acc + b.totalCents, 0);
     const ventas = buckets.reduce((acc, b) => acc + b.ventas, 0);
 
+    const er = expenseRows[0];
+    const gastosCents = Number(er?.total_cents ?? BigInt(0));
+    const gastosCount = Number(er?.count ?? BigInt(0));
+
+    const cajaNetaCents = totalCents - gastosCents;
+
     const mr = marginRows[0];
     const soldRevenueWithCostCents = Number(mr?.revenue ?? BigInt(0));
     const supplierCostCents = Number(mr?.cost ?? BigInt(0));
@@ -187,6 +213,9 @@ export async function GET(request: Request) {
         efectivoCents,
         transferenciaCents,
         usdCents,
+        gastosCents,
+        gastosCount,
+        cajaNetaCents,
         soldRevenueWithCostCents,
         supplierCostCents,
         marginCents,
@@ -209,6 +238,13 @@ export async function GET(request: Request) {
           efectivoCents: 0,
           transferenciaCents: 0,
           usdCents: 0,
+          gastosCents: 0,
+          gastosCount: 0,
+          cajaNetaCents: 0,
+          soldRevenueWithCostCents: 0,
+          supplierCostCents: 0,
+          marginCents: 0,
+          grossPlusHalfProfitCents: 0,
         },
         buckets: [],
       },

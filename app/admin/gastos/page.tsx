@@ -109,7 +109,11 @@ function splitOwnerShare(exp: { splitStrategy: string; osmarPct: number | null; 
 export default function GastosPage() {
   const toast = useToast();
   const today = useMemo(() => utcTodayYmd(), []);
-  const [fromDay, setFromDay] = useState(() => today);
+  const firstOfMonth = useMemo(() => {
+    const [y, m] = today.split("-");
+    return `${y}-${m}-01`;
+  }, [today]);
+  const [fromDay, setFromDay] = useState(() => firstOfMonth);
   const [toDay, setToDay] = useState(() => today);
   const [q, setQ] = useState("");
   const [category, setCategory] = useState<string>("");

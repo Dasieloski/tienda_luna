@@ -6,6 +6,21 @@ import { prisma } from "@/lib/db";
 import { LOCAL_ADMIN_STORE_ID, STATIC_ADMIN_JWT_SUB } from "@/lib/static-admin-auth";
 import { auditRequestMeta } from "@/lib/audit-meta";
 
+type MovementWithRelations = Prisma.InventoryMovementGetPayload<{
+  include: {
+    product: { select: { id: true; name: true; sku: true } };
+    event: {
+      select: {
+        id: true;
+        type: true;
+        deviceId: true;
+        serverTimestamp: true;
+        clientTimestamp: true;
+      };
+    };
+  };
+}>;
+
 const querySchema = z.object({
   page: z.coerce.number().int().min(1).default(1),
   limit: z.coerce.number().int().min(5).max(100).default(25),
@@ -125,7 +140,7 @@ export async function GET(request: Request) {
   const needle = q?.trim().toLowerCase() || "";
 
   let userIdsMatchingEmail: string[] = [];
-  if (needle) {
+  if (needle.length >= 3) {
     try {
       const usersHit = await prisma.user.findMany({
         where: {
@@ -209,21 +224,17 @@ export async function GET(request: Request) {
 
     const userActorIds = [
       ...new Set(
-        rows.filter((r: { actorType: string }) => r.actorType === "USER").map((r: { actorId: string }) => r.actorId),
+        rows.filter((r) => r.actorType === "USER").map((r) => r.actorId),
       ),
     ];
     const deviceActorIds = [
       ...new Set(
-        rows
-          .filter((r: { actorType: string }) => r.actorType === "DEVICE")
-          .map((r: { actorId: string }) => r.actorId),
+        rows.filter((r) => r.actorType === "DEVICE").map((r) => r.actorId),
       ),
     ];
     const deviceIdsFromEvents = [
       ...new Set(
-        rows
-          .map((r: { event: { deviceId: string } | null }) => r.event?.deviceId)
-          .filter((id): id is string => Boolean(id)),
+        rows.map((r) => r.event?.deviceId).filter((id): id is string => Boolean(id)),
       ),
     ];
     const allDeviceIds = [...new Set([...deviceActorIds, ...deviceIdsFromEvents])];
@@ -272,7 +283,7 @@ export async function GET(request: Request) {
         total,
         totalPages,
       },
-      rows: rows.map((r: any) => {
+      rows: (rows as MovementWithRelations[]).map((r) => {
         const label = actorLabel(r.actorType, r.actorId);
         const ev = r.event;
         const eventPayload =

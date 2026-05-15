@@ -13,7 +13,7 @@ import { payloadHash } from "@/lib/hash";
 import { fulfillableQuantity } from "@/lib/stock-engine";
 import { loadCatalogProducts } from "@/lib/catalog-products";
 import { allocateProductSku } from "@/lib/product-sku";
-import { unitPriceCupCentsForSale } from "@/lib/pricing";
+import { resolveSaleLineUnitPriceCupCents, unitPriceCupCentsForSale } from "@/lib/pricing";
 import type { ClientSyncEvent } from "@/types/events";
 
 type DraftSale = {
@@ -335,7 +335,8 @@ export async function processBatch(
           draft.lines.push({
             productId: resolvedProductId,
             quantity,
-            unitPriceOverrideCents: unitPriceOverride,
+            unitPriceOverrideCents:
+              unitPriceOverride !== undefined && unitPriceOverride > 0 ? unitPriceOverride : undefined,
           });
           results.push(await record({ status: "ACCEPTED" }));
           break;
@@ -491,21 +492,31 @@ export async function processBatch(
                         ? "usd"
                         : "cup")
                     : paymentMethod;
+            const catalogCup = unitPriceCupCentsForSale(
+              {
+                priceCents: p.priceCents,
+                priceUsdCents: p.priceUsdCents,
+              },
+              inferredPricingMethod,
+            );
             resolvedLines.push({
               productId: line.productId,
               requested: line.quantity,
               fulfilled,
-              unitPriceCents:
-                typeof line.unitPriceOverrideCents === "number"
-                  ? line.unitPriceOverrideCents
-                  : unitPriceCupCentsForSale(
-                      {
-                        priceCents: p.priceCents,
-                        priceUsdCents: p.priceUsdCents,
-                      },
-                      inferredPricingMethod,
-                    ),
+              unitPriceCents: resolveSaleLineUnitPriceCupCents(line.unitPriceOverrideCents, catalogCup),
             });
+          }
+
+          const invalidUnitPrice = resolvedLines.some((l) => l.fulfilled > 0 && l.unitPriceCents <= 0);
+          if (invalidUnitPrice) {
+            results.push(
+              await record({
+                status: "REJECTED",
+                correctionNote: "INVALID_ZERO_UNIT_PRICE",
+              }),
+            );
+            pendingSales.delete(saleId);
+            break;
           }
 
           const anyFulfilled = resolvedLines.some((l) => l.fulfilled > 0);
@@ -1085,7 +1096,9 @@ export async function processBatch(
             const pid = typeof obj.productId === "string" ? obj.productId.trim() : "";
             const qty = getPayloadIntNonneg(obj, "quantity");
             if (!pid || qty === undefined) continue;
-            const override = getPayloadIntNonneg(obj, "unitPriceCupCentsOverride");
+            const overrideRaw = getPayloadIntNonneg(obj, "unitPriceCupCentsOverride");
+            const override =
+              overrideRaw !== undefined && overrideRaw > 0 ? overrideRaw : undefined;
             const prev = desired.get(pid) ?? { quantity: 0 };
             desired.set(pid, {
               quantity: prev.quantity + qty,
@@ -1148,6 +1161,23 @@ export async function processBatch(
             })),
           };
 
+          let invalidZeroUnitPriceEdit = false;
+          for (const [pid, d] of desired.entries()) {
+            if (d.quantity <= 0) continue;
+            const p = productById.get(pid);
+            if (!p) continue;
+            const fallbackCup = actual.get(pid)?.unitPriceCents ?? p.priceCents;
+            const resolved = resolveSaleLineUnitPriceCupCents(d.unitPriceOverrideCents, fallbackCup);
+            if (resolved <= 0) {
+              invalidZeroUnitPriceEdit = true;
+              break;
+            }
+          }
+          if (invalidZeroUnitPriceEdit) {
+            results.push(await record({ status: "REJECTED", correctionNote: "INVALID_ZERO_UNIT_PRICE" }));
+            break;
+          }
+
           const rec = await record({ status: "ACCEPTED" });
 
           // aplicar movimientos de stock
@@ -1187,10 +1217,8 @@ export async function processBatch(
           for (const [pid, d] of desired.entries()) {
             const p = productById.get(pid);
             if (!p) continue;
-            const unitPriceCents =
-              typeof d.unitPriceOverrideCents === "number"
-                ? d.unitPriceOverrideCents
-                : actual.get(pid)?.unitPriceCents ?? p.priceCents;
+            const fallbackCup = actual.get(pid)?.unitPriceCents ?? p.priceCents;
+            const unitPriceCents = resolveSaleLineUnitPriceCupCents(d.unitPriceOverrideCents, fallbackCup);
             const qty = d.quantity;
             if (qty <= 0) continue;
             const subtotalCents = qty * unitPriceCents;

@@ -34,3 +34,23 @@ export function unitPriceCupCentsForSale(
   }
   return product.priceCents;
 }
+
+/**
+ * Precio unitario en CUP (céntimos) para persistir en `SaleLine`.
+ * Overrides ≤ 0 del cliente se ignoran y se usa `fallbackCupCents` (lista vigente en servidor,
+ * histórico de la línea o catálogo). Así un precio de venta erróneo en el POS no genera
+ * líneas a 0 CUP; los cambios de `Product.priceCents` solo afectan líneas nuevas donde aplique el fallback.
+ */
+export function resolveSaleLineUnitPriceCupCents(
+  overrideCupCents: number | undefined | null,
+  fallbackCupCents: number,
+): number {
+  if (
+    typeof overrideCupCents === "number" &&
+    Number.isInteger(overrideCupCents) &&
+    overrideCupCents > 0
+  ) {
+    return overrideCupCents;
+  }
+  return fallbackCupCents;
+}
