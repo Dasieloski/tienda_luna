@@ -7,6 +7,7 @@ import {
   ChevronRightIcon as ChevronRight,
   PackageIcon as Package,
   PencilIcon as Pencil,
+  PlusIcon as Plus,
   Trash2Icon as Trash2,
   XLucideIcon as X,
 } from "@/components/ui/icons";
@@ -150,9 +151,33 @@ export default function InventoryPage() {
   const editPrevFocusRef = useRef<HTMLElement | null>(null);
   const editDialogRef = useRef<HTMLDivElement | null>(null);
 
+  // Entrada de stock (modal)
+  const [entryOpen, setEntryOpen] = useState(false);
+  const [entryProduct, setEntryProduct] = useState<ProductRow | null>(null);
+  const [entryMode, setEntryMode] = useState<"units" | "boxes">("units");
+  const [entryQty, setEntryQty] = useState("");
+  const [entryBusy, setEntryBusy] = useState(false);
+  const [entryMsg, setEntryMsg] = useState<string | null>(null);
+
+  const entryPrevFocusRef = useRef<HTMLElement | null>(null);
+  const entryDialogRef = useRef<HTMLDivElement | null>(null);
+
   const closeEdit = useCallback(() => {
     setEditOpen(false);
   }, []);
+
+  const closeEntry = useCallback(() => {
+    setEntryOpen(false);
+  }, []);
+
+  function openEntry(p: ProductRow) {
+    entryPrevFocusRef.current = document.activeElement as HTMLElement | null;
+    setEntryProduct(p);
+    setEntryMode("units");
+    setEntryQty("");
+    setEntryMsg(null);
+    setEntryOpen(true);
+  }
 
   const loadSuppliers = useCallback(async () => {
     try {
@@ -341,6 +366,56 @@ export default function InventoryPage() {
     editPrevFocusRef.current?.focus?.();
   }, [editOpen]);
 
+  useEffect(() => {
+    if (!entryOpen) return;
+    function onKey(e: KeyboardEvent) {
+      if (e.key === "Escape") {
+        e.preventDefault();
+        closeEntry();
+        return;
+      }
+      if (e.key === "Tab") {
+        const root = entryDialogRef.current;
+        if (!root) return;
+        const nodes = Array.from(
+          root.querySelectorAll<HTMLElement>(
+            'a[href],button:not([disabled]),textarea,input:not([disabled]),select:not([disabled]),[tabindex]:not([tabindex="-1"])',
+          ),
+        ).filter((el) => !el.hasAttribute("disabled") && el.tabIndex !== -1 && el.offsetParent !== null);
+        if (nodes.length === 0) return;
+        const first = nodes[0]!;
+        const last = nodes[nodes.length - 1]!;
+        const active = document.activeElement as HTMLElement | null;
+        if (e.shiftKey) {
+          if (!active || active === first || !root.contains(active)) {
+            e.preventDefault();
+            last.focus();
+          }
+        } else {
+          if (!active || active === last || !root.contains(active)) {
+            e.preventDefault();
+            first.focus();
+          }
+        }
+      }
+    }
+    window.addEventListener("keydown", onKey);
+    window.setTimeout(() => {
+      const root = entryDialogRef.current;
+      if (!root) return;
+      const first = root.querySelector<HTMLElement>(
+        'input:not([disabled]),select:not([disabled]),textarea:not([disabled]),button:not([disabled]),[tabindex]:not([tabindex="-1"])',
+      );
+      first?.focus();
+    }, 0);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [closeEntry, entryOpen]);
+
+  useEffect(() => {
+    if (entryOpen) return;
+    entryPrevFocusRef.current?.focus?.();
+  }, [entryOpen]);
+
   function openEdit(p: ProductRow) {
     editPrevFocusRef.current = document.activeElement as HTMLElement | null;
     setEditId(p.id);
@@ -528,6 +603,54 @@ export default function InventoryPage() {
     void loadProducts();
   }
 
+  async function onSaveEntry(e: React.FormEvent) {
+    e.preventDefault();
+    if (!entryProduct) return;
+    setEntryBusy(true);
+    setEntryMsg(null);
+
+    const qty = parseInt(entryQty, 10);
+    if (Number.isNaN(qty) || qty <= 0) {
+      setEntryMsg("Por favor, introduce una cantidad válida mayor que cero.");
+      setEntryBusy(false);
+      return;
+    }
+
+    const factor = entryMode === "boxes" ? Math.max(1, entryProduct.unitsPerBox ?? 1) : 1;
+    const addedUnits = qty * factor;
+    const nextStock = entryProduct.stockQty + addedUnits;
+
+    const res = await fetch(`/api/products/${encodeURIComponent(entryProduct.id)}`, {
+      method: "PATCH",
+      credentials: "include",
+      headers: { "Content-Type": "application/json", "x-tl-csrf": "1" },
+      body: JSON.stringify({
+        stockQty: nextStock,
+      }),
+    });
+
+    setEntryBusy(false);
+    if (!res.ok) {
+      const j = (await res.json().catch(() => ({}))) as { error?: string; hint?: string };
+      setEntryMsg(
+        j.error === "RATE_LIMITED"
+          ? "Demasiados ajustes de inventario. Inténtalo más tarde."
+          : j.error === "MFA_REQUIRED"
+            ? "Se requiere verificación de dos factores (2FA)."
+            : j.hint ?? j.error ?? "No se pudo actualizar el stock del producto.",
+      );
+      return;
+    }
+
+    setEntryOpen(false);
+    toast.push({
+      kind: "success",
+      title: "Entrada registrada",
+      description: `Se añadieron ${addedUnits} unidades a "${entryProduct.name}".`,
+    });
+    void loadProducts();
+  }
+
   const totalActive = activeProducts.length;
   const totalInactive = inactiveProducts.length;
   const totalDeleted = deletedProducts.length;
@@ -641,10 +764,22 @@ export default function InventoryPage() {
     {
       key: "id",
       label: "",
-      width: "88px",
+      width: "120px",
       align: "center",
       render: (row) => (
         <div className="flex justify-center gap-1">
+          <button
+            type="button"
+            className="tl-btn tl-btn-secondary tl-interactive tl-press tl-focus !px-2 !py-1 text-tl-success"
+            title="Dar entrada a stock"
+            aria-label={`Dar entrada a ${row.name}`}
+            onClick={(ev) => {
+              ev.stopPropagation();
+              openEntry(row);
+            }}
+          >
+            <Plus className="h-3.5 w-3.5" aria-hidden />
+          </button>
           <button
             type="button"
             className="tl-btn tl-btn-secondary tl-interactive tl-press tl-focus !px-2 !py-1"
@@ -1378,6 +1513,201 @@ export default function InventoryPage() {
                   onClick={() => setEditOpen(false)}
                 >
                   Cancelar
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {entryOpen && entryProduct && (
+        <div
+          className="fixed inset-0 z-[100] flex items-end justify-center bg-black/50 p-4 sm:items-center"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="entry-product-title"
+          onClick={closeEntry}
+        >
+          <div
+            className="tl-glass max-h-[90vh] w-full max-w-md overflow-y-auto rounded-2xl p-6 shadow-xl animate-in fade-in zoom-in-95 duration-150"
+            ref={entryDialogRef}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <h2 id="entry-product-title" className="text-lg font-semibold text-tl-ink">
+                  Dar entrada a producto
+                </h2>
+                <p className="mt-1 text-xs text-tl-muted">
+                  {entryProduct.name} &bull; <span className="font-mono">{entryProduct.sku}</span>
+                </p>
+              </div>
+              <button
+                type="button"
+                className="tl-btn tl-btn-secondary !p-2"
+                aria-label="Cerrar"
+                onClick={closeEntry}
+              >
+                <X className="h-4 w-4" aria-hidden />
+              </button>
+            </div>
+
+            <form onSubmit={onSaveEntry} className="mt-6 space-y-5">
+              {/* Selector de modo: Unidades o Cajas */}
+              <div>
+                <span className="text-xs font-semibold uppercase tracking-wider text-tl-muted">
+                  Modo de entrada
+                </span>
+                <div className="mt-2 grid grid-cols-2 gap-2">
+                  <button
+                    type="button"
+                    className={cn(
+                      "tl-btn justify-center text-sm py-2.5 transition-all",
+                      entryMode === "units"
+                        ? "tl-btn-primary bg-tl-accent text-white shadow-sm"
+                        : "tl-btn-secondary border-tl-line text-tl-ink hover:bg-tl-canvas-subtle"
+                    )}
+                    onClick={() => {
+                      setEntryMode("units");
+                      setEntryMsg(null);
+                    }}
+                  >
+                    Unidades
+                  </button>
+                  <button
+                    type="button"
+                    className={cn(
+                      "tl-btn justify-center text-sm py-2.5 transition-all",
+                      entryMode === "boxes"
+                        ? "tl-btn-primary bg-tl-accent text-white shadow-sm"
+                        : "tl-btn-secondary border-tl-line text-tl-ink hover:bg-tl-canvas-subtle"
+                    )}
+                    onClick={() => {
+                      setEntryMode("boxes");
+                      setEntryMsg(null);
+                    }}
+                  >
+                    Cajas
+                  </button>
+                </div>
+              </div>
+
+              {/* Input de cantidad */}
+              <div>
+                <label className="text-xs font-semibold uppercase tracking-wider text-tl-muted" htmlFor="en-qty">
+                  {entryMode === "boxes" ? "Cantidad de cajas a agregar" : "Cantidad de unidades a agregar"}
+                </label>
+                <div className="relative mt-2">
+                  <input
+                    id="en-qty"
+                    type="number"
+                    min={1}
+                    step={1}
+                    value={entryQty}
+                    onChange={(e) => {
+                      setEntryQty(e.target.value);
+                      setEntryMsg(null);
+                    }}
+                    placeholder="Ej. 5"
+                    className="tl-input w-full pr-12 text-lg font-medium tabular-nums"
+                    required
+                  />
+                  <div className="absolute inset-y-0 right-3 flex items-center pointer-events-none text-sm text-tl-muted font-medium">
+                    {entryMode === "boxes" ? "cajas" : "uds"}
+                  </div>
+                </div>
+              </div>
+
+              {/* Información de la caja si aplica */}
+              {entryMode === "boxes" && (
+                <div className="rounded-xl border border-tl-accent/20 bg-tl-accent-subtle/30 p-3.5 text-xs text-tl-ink flex items-start gap-2.5">
+                  <div className="mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded bg-tl-accent/10">
+                    <Boxes className="h-3.5 w-3.5 text-tl-accent" aria-hidden />
+                  </div>
+                  <div>
+                    <span className="font-semibold text-tl-accent">Información del producto:</span>
+                    <p className="mt-0.5 text-tl-muted">
+                      Este producto tiene definido <span className="font-semibold text-tl-ink">{Math.max(1, entryProduct.unitsPerBox ?? 1)} unidades</span> por caja.
+                    </p>
+                    {parseInt(entryQty, 10) > 0 && (
+                      <p className="mt-1.5 font-medium text-tl-ink">
+                        Equivale a: <span className="underline decoration-tl-accent decoration-2">{parseInt(entryQty, 10) * Math.max(1, entryProduct.unitsPerBox ?? 1)} unidades</span> agregadas.
+                      </p>
+                    )}
+                  </div>
+                </div>
+              )}
+
+              {/* Comparador visual de Stock */}
+              <div className="rounded-xl border border-tl-line bg-tl-canvas-subtle p-4">
+                <span className="text-[11px] font-bold uppercase tracking-wider text-tl-muted">
+                  Previsualización del Stock
+                </span>
+                <div className="mt-3 flex items-center justify-between text-center">
+                  <div className="flex-1">
+                    <div className="text-xs text-tl-muted">Actual</div>
+                    <div className="mt-1 text-2xl font-bold tabular-nums text-tl-ink">
+                      {entryProduct.stockQty}
+                    </div>
+                  </div>
+                  
+                  <div className="px-2">
+                    <div className="flex h-7 w-7 items-center justify-center rounded-full bg-tl-success-subtle text-tl-success">
+                      <Plus className="h-4 w-4" />
+                    </div>
+                  </div>
+
+                  <div className="flex-1">
+                    <div className="text-xs text-tl-muted">Añadiendo</div>
+                    <div className="mt-1 text-2xl font-bold tabular-nums text-tl-success">
+                      {parseInt(entryQty, 10) > 0
+                        ? (entryMode === "boxes"
+                            ? parseInt(entryQty, 10) * Math.max(1, entryProduct.unitsPerBox ?? 1)
+                            : parseInt(entryQty, 10))
+                        : 0}
+                    </div>
+                  </div>
+
+                  <div className="px-2">
+                    <div className="text-tl-muted font-bold text-lg">&rarr;</div>
+                  </div>
+
+                  <div className="flex-1">
+                    <div className="text-xs font-semibold text-tl-accent">Resultante</div>
+                    <div className="mt-1 text-2xl font-black tabular-nums text-tl-accent">
+                      {entryProduct.stockQty +
+                        (parseInt(entryQty, 10) > 0
+                          ? (entryMode === "boxes"
+                              ? parseInt(entryQty, 10) * Math.max(1, entryProduct.unitsPerBox ?? 1)
+                              : parseInt(entryQty, 10))
+                          : 0)}
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {entryMsg && (
+                <p className="text-xs font-medium text-tl-warning bg-tl-warning-subtle/50 px-3 py-2 rounded-lg border border-tl-warning/20">
+                  {entryMsg}
+                </p>
+              )}
+
+              {/* Botones de acción */}
+              <div className="flex gap-3 pt-2">
+                <button
+                  type="button"
+                  className="tl-btn tl-btn-secondary flex-1 py-3 text-sm justify-center font-medium"
+                  onClick={closeEntry}
+                  disabled={entryBusy}
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="submit"
+                  disabled={entryBusy || !entryQty || parseInt(entryQty, 10) <= 0}
+                  className="tl-btn-primary flex-1 py-3 text-sm justify-center font-medium shadow-sm shadow-tl-accent/25 hover:shadow-md transition-all"
+                >
+                  {entryBusy ? "Guardando..." : "Confirmar entrada"}
                 </button>
               </div>
             </form>
