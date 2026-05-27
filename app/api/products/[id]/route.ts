@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { Prisma } from "@prisma/client";
 import { z } from "zod";
 import { requireAdminRequest } from "@/lib/admin-auth";
 import { isMissingDbColumnError } from "@/lib/db-schema-errors";
@@ -23,6 +24,7 @@ const patchSchema = z
     sku: z.string().min(1).optional(),
     name: z.string().min(1).optional(),
     priceCents: z.number().int().nonnegative().optional(),
+    transferPriceCents: z.number().int().nonnegative().optional(),
     priceUsdCents: z.number().int().nonnegative().optional(),
     unitsPerBox: z.number().int().positive().optional(),
     wholesaleCupCents: z.number().int().nonnegative().nullable().optional(),
@@ -107,6 +109,16 @@ export async function PATCH(request: Request, ctx: RouteCtx) {
 
   try {
     const product = await prisma.$transaction(async (tx) => {
+      const existingX = existing as unknown as {
+        transferPriceCents?: number;
+        priceUsdCents?: number;
+        unitsPerBox?: number;
+        wholesaleCupCents?: number | null;
+        costCents?: number | null;
+        supplierId?: string | null;
+        supplierName?: string | null;
+        deletedAt?: Date | null;
+      };
       const updated = await tx.product.update({
         where: { id },
         data: {
@@ -114,6 +126,7 @@ export async function PATCH(request: Request, ctx: RouteCtx) {
           ...(data.sku !== undefined ? { sku: data.sku } : {}),
           ...(data.name !== undefined ? { name: data.name } : {}),
           ...(data.priceCents !== undefined ? { priceCents: data.priceCents } : {}),
+          ...(data.transferPriceCents !== undefined ? { transferPriceCents: data.transferPriceCents } : {}),
           ...(data.priceUsdCents !== undefined ? { priceUsdCents: data.priceUsdCents } : {}),
           ...(data.unitsPerBox !== undefined ? { unitsPerBox: data.unitsPerBox } : {}),
           ...(data.wholesaleCupCents !== undefined ? { wholesaleCupCents: data.wholesaleCupCents } : {}),
@@ -146,38 +159,50 @@ export async function PATCH(request: Request, ctx: RouteCtx) {
         });
       }
 
-      const before = {
+      const before: Record<string, unknown> = {
         sku: existing.sku,
         name: existing.name,
         priceCents: existing.priceCents,
-        priceUsdCents: (existing as any).priceUsdCents ?? 0,
-        unitsPerBox: (existing as any).unitsPerBox ?? 1,
-        wholesaleCupCents: (existing as any).wholesaleCupCents ?? null,
-        costCents: (existing as any).costCents ?? null,
-        supplierId: (existing as any).supplierId ?? null,
-        supplierName: (existing as any).supplierName ?? null,
+        transferPriceCents: existingX.transferPriceCents ?? existing.priceCents,
+        priceUsdCents: existingX.priceUsdCents ?? 0,
+        unitsPerBox: existingX.unitsPerBox ?? 1,
+        wholesaleCupCents: existingX.wholesaleCupCents ?? null,
+        costCents: existingX.costCents ?? null,
+        supplierId: existingX.supplierId ?? null,
+        supplierName: existingX.supplierName ?? null,
         stockQty: existing.stockQty,
         lowStockAt: existing.lowStockAt,
         active: existing.active,
-        deletedAt: (existing as any).deletedAt ?? null,
+        deletedAt: existingX.deletedAt ?? null,
       };
-      const after = {
+      const updatedX = updated as unknown as {
+        transferPriceCents?: number;
+        priceUsdCents?: number;
+        unitsPerBox?: number;
+        wholesaleCupCents?: number | null;
+        costCents?: number | null;
+        supplierId?: string | null;
+        supplierName?: string | null;
+        deletedAt?: Date | null;
+      };
+      const after: Record<string, unknown> = {
         sku: updated.sku,
         name: updated.name,
         priceCents: updated.priceCents,
-        priceUsdCents: (updated as any).priceUsdCents ?? 0,
-        unitsPerBox: (updated as any).unitsPerBox ?? 1,
-        wholesaleCupCents: (updated as any).wholesaleCupCents ?? null,
-        costCents: (updated as any).costCents ?? null,
-        supplierId: (updated as any).supplierId ?? null,
-        supplierName: (updated as any).supplierName ?? null,
+        transferPriceCents: updatedX.transferPriceCents ?? updated.priceCents,
+        priceUsdCents: updatedX.priceUsdCents ?? 0,
+        unitsPerBox: updatedX.unitsPerBox ?? 1,
+        wholesaleCupCents: updatedX.wholesaleCupCents ?? null,
+        costCents: updatedX.costCents ?? null,
+        supplierId: updatedX.supplierId ?? null,
+        supplierName: updatedX.supplierName ?? null,
         stockQty: updated.stockQty,
         lowStockAt: updated.lowStockAt,
         active: updated.active,
-        deletedAt: (updated as any).deletedAt ?? null,
+        deletedAt: updatedX.deletedAt ?? null,
       };
       const changedKeys = Object.keys(after).filter(
-        (k) => (after as any)[k] !== (before as any)[k],
+        (k) => after[k] !== before[k],
       );
 
       await tx.auditLog.create({
@@ -188,9 +213,9 @@ export async function PATCH(request: Request, ctx: RouteCtx) {
           action: restoring ? "PRODUCT_RESTORE" : stockChanged ? "PRODUCT_UPDATE_STOCK" : "PRODUCT_UPDATE",
           entityType: "Product",
           entityId: updated.id,
-          before: before as any,
-          after: after as any,
-          meta: { changedKeys, ...auditRequestMeta(request) } as any,
+          before: before as Prisma.InputJsonValue,
+          after: after as Prisma.InputJsonValue,
+          meta: ({ changedKeys, ...auditRequestMeta(request) } satisfies Record<string, unknown>) as Prisma.InputJsonValue,
         },
       });
 
@@ -205,6 +230,7 @@ export async function PATCH(request: Request, ctx: RouteCtx) {
       try {
         const supports = {
           priceUsdCents: await hasProductColumn("priceUsdCents"),
+          transferPriceCents: await hasProductColumn("transferPriceCents"),
           unitsPerBox: await hasProductColumn("unitsPerBox"),
           wholesaleCupCents: await hasProductColumn("wholesaleCupCents"),
           costCents: await hasProductColumn("costCents"),
@@ -214,9 +240,9 @@ export async function PATCH(request: Request, ctx: RouteCtx) {
         };
 
         const setParts: string[] = [];
-        const params: any[] = [];
+        const params: unknown[] = [];
         let p = 1;
-        const pushSet = (sqlFrag: string, value: any) => {
+        const pushSet = (sqlFrag: string, value: unknown) => {
           setParts.push(sqlFrag.replace("?", `$${p}`));
           params.push(value);
           p += 1;
@@ -228,6 +254,8 @@ export async function PATCH(request: Request, ctx: RouteCtx) {
         if (data.sku !== undefined) pushSet(`sku = ?`, data.sku);
         if (data.name !== undefined) pushSet(`name = ?`, data.name);
         if (data.priceCents !== undefined) pushSet(`"priceCents" = ?`, data.priceCents);
+        if (data.transferPriceCents !== undefined && supports.transferPriceCents)
+          pushSet(`"transferPriceCents" = ?`, data.transferPriceCents);
         if (data.priceUsdCents !== undefined && supports.priceUsdCents)
           pushSet(`"priceUsdCents" = ?`, data.priceUsdCents);
         if (data.unitsPerBox !== undefined && supports.unitsPerBox)
@@ -268,8 +296,8 @@ export async function PATCH(request: Request, ctx: RouteCtx) {
           RETURNING *
         `;
         params.push(idParam, whereStoreId);
-        const rows = (await prisma.$queryRawUnsafe<any[]>(sql, ...params)) ?? [];
-        const updated = rows[0];
+        const rows = ((await prisma.$queryRawUnsafe<unknown[]>(sql, ...params)) ?? []) as unknown[];
+        const updated = (rows[0] ?? null) as null | Record<string, unknown>;
         if (!updated) {
           return NextResponse.json({ error: "NOT_FOUND" }, { status: 404 });
         }
@@ -280,7 +308,7 @@ export async function PATCH(request: Request, ctx: RouteCtx) {
             await prisma.inventoryMovement.create({
               data: {
                 storeId: guard.session.storeId,
-                productId: updated.id,
+                productId: String(updated.id ?? ""),
                 delta: nextStockQty - existing.stockQty,
                 beforeQty: existing.stockQty,
                 afterQty: nextStockQty,
@@ -308,10 +336,10 @@ export async function PATCH(request: Request, ctx: RouteCtx) {
                   ? "PRODUCT_UPDATE_STOCK"
                   : "PRODUCT_UPDATE",
               entityType: "Product",
-              entityId: updated.id,
-              before: { id: existing.id, sku: existing.sku, name: existing.name } as any,
-              after: { id: updated.id, sku: updated.sku, name: updated.name } as any,
-              meta: { schemaLegacy: true, appliedKeys: Object.keys(data) } as any,
+              entityId: String(updated.id ?? ""),
+              before: ({ id: existing.id, sku: existing.sku, name: existing.name } satisfies Record<string, unknown>) as Prisma.InputJsonValue,
+              after: ({ id: updated.id, sku: updated.sku, name: updated.name } satisfies Record<string, unknown>) as Prisma.InputJsonValue,
+              meta: ({ schemaLegacy: true, appliedKeys: Object.keys(data) } satisfies Record<string, unknown>) as Prisma.InputJsonValue,
             },
           });
         } catch {
@@ -381,7 +409,7 @@ export async function DELETE(request: Request, ctx: RouteCtx) {
       sku: updated.sku,
       name: updated.name,
       active: updated.active,
-      deletedAt: (updated as any).deletedAt ?? null,
+      deletedAt: (updated as unknown as { deletedAt?: Date | null }).deletedAt ?? null,
     };
     await prisma.auditLog.create({
       data: {
@@ -391,8 +419,8 @@ export async function DELETE(request: Request, ctx: RouteCtx) {
         action: "PRODUCT_ARCHIVE",
         entityType: "Product",
         entityId: existing.id,
-        before: before as any,
-        after: after as any,
+        before: (before satisfies Record<string, unknown>) as Prisma.InputJsonValue,
+        after: (after satisfies Record<string, unknown>) as Prisma.InputJsonValue,
       },
     });
     return NextResponse.json({ ok: true });

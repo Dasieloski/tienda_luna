@@ -90,6 +90,7 @@ type SearchProductHit = {
   active: boolean;
   deletedAt: string | null;
   priceCents: number;
+  transferPriceCents?: number;
   stockQty: number;
 };
 

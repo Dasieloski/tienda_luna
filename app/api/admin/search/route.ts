@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { Prisma } from "@prisma/client";
 import { z } from "zod";
 import { getSessionFromRequest, requireAdmin } from "@/lib/auth";
 import { prisma } from "@/lib/db";
@@ -8,6 +9,18 @@ const querySchema = z.object({
   q: z.string().trim().min(1).max(200),
   limit: z.coerce.number().int().min(1).max(30).optional().default(10),
 });
+
+async function hasProductColumn(columnName: string): Promise<boolean> {
+  const rows = await prisma.$queryRaw<{ ok: number }[]>`
+    SELECT 1::int AS ok
+    FROM information_schema.columns
+    WHERE table_schema = 'public'
+      AND table_name = 'Product'
+      AND column_name = ${columnName}
+    LIMIT 1
+  `;
+  return rows.length > 0;
+}
 
 function parseMoneyNeedle(q: string): { cupCents?: number; usdCents?: number } {
   const t = q.replace(/\s+/g, " ").trim().toLowerCase();
@@ -47,6 +60,21 @@ export async function GET(request: Request) {
   const money = parseMoneyNeedle(q);
 
   try {
+    const hasTransferPrice = await hasProductColumn("transferPriceCents");
+    const productSelect: Prisma.ProductSelect & { transferPriceCents?: true } = {
+      id: true,
+      sku: true,
+      name: true,
+      active: true,
+      deletedAt: true,
+      supplierName: true,
+      priceCents: true,
+      costCents: true,
+      priceUsdCents: true,
+      stockQty: true,
+      lowStockAt: true,
+    };
+    if (hasTransferPrice) productSelect.transferPriceCents = true;
     const [suppliers, products] = await Promise.all([
       prisma.supplier.findMany({
         where: {
@@ -72,6 +100,7 @@ export async function GET(request: Request) {
             ...(money.cupCents != null
               ? [
                   { priceCents: money.cupCents },
+                  ...(hasTransferPrice ? [{ transferPriceCents: money.cupCents }] : []),
                   { costCents: money.cupCents },
                   { wholesaleCupCents: money.cupCents },
                 ]
@@ -81,19 +110,7 @@ export async function GET(request: Request) {
         },
         orderBy: [{ active: "desc" }, { name: "asc" }],
         take: limit,
-        select: {
-          id: true,
-          sku: true,
-          name: true,
-          active: true,
-          deletedAt: true,
-          supplierName: true,
-          priceCents: true,
-          costCents: true,
-          priceUsdCents: true,
-          stockQty: true,
-          lowStockAt: true,
-        },
+        select: productSelect,
       }),
     ]);
 
@@ -114,6 +131,7 @@ export async function GET(request: Request) {
         deletedAt: p.deletedAt ? p.deletedAt.toISOString() : null,
         supplierName: p.supplierName ?? null,
         priceCents: p.priceCents,
+        transferPriceCents: (p as unknown as { transferPriceCents?: number }).transferPriceCents ?? p.priceCents,
         costCents: p.costCents,
         priceUsdCents: p.priceUsdCents,
         stockQty: p.stockQty,

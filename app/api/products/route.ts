@@ -57,6 +57,8 @@ const createSchema = z.object({
   sku: z.string().max(240).optional().nullable(),
   name: z.string().min(1),
   priceCents: z.number().int().nonnegative(),
+  /** Precio por transferencia (CUP céntimos). Si no se envía, se asume igual a priceCents. */
+  transferPriceCents: z.number().int().nonnegative().optional(),
   priceUsdCents: z.number().int().nonnegative().default(0),
   unitsPerBox: z.number().int().positive().default(1),
   wholesaleCupCents: z.number().int().nonnegative().optional().nullable(),
@@ -136,8 +138,10 @@ export async function POST(request: Request) {
 
   try {
     const hasUsdCol = await hasProductColumn("priceUsdCents");
+    const hasTransferCol = await hasProductColumn("transferPriceCents");
     const supports = {
       priceUsdCents: hasUsdCol,
+      transferPriceCents: hasTransferCol,
       unitsPerBox: await hasProductColumn("unitsPerBox"),
       wholesaleCupCents: await hasProductColumn("wholesaleCupCents"),
       costCents: await hasProductColumn("costCents"),
@@ -146,12 +150,17 @@ export async function POST(request: Request) {
     };
 
     /** Prisma create solo con columnas que existen en BD (evita 42703 en esquemas parciales). */
-    if (hasUsdCol) {
-      const data: Prisma.ProductUncheckedCreateInput = {
+    if (hasUsdCol && hasTransferCol) {
+      const transferPriceCentsResolved =
+        typeof parsed.data.transferPriceCents === "number"
+          ? parsed.data.transferPriceCents
+          : parsed.data.priceCents;
+      const data: Prisma.ProductUncheckedCreateInput & { transferPriceCents: number } = {
         storeId: session.storeId,
         sku,
         name: parsed.data.name,
         priceCents: parsed.data.priceCents,
+        transferPriceCents: transferPriceCentsResolved,
         stockQty: parsed.data.stockQty,
         lowStockAt: parsed.data.lowStockAt ?? 5,
         active: true,
@@ -169,6 +178,30 @@ export async function POST(request: Request) {
 
       const created = await prisma.product.create({ data });
       try {
+        const createdX = created as unknown as {
+          transferPriceCents?: number;
+          priceUsdCents?: number;
+          unitsPerBox?: number;
+          wholesaleCupCents?: number | null;
+          costCents?: number | null;
+          supplierId?: string | null;
+          supplierName?: string | null;
+        };
+        const after = {
+          sku: created.sku,
+          name: created.name,
+          priceCents: created.priceCents,
+          transferPriceCents: createdX.transferPriceCents ?? created.priceCents,
+          priceUsdCents: createdX.priceUsdCents ?? 0,
+          unitsPerBox: createdX.unitsPerBox ?? 1,
+          wholesaleCupCents: createdX.wholesaleCupCents ?? null,
+          costCents: createdX.costCents ?? null,
+          supplierId: createdX.supplierId ?? null,
+          supplierName: createdX.supplierName ?? null,
+          stockQty: created.stockQty,
+          lowStockAt: created.lowStockAt,
+          active: created.active,
+        } satisfies Record<string, unknown>;
         await prisma.auditLog.create({
           data: {
             storeId: session.storeId,
@@ -177,20 +210,7 @@ export async function POST(request: Request) {
             action: "PRODUCT_CREATE",
             entityType: "Product",
             entityId: created.id,
-            after: {
-              sku: created.sku,
-              name: created.name,
-              priceCents: created.priceCents,
-              priceUsdCents: (created as any).priceUsdCents ?? 0,
-              unitsPerBox: (created as any).unitsPerBox ?? 1,
-              wholesaleCupCents: (created as any).wholesaleCupCents ?? null,
-              costCents: (created as any).costCents ?? null,
-              supplierId: (created as any).supplierId ?? null,
-              supplierName: (created as any).supplierName ?? null,
-              stockQty: created.stockQty,
-              lowStockAt: created.lowStockAt,
-              active: created.active,
-            } as any,
+            after: after as Prisma.InputJsonValue,
           },
         });
       } catch (auditErr) {
@@ -206,11 +226,73 @@ export async function POST(request: Request) {
 
     // Modo legacy: BD sin columnas nuevas. Insertamos solo columnas existentes y devolvemos defaults.
     const lowStockAt = parsed.data.lowStockAt ?? 5;
+    const transferPriceCentsResolved =
+      typeof parsed.data.transferPriceCents === "number"
+        ? parsed.data.transferPriceCents
+        : parsed.data.priceCents;
     const supplierName = supplierNameResolved;
     const hasCostCents = supports.costCents;
     const hasSupplierNameCol = supports.supplierName;
 
-    const rows = hasCostCents && hasSupplierNameCol
+    const rows =
+      hasCostCents && hasSupplierNameCol && hasTransferCol
+        ? await prisma.$queryRaw<
+            {
+              id: string;
+              storeId: string;
+              sku: string;
+              name: string;
+              priceCents: number;
+              transferPriceCents: number;
+              costCents: number | null;
+              supplierName: string | null;
+              stockQty: number;
+              lowStockAt: number;
+              active: boolean;
+              createdAt: Date;
+              updatedAt: Date;
+            }[]
+          >`
+      INSERT INTO "Product" (
+        "storeId",
+        sku,
+        name,
+        "priceCents",
+        "transferPriceCents",
+        "costCents",
+        "supplierName",
+        "stockQty",
+        "lowStockAt",
+        active
+      )
+      VALUES (
+        ${session.storeId},
+        ${sku},
+        ${parsed.data.name},
+        ${parsed.data.priceCents},
+        ${transferPriceCentsResolved},
+        ${parsed.data.costCents ?? null},
+        ${supplierName},
+        ${parsed.data.stockQty},
+        ${lowStockAt},
+        true
+      )
+      RETURNING
+        id,
+        "storeId",
+        sku,
+        name,
+        "priceCents",
+        "transferPriceCents",
+        "costCents",
+        "supplierName",
+        "stockQty",
+        "lowStockAt",
+        active,
+        "createdAt",
+        "updatedAt"
+    `
+        : hasCostCents && hasSupplierNameCol
       ? await prisma.$queryRaw<
           {
             id: string;
@@ -263,7 +345,60 @@ export async function POST(request: Request) {
         "createdAt",
         "updatedAt"
     `
-      : hasCostCents && !hasSupplierNameCol
+      : hasCostCents && !hasSupplierNameCol && hasTransferCol
+        ? await prisma.$queryRaw<
+            {
+              id: string;
+              storeId: string;
+              sku: string;
+              name: string;
+              priceCents: number;
+              transferPriceCents: number;
+              costCents: number | null;
+              stockQty: number;
+              lowStockAt: number;
+              active: boolean;
+              createdAt: Date;
+              updatedAt: Date;
+            }[]
+          >`
+      INSERT INTO "Product" (
+        "storeId",
+        sku,
+        name,
+        "priceCents",
+        "transferPriceCents",
+        "costCents",
+        "stockQty",
+        "lowStockAt",
+        active
+      )
+      VALUES (
+        ${session.storeId},
+        ${sku},
+        ${parsed.data.name},
+        ${parsed.data.priceCents},
+        ${transferPriceCentsResolved},
+        ${parsed.data.costCents ?? null},
+        ${parsed.data.stockQty},
+        ${lowStockAt},
+        true
+      )
+      RETURNING
+        id,
+        "storeId",
+        sku,
+        name,
+        "priceCents",
+        "transferPriceCents",
+        "costCents",
+        "stockQty",
+        "lowStockAt",
+        active,
+        "createdAt",
+        "updatedAt"
+    `
+        : hasCostCents && !hasSupplierNameCol
         ? await prisma.$queryRaw<
             {
               id: string;
@@ -312,7 +447,60 @@ export async function POST(request: Request) {
         "createdAt",
         "updatedAt"
     `
-        : !hasCostCents && hasSupplierNameCol
+        : !hasCostCents && hasSupplierNameCol && hasTransferCol
+          ? await prisma.$queryRaw<
+              {
+                id: string;
+                storeId: string;
+                sku: string;
+                name: string;
+                priceCents: number;
+                transferPriceCents: number;
+                supplierName: string | null;
+                stockQty: number;
+                lowStockAt: number;
+                active: boolean;
+                createdAt: Date;
+                updatedAt: Date;
+              }[]
+            >`
+      INSERT INTO "Product" (
+        "storeId",
+        sku,
+        name,
+        "priceCents",
+        "transferPriceCents",
+        "supplierName",
+        "stockQty",
+        "lowStockAt",
+        active
+      )
+      VALUES (
+        ${session.storeId},
+        ${sku},
+        ${parsed.data.name},
+        ${parsed.data.priceCents},
+        ${transferPriceCentsResolved},
+        ${supplierName},
+        ${parsed.data.stockQty},
+        ${lowStockAt},
+        true
+      )
+      RETURNING
+        id,
+        "storeId",
+        sku,
+        name,
+        "priceCents",
+        "transferPriceCents",
+        "supplierName",
+        "stockQty",
+        "lowStockAt",
+        active,
+        "createdAt",
+        "updatedAt"
+    `
+          : !hasCostCents && hasSupplierNameCol
           ? await prisma.$queryRaw<
               {
                 id: string;
@@ -361,7 +549,56 @@ export async function POST(request: Request) {
         "createdAt",
         "updatedAt"
     `
-          : await prisma.$queryRaw<
+          : hasTransferCol
+            ? await prisma.$queryRaw<
+                {
+                  id: string;
+                  storeId: string;
+                  sku: string;
+                  name: string;
+                  priceCents: number;
+                  transferPriceCents: number;
+                  stockQty: number;
+                  lowStockAt: number;
+                  active: boolean;
+                  createdAt: Date;
+                  updatedAt: Date;
+                }[]
+              >`
+      INSERT INTO "Product" (
+        "storeId",
+        sku,
+        name,
+        "priceCents",
+        "transferPriceCents",
+        "stockQty",
+        "lowStockAt",
+        active
+      )
+      VALUES (
+        ${session.storeId},
+        ${sku},
+        ${parsed.data.name},
+        ${parsed.data.priceCents},
+        ${transferPriceCentsResolved},
+        ${parsed.data.stockQty},
+        ${lowStockAt},
+        true
+      )
+      RETURNING
+        id,
+        "storeId",
+        sku,
+        name,
+        "priceCents",
+        "transferPriceCents",
+        "stockQty",
+        "lowStockAt",
+        active,
+        "createdAt",
+        "updatedAt"
+    `
+            : await prisma.$queryRaw<
               {
                 id: string;
                 storeId: string;
@@ -420,7 +657,7 @@ export async function POST(request: Request) {
           action: "PRODUCT_CREATE",
           entityType: "Product",
           entityId: r.id,
-          after: {
+          after: ({
             sku: r.sku,
             name: r.name,
             priceCents: r.priceCents,
@@ -433,7 +670,8 @@ export async function POST(request: Request) {
             stockQty: r.stockQty,
             lowStockAt: r.lowStockAt,
             active: r.active,
-          } as any,
+            transferPriceCents: transferPriceCentsResolved,
+          }) as Prisma.InputJsonValue,
         },
       });
     } catch (auditErr) {
@@ -443,6 +681,10 @@ export async function POST(request: Request) {
     return NextResponse.json({
       product: {
         ...r,
+        transferPriceCents:
+          "transferPriceCents" in r
+            ? (r as { transferPriceCents: number }).transferPriceCents
+            : transferPriceCentsResolved,
         priceUsdCents: 0,
         unitsPerBox: 1,
         wholesaleCupCents: null,
@@ -451,7 +693,7 @@ export async function POST(request: Request) {
       },
       meta: {
         schemaLegacy: true as const,
-        hint: "BD sin columnas nuevas: priceUsdCents/unitsPerBox/wholesaleCupCents quedan en default hasta migrar.",
+        hint: "BD sin columnas nuevas: transferPriceCents/priceUsdCents/unitsPerBox/wholesaleCupCents quedan en default hasta migrar.",
       },
     });
   } catch (e) {

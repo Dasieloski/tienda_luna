@@ -46,7 +46,7 @@ En el código, solo estas rutas comprueban sesión y permiten explícitamente **
 ### 2.1 Argumento de diseño
 
 - La caja puede **perder red**; los eventos se acumulan localmente.
-- El servidor **no confía** ciegamente en importes: en ventas completadas recalcula **PVP desde el catálogo** según método de pago (ver `unitPriceCupCentsForSale` en `lib/pricing.ts` y `lib/event-processor.ts`).
+- El servidor **no confía** ciegamente en importes: en ventas completadas recalcula **PVP desde el catálogo** según método de pago / lista de precios (ver `unitPriceCupCentsForSale` en `lib/pricing.ts` y `lib/event-processor.ts`).
 - Cada evento lleva `id` (UUID) y `timestamp`; el servidor **deduplica** por `(storeId, clientEventId)` y aplica reglas anti-fraude (duplicados, picos, marcas de tiempo absurdas).
 - Así se unifica **venta**, **stock** y **cambios de catálogo** en un solo pipeline transaccional (`processBatch` → `lib/event-processor.ts`).
 
@@ -470,7 +470,7 @@ Nuevo tipo: **`SALE_COMPLETED_V2`**. Es el cierre recomendado para registrar **p
       { "method": "cash", "currency": "CUP", "amountCupCents": 50000 },
       { "method": "transfer", "currency": "CUP", "amountCupCents": 35000 }
     ],
-    "priceList": "CUP"
+    "priceList": "CUP_TRANSFER"
   }
 }
 ```
@@ -507,6 +507,17 @@ Nuevo tipo: **`SALE_COMPLETED_V2`**. Es el cierre recomendado para registrar **p
 ```
 
 Si la suma de pagos es menor que el total, la venta queda con `paymentStatus=PARTIAL` y `balanceCents>0`. Si no hay pagos, queda `CREDIT_OPEN`.
+
+**Notas sobre `priceList` (CUP efectivo vs CUP transferencia)**:
+
+- **`"CUP"`**: usa `Product.priceCents` (precio de efectivo).
+- **`"CUP_TRANSFER"`** (alias **`"TRANSFER"`**): usa `Product.transferPriceCents` (precio por transferencia).  
+  Si el producto no define `transferPriceCents`, el servidor cae a `priceCents`.
+- **`"USD"`**: usa `Product.priceUsdCents` convertido a CUP por la tasa.
+- Si **no** se envía `priceList`, el servidor puede inferirlo así:
+  - Si algún pago trae `currency="USD"` → `"USD"`.
+  - Si no hay USD y algún pago trae `method` que contiene `"transfer"` → `"CUP_TRANSFER"`.
+  - Si no → `"CUP"`.
 
 ### 5.1.2 Abonos / pagos posteriores (fiado)
 
@@ -708,8 +719,8 @@ Mismo endpoint `POST /api/sync/batch`:
 
 | `type` | Payload (resumen) | Notas |
 |--------|-------------------|--------|
-| `PRODUCT_CREATED` | `sku`, `name`, `priceCents`, opcionales `priceUsdCents`, `unitsPerBox`, `wholesaleCupCents`, `supplierName` / `supplierId`, `stockQty`, `lowStockAt`, `costCents` | Si `sku` vacío, el servidor puede asignar SKU automático. SKU duplicado → rechazo con nota tipo `DUPLICATE_SKU`. |
-| `PRODUCT_UPDATED` | `productId` + campos opcionales a cambiar | Validaciones por campo (`INVALID_*`, `UNKNOWN_PRODUCT`). |
+| `PRODUCT_CREATED` | `sku`, `name`, `priceCents`, opcional `transferPriceCents` (si falta, se asume igual a `priceCents`), opcionales `priceUsdCents`, `unitsPerBox`, `wholesaleCupCents`, `supplierName` / `supplierId`, `stockQty`, `lowStockAt`, `costCents` | Si `sku` vacío, el servidor puede asignar SKU automático. SKU duplicado → rechazo con nota tipo `DUPLICATE_SKU`. |
+| `PRODUCT_UPDATED` | `productId` + campos opcionales a cambiar (incluye `transferPriceCents`) | Validaciones por campo (`INVALID_*`, `UNKNOWN_PRODUCT`). |
 | `PRODUCT_DELETED` | `productId` | Baja **lógica** (p. ej. desactivar), no rompe referencias históricas de ventas. |
 
 ---

@@ -25,6 +25,7 @@ type ProductRow = {
   sku: string;
   name: string;
   priceCents: number;
+  transferPriceCents: number;
   priceUsdCents: number;
   unitsPerBox: number;
   wholesaleCupCents: number | null;
@@ -50,8 +51,11 @@ type ApiProductJson = ProductRow & {
 
 function normalizeProductRow(p: ApiProductJson): ProductRow {
   const fromRel = p.supplier?.name ?? null;
+  const pX = p as unknown as { transferPriceCents?: number };
   return {
     ...p,
+    transferPriceCents:
+      typeof pX.transferPriceCents === "number" ? pX.transferPriceCents : p.priceCents,
     supplierId: p.supplierId ?? p.supplier?.id ?? null,
     supplierName: fromRel ?? p.supplierName ?? null,
   };
@@ -116,6 +120,7 @@ export default function InventoryPage() {
   // Alta (SKU lo asigna el servidor)
   const [formName, setFormName] = useState("");
   const [formPriceCup, setFormPriceCup] = useState("");
+  const [formTransferPriceCup, setFormTransferPriceCup] = useState("");
   const [formPriceUsd, setFormPriceUsd] = useState("");
   const [formUnitsBox, setFormUnitsBox] = useState("1");
   const [formWholesaleCup, setFormWholesaleCup] = useState("");
@@ -135,6 +140,7 @@ export default function InventoryPage() {
   const [eSku, setESku] = useState("");
   const [eName, setEName] = useState("");
   const [ePriceCup, setEPriceCup] = useState("");
+  const [eTransferPriceCup, setETransferPriceCup] = useState("");
   const [ePriceUsd, setEPriceUsd] = useState("");
   const [eUnitsBox, setEUnitsBox] = useState("1");
   const [eWholesaleCup, setEWholesaleCup] = useState("");
@@ -422,6 +428,7 @@ export default function InventoryPage() {
     setESku(p.sku);
     setEName(p.name);
     setEPriceCup(centsToInput(p.priceCents));
+    setETransferPriceCup(centsToInput(p.transferPriceCents ?? p.priceCents));
     setEPriceUsd(
       p.priceUsdCents > 0
         ? (p.priceUsdCents / 100).toFixed(2).replace(".", ",")
@@ -447,6 +454,8 @@ export default function InventoryPage() {
     setFormMsg(null);
 
     const priceCents = parseMoneyToCents(formPriceCup);
+    const transferPriceCentsParsed =
+      formTransferPriceCup.trim() === "" ? null : parseMoneyToCents(formTransferPriceCup);
     const priceUsdCentsParsed =
       formPriceUsd.trim() === "" ? 0 : parseMoneyToCents(formPriceUsd);
     const priceUsdCents = priceUsdCentsParsed ?? -1;
@@ -458,6 +467,11 @@ export default function InventoryPage() {
 
     if (priceCents == null || priceCents < 0) {
       setFormMsg("Precio en CUP no válido.");
+      setFormBusy(false);
+      return;
+    }
+    if (formTransferPriceCup.trim() !== "" && (transferPriceCentsParsed == null || transferPriceCentsParsed < 0)) {
+      setFormMsg("Precio por transferencia no válido.");
       setFormBusy(false);
       return;
     }
@@ -489,6 +503,7 @@ export default function InventoryPage() {
       body: JSON.stringify({
         name: formName.trim(),
         priceCents,
+        transferPriceCents: transferPriceCentsParsed ?? priceCents,
         priceUsdCents,
         unitsPerBox,
         wholesaleCupCents,
@@ -521,6 +536,7 @@ export default function InventoryPage() {
     );
     setFormName("");
     setFormPriceCup("");
+    setFormTransferPriceCup("");
     setFormPriceUsd("");
     setFormUnitsBox("1");
     setFormWholesaleCup("");
@@ -538,6 +554,8 @@ export default function InventoryPage() {
     setEditMsg(null);
 
     const priceCents = parseMoneyToCents(ePriceCup);
+    const transferPriceCentsParsed =
+      eTransferPriceCup.trim() === "" ? null : parseMoneyToCents(eTransferPriceCup);
     const priceUsdCentsParsed =
       ePriceUsd.trim() === "" ? 0 : parseMoneyToCents(ePriceUsd);
     const priceUsdCents = priceUsdCentsParsed ?? -1;
@@ -548,6 +566,11 @@ export default function InventoryPage() {
 
     if (priceCents == null || priceCents < 0) {
       setEditMsg("Precio en CUP no válido.");
+      setEditBusy(false);
+      return;
+    }
+    if (eTransferPriceCup.trim() !== "" && (transferPriceCentsParsed == null || transferPriceCentsParsed < 0)) {
+      setEditMsg("Precio por transferencia no válido.");
       setEditBusy(false);
       return;
     }
@@ -575,6 +598,7 @@ export default function InventoryPage() {
         sku: eSku.trim(),
         name: eName.trim(),
         priceCents,
+        transferPriceCents: transferPriceCentsParsed ?? priceCents,
         priceUsdCents,
         unitsPerBox,
         wholesaleCupCents,
@@ -679,7 +703,7 @@ export default function InventoryPage() {
     },
     {
       key: "priceCents",
-      label: "PVP",
+      label: "PVP (efectivo)",
       sortable: true,
       align: "right",
       width: "120px",
@@ -691,6 +715,24 @@ export default function InventoryPage() {
       },
       render: (row) => (
         <TablePriceCupCell cupCents={row.priceCents} explicitUsdCents={row.priceUsdCents} compact />
+      ),
+    },
+    {
+      key: "transferPriceCents",
+      label: "PVP (transfer)",
+      sortable: true,
+      align: "right",
+      width: "132px",
+      filter: {
+        kind: "numberRange",
+        placeholderMin: "CUP min",
+        placeholderMax: "CUP max",
+        getValue: (row) => (row.transferPriceCents ?? row.priceCents) / 100,
+      },
+      render: (row) => (
+        <span className="tabular-nums text-tl-muted">
+          {formatCup(row.transferPriceCents ?? row.priceCents)}
+        </span>
       ),
     },
     {
@@ -819,12 +861,22 @@ export default function InventoryPage() {
     },
     {
       key: "priceCents",
-      label: "PVP",
+      label: "PVP (efectivo)",
       sortable: true,
       align: "right",
       width: "120px",
       render: (row) => (
         <TablePriceCupCell cupCents={row.priceCents} explicitUsdCents={row.priceUsdCents} compact />
+      ),
+    },
+    {
+      key: "transferPriceCents",
+      label: "PVP (transfer)",
+      sortable: true,
+      align: "right",
+      width: "132px",
+      render: (row) => (
+        <span className="tabular-nums text-tl-muted">{formatCup(row.transferPriceCents ?? row.priceCents)}</span>
       ),
     },
     {
@@ -1078,10 +1130,10 @@ export default function InventoryPage() {
                   required
                 />
               </div>
-              <div className="grid gap-2 sm:grid-cols-2">
+              <div className="grid gap-2 sm:grid-cols-3">
                 <div>
                   <label className="text-xs text-tl-muted" htmlFor="np-cup">
-                    Precio PVP (CUP)
+                    Precio PVP (efectivo)
                   </label>
                   <input
                     id="np-cup"
@@ -1091,6 +1143,19 @@ export default function InventoryPage() {
                     placeholder="250,00"
                     className="tl-input mt-1"
                     required
+                  />
+                </div>
+                <div>
+                  <label className="text-xs text-tl-muted" htmlFor="np-transfer">
+                    Precio PVP (transferencia)
+                  </label>
+                  <input
+                    id="np-transfer"
+                    inputMode="decimal"
+                    value={formTransferPriceCup}
+                    onChange={(e) => setFormTransferPriceCup(e.target.value)}
+                    placeholder="(por defecto = efectivo)"
+                    className="tl-input mt-1"
                   />
                 </div>
                 <div>
@@ -1346,10 +1411,10 @@ export default function InventoryPage() {
                   required
                 />
               </div>
-              <div className="grid gap-2 sm:grid-cols-2">
+              <div className="grid gap-2 sm:grid-cols-3">
                 <div>
                   <label className="text-xs text-tl-muted" htmlFor="ed-cup">
-                    PVP (CUP)
+                    PVP (efectivo)
                   </label>
                   <input
                     id="ed-cup"
@@ -1358,6 +1423,19 @@ export default function InventoryPage() {
                     onChange={(e) => setEPriceCup(e.target.value)}
                     className="tl-input mt-1"
                     required
+                  />
+                </div>
+                <div>
+                  <label className="text-xs text-tl-muted" htmlFor="ed-transfer">
+                    PVP (transferencia)
+                  </label>
+                  <input
+                    id="ed-transfer"
+                    inputMode="decimal"
+                    value={eTransferPriceCup}
+                    onChange={(e) => setETransferPriceCup(e.target.value)}
+                    placeholder="(por defecto = efectivo)"
+                    className="tl-input mt-1"
                   />
                 </div>
                 <div>

@@ -473,6 +473,7 @@ export async function processBatch(
           for (const line of draft.lines) {
             const p = productById.get(line.productId);
             if (!p) continue;
+            const pX = p as unknown as { transferPriceCents?: number };
             const available = stock.get(line.productId) ?? 0;
             const fulfilled = fulfillableQuantity(line.quantity, available);
             const inferredPricingMethod =
@@ -480,6 +481,9 @@ export async function processBatch(
                 ? "usd"
                 : priceListRaw?.toUpperCase() === "CUP"
                   ? "cup"
+                  : priceListRaw?.toUpperCase() === "CUP_TRANSFER" ||
+                      priceListRaw?.toUpperCase() === "TRANSFER"
+                    ? "transfer"
                   : isV2
                     ? // si la venta incluye pagos USD, asumimos lista USD; si no, CUP
                       (Array.isArray(paymentsRaw) &&
@@ -487,14 +491,23 @@ export async function processBatch(
                         (x) =>
                           typeof x === "object" &&
                           x !== null &&
-                          String((x as any).currency ?? "").toUpperCase() === "USD",
+                          String((x as Record<string, unknown>).currency ?? "").toUpperCase() === "USD",
                       )
                         ? "usd"
-                        : "cup")
+                        : Array.isArray(paymentsRaw) &&
+                            paymentsRaw.some(
+                              (x) =>
+                                typeof x === "object" &&
+                                x !== null &&
+                                String((x as Record<string, unknown>).method ?? "").toLowerCase().includes("transfer"),
+                            )
+                          ? "transfer"
+                          : "cup")
                     : paymentMethod;
             const catalogCup = unitPriceCupCentsForSale(
               {
                 priceCents: p.priceCents,
+                transferPriceCents: pX.transferPriceCents ?? p.priceCents,
                 priceUsdCents: p.priceUsdCents,
               },
               inferredPricingMethod,
@@ -720,7 +733,7 @@ export async function processBatch(
                 storeId: params.storeId,
                 saleId: sale.id,
                 amountCupCents: p.amountCupCents,
-                currency: p.currency as any,
+                currency: p.currency === "USD" ? "USD" : "CUP",
                 originalAmount: p.originalAmount,
                 usdRateCup: p.usdRateCup,
                 method: p.method,
@@ -824,7 +837,7 @@ export async function processBatch(
                 storeId: params.storeId,
                 saleId: existingSale.id,
                 amountCupCents,
-                currency: "USD" as any,
+                currency: "USD",
                 originalAmount: usdCents,
                 usdRateCup: rate,
                 method,
@@ -839,7 +852,7 @@ export async function processBatch(
                 storeId: params.storeId,
                 saleId: existingSale.id,
                 amountCupCents: cupCents,
-                currency: "CUP" as any,
+                currency: "CUP",
                 originalAmount: null,
                 usdRateCup: null,
                 method,
@@ -1051,7 +1064,7 @@ export async function processBatch(
             };
           });
           if (returnLines.length > 0) {
-            await tx.saleReturnLine.createMany({ data: returnLines as any });
+            await tx.saleReturnLine.createMany({ data: returnLines });
           }
 
           await tx.auditLog.create({
@@ -1062,7 +1075,7 @@ export async function processBatch(
               action: "SALE_RETURNED_DEVICE",
               entityType: "Sale",
               entityId: sale.id,
-              meta: { clientSaleId: saleId, returnTotalCents, reason } as any,
+              meta: ({ clientSaleId: saleId, returnTotalCents, reason } satisfies Record<string, unknown>) as Prisma.InputJsonValue,
             },
           });
 
@@ -1213,7 +1226,7 @@ export async function processBatch(
 
           // reconstruir líneas: para cada desired productId, fijar unitPrice (override o original o catálogo CUP)
           let nextTotal = 0;
-          const createLines: any[] = [];
+          const createLines: Prisma.SaleLineUncheckedCreateWithoutSaleInput[] = [];
           for (const [pid, d] of desired.entries()) {
             const p = productById.get(pid);
             if (!p) continue;
@@ -1275,9 +1288,9 @@ export async function processBatch(
               action: "SALE_EDITED_DEVICE",
               entityType: "Sale",
               entityId: sale.id,
-              before: beforeSnapshot as any,
-              after: { totalCents: nextTotal, balanceCents: nextBalance, lines: createLines } as any,
-              meta: { clientSaleId: saleId, note } as any,
+              before: beforeSnapshot as Prisma.InputJsonValue,
+              after: ({ totalCents: nextTotal, balanceCents: nextBalance, lines: createLines } satisfies Record<string, unknown>) as Prisma.InputJsonValue,
+              meta: ({ clientSaleId: saleId, note } satisfies Record<string, unknown>) as Prisma.InputJsonValue,
             },
           });
 
@@ -1419,7 +1432,7 @@ export async function processBatch(
               },
             });
             results.push(await record({ status: "ACCEPTED" }));
-          } catch (e) {
+          } catch {
             results.push(await record({ status: "REJECTED", correctionNote: "EXPENSE_CREATE_FAILED" }));
           }
           break;
@@ -1579,7 +1592,7 @@ export async function processBatch(
             const rec = await record({ status: "ACCEPTED" });
             await tx.fxExchange.update({ where: { id: created.id }, data: { eventId: rec.serverEventId } });
             results.push(rec);
-          } catch (e) {
+          } catch {
             // Si falla por duplicado (idempotencia por id), aceptamos.
             const rec = await record({ status: "ACCEPTED", correctionNote: "FX_EXCHANGE_DUPLICATE_IGNORED" });
             results.push(rec);
@@ -1612,6 +1625,8 @@ export async function processBatch(
             );
             break;
           }
+          const transferPriceCents =
+            getPayloadIntNonneg(ev.payload, "transferPriceCents") ?? priceCents;
           const priceUsdCents = getPayloadIntNonneg(ev.payload, "priceUsdCents") ?? 0;
           let unitsPerBox = getPayloadIntNonneg(ev.payload, "unitsPerBox") ?? 1;
           if (unitsPerBox < 1) unitsPerBox = 1;
@@ -1674,6 +1689,16 @@ export async function processBatch(
           `;
           const hasUsdCol = hasUsdColRows.length > 0;
 
+          const hasTransferColRows = await tx.$queryRaw<{ ok: number }[]>`
+            SELECT 1::int AS ok
+            FROM information_schema.columns
+            WHERE table_schema = 'public'
+              AND table_name = 'Product'
+              AND column_name = 'transferPriceCents'
+            LIMIT 1
+          `;
+          const hasTransferCol = hasTransferColRows.length > 0;
+
           const hasSupplierIdColRows = await tx.$queryRaw<{ ok: number }[]>`
             SELECT 1::int AS ok
             FROM information_schema.columns
@@ -1685,13 +1710,14 @@ export async function processBatch(
           const hasSupplierIdCol = hasSupplierIdColRows.length > 0;
 
           try {
-            const created = hasUsdCol
+            const created = hasUsdCol && hasTransferCol
               ? await tx.product.create({
                   data: {
                     storeId: params.storeId,
                     sku,
                     name,
                     priceCents,
+                    transferPriceCents,
                     priceUsdCents,
                     unitsPerBox,
                     wholesaleCupCents,
@@ -1759,6 +1785,7 @@ export async function processBatch(
                   if (!r) throw new Error("DB_INSERT_FAILED");
                   return {
                     ...r,
+                    transferPriceCents: priceCents,
                     priceUsdCents: 0,
                     unitsPerBox: 1,
                     wholesaleCupCents: null,
@@ -1809,7 +1836,7 @@ export async function processBatch(
           }
 
           const pl = ev.payload as Record<string, unknown>;
-          const data: Prisma.ProductUpdateInput = {};
+          const data: Prisma.ProductUpdateInput & { transferPriceCents?: number } = {};
 
           if ("sku" in pl && typeof pl.sku === "string") {
             const s = pl.sku.trim();
@@ -1849,6 +1876,37 @@ export async function processBatch(
               break;
             }
             data.priceCents = v;
+          }
+          if ("transferPriceCents" in pl) {
+            const hasTransferColRows = await tx.$queryRaw<{ ok: number }[]>`
+              SELECT 1::int AS ok
+              FROM information_schema.columns
+              WHERE table_schema = 'public'
+                AND table_name = 'Product'
+                AND column_name = 'transferPriceCents'
+              LIMIT 1
+            `;
+            const hasTransferCol = hasTransferColRows.length > 0;
+            if (!hasTransferCol) {
+              results.push(
+                await record({
+                  status: "REJECTED",
+                  correctionNote: "DATABASE_SCHEMA_MISMATCH_TRANSFER_PRICE",
+                }),
+              );
+              break;
+            }
+            const v = getPayloadIntNonneg(pl, "transferPriceCents");
+            if (v === undefined) {
+              results.push(
+                await record({
+                  status: "REJECTED",
+                  correctionNote: "INVALID_TRANSFER_PRICE_CENTS",
+                }),
+              );
+              break;
+            }
+            data.transferPriceCents = v;
           }
           if ("priceUsdCents" in pl) {
             const v = getPayloadIntNonneg(pl, "priceUsdCents");

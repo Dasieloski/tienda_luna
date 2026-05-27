@@ -14,10 +14,11 @@ export function cupCentsFromUsdCents(usdCents: number): number {
 /**
  * Precio unitario en céntimos CUP que usa el servidor al cerrar la venta.
  * - Pagos en USD: `priceUsdCents` → CUP; si no hay USD explícito, se usa `priceCents` (lista solo en CUP).
- * - Resto: `priceCents` (PVP CUP).
+ * - Pagos por transferencia (CUP): `transferPriceCents`; si no existe/está en 0, se cae a `priceCents`.
+ * - Resto (efectivo CUP): `priceCents`.
  */
 export function unitPriceCupCentsForSale(
-  product: { priceCents: number; priceUsdCents: number },
+  product: { priceCents: number; transferPriceCents?: number; priceUsdCents: number },
   paymentMethodRaw: string | undefined,
 ): number {
   const m = (paymentMethodRaw ?? "").toLowerCase();
@@ -26,7 +27,16 @@ export function unitPriceCupCentsForSale(
     m.includes("dolar") ||
     m.includes("dólar") ||
     m.includes("cash_usd");
+  const isTransfer =
+    m.includes("transfer") ||
+    m.includes("transf") ||
+    m.includes("bank") ||
+    m.includes("banco");
   if (!isUsd) {
+    if (isTransfer) {
+      const tp = typeof product.transferPriceCents === "number" ? product.transferPriceCents : 0;
+      return tp > 0 ? tp : product.priceCents;
+    }
     return product.priceCents;
   }
   if (product.priceUsdCents > 0) {

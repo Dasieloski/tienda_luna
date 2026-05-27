@@ -98,9 +98,10 @@ export type SaleCompletedV2Payload = {
   /**
    * Opcional: cómo fijar precios al cerrar (si no se envía, el servidor puede inferirlo).
    * - "CUP": usar PVP CUP (priceCents)
+   * - "CUP_TRANSFER" | "TRANSFER": usar PVP por transferencia (transferPriceCents)
    * - "USD": usar PVP USD convertido a CUP (priceUsdCents -> CUP)
    */
-  priceList?: "CUP" | "USD";
+  priceList?: "CUP" | "CUP_TRANSFER" | "TRANSFER" | "USD";
   /** Compat: etiqueta libre para auditoría. */
   note?: string;
 };
@@ -202,6 +203,7 @@ export type ProductCreatedPayload = {
   sku: string;
   name: string;
   priceCents: number;
+  transferPriceCents?: number;
   priceUsdCents?: number;
   unitsPerBox?: number;
   wholesaleCupCents?: number | null;
@@ -216,6 +218,7 @@ export type ProductUpdatedPayload = {
   sku?: string;
   name?: string;
   priceCents?: number;
+  transferPriceCents?: number;
   priceUsdCents?: number;
   unitsPerBox?: number;
   wholesaleCupCents?: number | null;

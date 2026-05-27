@@ -191,6 +191,9 @@ model Product {
   name        String
   /// PVP al público en CUP (céntimos)
   priceCents  Int      @default(0)
+  /// PVP al público en CUP (céntimos) cuando el pago es por transferencia.
+  /// Nota: no se puede expresar "default = priceCents" en Prisma; la app lo rellena al crear si falta.
+  transferPriceCents Int @default(0)
   /// PVP al público en USD (centavos de dólar, ej. 199 = US$1.99)
   priceUsdCents Int    @default(0)
   /// Unidades que trae una caja (referencia de compra / etiqueta)

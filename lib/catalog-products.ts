@@ -35,10 +35,11 @@ export async function loadCatalogProducts(
   const includeDeleted = opts?.includeDeleted === true;
 
   const hasUsd = await hasColumn(db, "priceUsdCents");
+  const hasTransfer = await hasColumn(db, "transferPriceCents");
   const hasDeletedAt = await hasColumn(db, "deletedAt");
   const hasSupplierId = await hasColumn(db, "supplierId");
 
-  if (hasUsd) {
+  if (hasUsd && hasTransfer) {
     return await db.product.findMany({
       where: {
         storeId,
@@ -52,53 +53,57 @@ export async function loadCatalogProducts(
     });
   }
 
-  const legacy = await db.$queryRaw<
-    {
-      id: string;
-      storeId: string;
-      sku: string;
-      name: string;
-      priceCents: number;
-      costCents: number | null;
-      supplierName: string | null;
-      stockQty: number;
-      lowStockAt: number;
-      active: boolean;
-      createdAt: Date;
-      updatedAt: Date;
-    }[]
-  >`
-    SELECT
-      id,
-      "storeId",
-      sku,
-      name,
-      "priceCents",
-      "costCents",
-      "supplierName",
-      "stockQty",
-      "lowStockAt",
-      active,
-      "createdAt",
-      "updatedAt"
+  // Modo legacy/parcial: construir SELECT solo con columnas que existen.
+  const cols: string[] = [
+    "id",
+    `"storeId"`,
+    "sku",
+    "name",
+    `"priceCents"`,
+  ];
+  if (hasTransfer) cols.push(`"transferPriceCents"`);
+  if (hasUsd) cols.push(`"priceUsdCents"`);
+  cols.push(
+    `"costCents"`,
+    `"supplierName"`,
+    `"stockQty"`,
+    `"lowStockAt"`,
+    "active",
+    `"createdAt"`,
+    `"updatedAt"`,
+  );
+  if (hasDeletedAt) cols.push(`"deletedAt"`);
+  if (hasSupplierId) cols.push(`"supplierId"`);
+
+  const whereParts: string[] = [`"storeId" = $1`];
+  const params: any[] = [storeId];
+  if (activeOnly) whereParts.push(`active = true`);
+  if (!includeDeleted && hasDeletedAt) whereParts.push(`"deletedAt" IS NULL`);
+
+  const sql = `
+    SELECT ${cols.join(", ")}
     FROM "Product"
-    WHERE "storeId" = ${storeId}
-    ${activeOnly ? Prisma.sql` AND active = true` : Prisma.empty}
-    ${
-      !includeDeleted && hasDeletedAt
-        ? Prisma.sql` AND "deletedAt" IS NULL`
-        : Prisma.empty
-    }
+    WHERE ${whereParts.join(" AND ")}
     ORDER BY name ASC
   `;
-  return legacy.map(
-    (r): Product => ({
-      ...r,
-      priceUsdCents: 0,
-      unitsPerBox: 1,
-      wholesaleCupCents: null,
-      deletedAt: null,
-      supplierId: null,
-    }),
+  const rows = ((await db.$queryRawUnsafe<unknown[]>(sql, ...params)) ?? []) as unknown[];
+
+  return rows.map(
+    (r): Product => {
+      const row = r as Record<string, unknown>;
+      const priceCents = typeof row.priceCents === "number" ? row.priceCents : 0;
+      const transferPriceCents =
+        typeof row.transferPriceCents === "number" ? row.transferPriceCents : priceCents;
+      return {
+        ...(row as unknown as Product),
+        priceCents,
+        transferPriceCents,
+        priceUsdCents: typeof row.priceUsdCents === "number" ? row.priceUsdCents : 0,
+        unitsPerBox: typeof row.unitsPerBox === "number" ? row.unitsPerBox : 1,
+        wholesaleCupCents: (row.wholesaleCupCents as number | null | undefined) ?? null,
+        deletedAt: (row.deletedAt as Date | null | undefined) ?? null,
+        supplierId: (row.supplierId as string | null | undefined) ?? null,
+      };
+    },
   );
 }
