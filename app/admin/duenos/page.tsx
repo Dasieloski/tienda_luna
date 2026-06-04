@@ -26,7 +26,10 @@ type OwnerSaleLineDto = {
 
 type OwnerSalesSummaryPayload = {
   meta: { dbAvailable: boolean; note?: string; message?: string };
-  window: { mode: "day" | "month"; key: string } | null;
+  window:
+    | { mode: "day" | "month"; key: string }
+    | { mode: "range"; key: string; from: string; to: string }
+    | null;
   totals: { OSMAR: number; ALEX: number; totalCents: number; count: number };
   ledger?: {
     window: { pendingCents: number; pendingCount: number; paidCents: number; paidCount: number };
@@ -64,6 +67,20 @@ function utcTodayYmd() {
   return new Date().toISOString().slice(0, 10);
 }
 
+function shiftYmd(ymd: string, days: number): string {
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(ymd);
+  if (!m) return ymd;
+  const y = Number(m[1]);
+  const mo = Number(m[2]);
+  const d = Number(m[3]);
+  const dt = new Date(Date.UTC(y, mo - 1, d));
+  dt.setUTCDate(dt.getUTCDate() + days);
+  const yy = dt.getUTCFullYear();
+  const mm = String(dt.getUTCMonth() + 1).padStart(2, "0");
+  const dd = String(dt.getUTCDate()).padStart(2, "0");
+  return `${yy}-${mm}-${dd}`;
+}
+
 function ownerLabel(o: "OSMAR" | "ALEX") {
   return o === "OSMAR" ? "Osmar" : "Álex";
 }
@@ -71,9 +88,11 @@ function ownerLabel(o: "OSMAR" | "ALEX") {
 export default function OwnersPage() {
   const today = useMemo(() => utcTodayYmd(), []);
   const [tab, setTab] = useState<"resumen" | "consumos">("consumos");
-  const [mode, setMode] = useState<"day" | "month">("day");
+  const [mode, setMode] = useState<"day" | "month" | "range">("day");
   const [day, setDay] = useState(today);
   const [month, setMonth] = useState(today.slice(0, 7));
+  const [from, setFrom] = useState<string>(shiftYmd(today, -6));
+  const [to, setTo] = useState<string>(today);
   const [data, setData] = useState<OwnerSalesSummaryPayload | null>(null);
   const [loading, setLoading] = useState(false);
   const [err, setErr] = useState<string | null>(null);
@@ -95,7 +114,13 @@ export default function OwnersPage() {
       const params = new URLSearchParams();
       params.set("mode", mode);
       if (mode === "day") params.set("date", day);
-      else params.set("month", month);
+      else if (mode === "month") params.set("month", month);
+      else {
+        const f = from > to ? to : from;
+        const t = from > to ? from : to;
+        params.set("from", f);
+        params.set("to", t);
+      }
       const res = await fetch(`/api/admin/owner-sales/summary?${params.toString()}`, { credentials: "include" });
       const json = (await res.json()) as OwnerSalesSummaryPayload;
       setData(json);
@@ -107,7 +132,7 @@ export default function OwnersPage() {
     } finally {
       setLoading(false);
     }
-  }, [day, mode, month]);
+  }, [day, mode, month, from, to]);
 
   useEffect(() => {
     void load();
@@ -170,6 +195,7 @@ export default function OwnersPage() {
               <select className="tl-input h-10 px-3 text-sm" value={mode} onChange={(e) => setMode(e.target.value as any)}>
                 <option value="day">Diario</option>
                 <option value="month">Mensual</option>
+                <option value="range">Rango</option>
               </select>
             </label>
             {mode === "day" ? (
@@ -177,11 +203,70 @@ export default function OwnersPage() {
                 Día
                 <input type="date" className="tl-input h-10 px-3 text-sm" value={day} onChange={(e) => setDay(e.target.value)} />
               </label>
-            ) : (
+            ) : mode === "month" ? (
               <label className="flex flex-col gap-1 text-xs font-medium text-tl-muted">
                 Mes
                 <input type="month" className="tl-input h-10 px-3 text-sm" value={month} onChange={(e) => setMonth(e.target.value)} />
               </label>
+            ) : (
+              <>
+                <label className="flex flex-col gap-1 text-xs font-medium text-tl-muted">
+                  Desde
+                  <input
+                    type="date"
+                    className="tl-input h-10 px-3 text-sm"
+                    value={from}
+                    max={to}
+                    onChange={(e) => setFrom(e.target.value)}
+                  />
+                </label>
+                <label className="flex flex-col gap-1 text-xs font-medium text-tl-muted">
+                  Hasta
+                  <input
+                    type="date"
+                    className="tl-input h-10 px-3 text-sm"
+                    value={to}
+                    min={from}
+                    max={today}
+                    onChange={(e) => setTo(e.target.value)}
+                  />
+                </label>
+                <div className="flex flex-wrap items-center gap-1 self-end pb-1">
+                  <button
+                    type="button"
+                    className="tl-btn tl-btn-secondary !px-2 !py-1 text-[11px]"
+                    onClick={() => {
+                      setFrom(shiftYmd(today, -6));
+                      setTo(today);
+                    }}
+                    title="Últimos 7 días"
+                  >
+                    7d
+                  </button>
+                  <button
+                    type="button"
+                    className="tl-btn tl-btn-secondary !px-2 !py-1 text-[11px]"
+                    onClick={() => {
+                      setFrom(shiftYmd(today, -29));
+                      setTo(today);
+                    }}
+                    title="Últimos 30 días"
+                  >
+                    30d
+                  </button>
+                  <button
+                    type="button"
+                    className="tl-btn tl-btn-secondary !px-2 !py-1 text-[11px]"
+                    onClick={() => {
+                      setFrom(`${today.slice(0, 7)}-01`);
+                      setTo(today);
+                    }}
+                    title="Mes actual hasta hoy"
+                  >
+                    Mes
+                  </button>
+                </div>
+              </>
             )}
             <button type="button" onClick={() => void load()} className="tl-btn tl-btn-primary inline-flex h-10 items-center gap-2 self-end" disabled={loading}>
               <Landmark className="h-4 w-4" aria-hidden />

@@ -6,7 +6,7 @@ import { LOCAL_ADMIN_STORE_ID } from "@/lib/static-admin-auth";
 import { storeTzOffsetIntervalSql, storeTzOffsetMinutes } from "@/lib/economy-store-tz";
 
 const querySchema = z.object({
-  mode: z.enum(["day", "month"]).optional().default("day"),
+  mode: z.enum(["day", "month", "range"]).optional().default("day"),
   date: z
     .string()
     .regex(/^\d{4}-\d{2}-\d{2}$/)
@@ -14,6 +14,14 @@ const querySchema = z.object({
   month: z
     .string()
     .regex(/^\d{4}-\d{2}$/)
+    .optional(),
+  from: z
+    .string()
+    .regex(/^\d{4}-\d{2}-\d{2}$/)
+    .optional(),
+  to: z
+    .string()
+    .regex(/^\d{4}-\d{2}-\d{2}$/)
     .optional(),
 });
 
@@ -41,6 +49,17 @@ type OwnerSaleRow = {
   lines: OwnerSaleLineRow[];
 };
 
+/** Convierte un YYYY-MM-DD local a ms UTC equivalentes al inicio de ese día local. */
+function localYmdToUtcMs(ymd: string, offsetMinutes: number): number {
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(ymd);
+  if (!m) return Number.NaN;
+  const y = Number(m[1]);
+  const mo = Number(m[2]);
+  const d = Number(m[3]);
+  // Interpretamos la fecha como si fuera UTC y luego restamos el offset para obtener el UTC real.
+  return Date.UTC(y, mo - 1, d, 0, 0, 0) - offsetMinutes * 60_000;
+}
+
 export async function GET(request: Request) {
   const session = await getSessionFromRequest(request);
   if (!session || !requireAdmin(session)) {
@@ -61,6 +80,8 @@ export async function GET(request: Request) {
     mode: url.searchParams.get("mode") ?? undefined,
     date: url.searchParams.get("date") ?? undefined,
     month: url.searchParams.get("month") ?? undefined,
+    from: url.searchParams.get("from") ?? undefined,
+    to: url.searchParams.get("to") ?? undefined,
   });
   if (!parsed.success) {
     return NextResponse.json({ error: "INVALID_QUERY" }, { status: 400 });
@@ -73,6 +94,10 @@ export async function GET(request: Request) {
   try {
     const mode = parsed.data.mode;
     let key: string;
+    let from: string | null = null;
+    let to: string | null = null;
+    let rangeFromUtc: Date | null = null;
+    let rangeToUtcExclusive: Date | null = null;
 
     if (mode === "day") {
       key = parsed.data.date ?? "";
@@ -82,13 +107,33 @@ export async function GET(request: Request) {
         `;
         key = todayRow[0]?.d ?? new Date().toISOString().slice(0, 10);
       }
-    } else {
+    } else if (mode === "month") {
       key = parsed.data.month ?? "";
       if (!key) {
         const nowRow = await prisma.$queryRaw<{ ym: string }[]>`
           SELECT to_char(date_trunc('month', (now() + (${offsetInterval}::interval))), 'YYYY-MM') AS ym
         `;
         key = nowRow[0]?.ym ?? new Date().toISOString().slice(0, 7);
+      }
+    } else {
+      // range
+      const todayRow = await prisma.$queryRaw<{ d: string }[]>`
+        SELECT to_char(date_trunc('day', (now() + (${offsetInterval}::interval))), 'YYYY-MM-DD') AS d
+      `;
+      const today = todayRow[0]?.d ?? new Date().toISOString().slice(0, 10);
+      from = parsed.data.from ?? today;
+      to = parsed.data.to ?? today;
+      if (from > to) {
+        const swap = from;
+        from = to;
+        to = swap;
+      }
+      key = `${from}..${to}`;
+      const fromMs = localYmdToUtcMs(from, offsetMinutes);
+      const toMs = localYmdToUtcMs(to, offsetMinutes);
+      if (Number.isFinite(fromMs) && Number.isFinite(toMs)) {
+        rangeFromUtc = new Date(fromMs);
+        rangeToUtcExclusive = new Date(toMs + 86400_000);
       }
     }
 
@@ -103,7 +148,11 @@ export async function GET(request: Request) {
         AND (
           CASE
             WHEN ${mode} = 'day' THEN to_char(date_trunc('day', (os."createdAt" + (${offsetInterval}::interval))), 'YYYY-MM-DD') = ${key}
-            ELSE to_char(date_trunc('month', (os."createdAt" + (${offsetInterval}::interval))), 'YYYY-MM') = ${key}
+            WHEN ${mode} = 'month' THEN to_char(date_trunc('month', (os."createdAt" + (${offsetInterval}::interval))), 'YYYY-MM') = ${key}
+            WHEN ${mode} = 'range' THEN
+              to_char(date_trunc('day', (os."createdAt" + (${offsetInterval}::interval))), 'YYYY-MM-DD') >= ${from ?? ""}
+              AND to_char(date_trunc('day', (os."createdAt" + (${offsetInterval}::interval))), 'YYYY-MM-DD') <= ${to ?? ""}
+            ELSE FALSE
           END
         )
       GROUP BY 1
@@ -119,7 +168,11 @@ export async function GET(request: Request) {
         AND (
           CASE
             WHEN ${mode} = 'day' THEN to_char(date_trunc('day', (os."createdAt" + (${offsetInterval}::interval))), 'YYYY-MM-DD') = ${key}
-            ELSE to_char(date_trunc('month', (os."createdAt" + (${offsetInterval}::interval))), 'YYYY-MM') = ${key}
+            WHEN ${mode} = 'month' THEN to_char(date_trunc('month', (os."createdAt" + (${offsetInterval}::interval))), 'YYYY-MM') = ${key}
+            WHEN ${mode} = 'range' THEN
+              to_char(date_trunc('day', (os."createdAt" + (${offsetInterval}::interval))), 'YYYY-MM-DD') >= ${from ?? ""}
+              AND to_char(date_trunc('day', (os."createdAt" + (${offsetInterval}::interval))), 'YYYY-MM-DD') <= ${to ?? ""}
+            ELSE FALSE
           END
         )
       GROUP BY 1
@@ -150,23 +203,21 @@ export async function GET(request: Request) {
       allByStatus.set(String(r.status), { totalCents: Number(r.total_cents ?? BigInt(0)), count: Number(r.cnt ?? BigInt(0)) });
     }
 
+    const fetchWhere: Record<string, unknown> = { storeId };
+    if (mode === "day") {
+      fetchWhere.createdAt = { gte: new Date(Date.now() - 40 * 86400000) };
+    } else if (mode === "month") {
+      fetchWhere.createdAt = { gte: new Date(Date.now() - 400 * 86400000) };
+    } else if (rangeFromUtc && rangeToUtcExclusive) {
+      fetchWhere.createdAt = { gte: rangeFromUtc, lt: rangeToUtcExclusive };
+    }
+
+    const fetchTake = mode === "day" ? 80 : mode === "month" ? 250 : 1000;
+
     const sales: OwnerSaleRow[] = await (prisma as any).ownerSale.findMany({
-      where:
-        mode === "day"
-          ? {
-              storeId,
-              createdAt: {
-                // filtrar en SQL por día local para no depender del huso del servidor
-                // (lo hacemos abajo con queryRaw en agregados). Aquí traemos un rango amplio y filtramos después.
-                gte: new Date(Date.now() - 40 * 86400000),
-              },
-            }
-          : {
-              storeId,
-              createdAt: { gte: new Date(Date.now() - 400 * 86400000) },
-            },
+      where: fetchWhere,
       orderBy: { createdAt: "desc" },
-      take: mode === "day" ? 80 : 250,
+      take: fetchTake,
       select: {
         id: true,
         owner: true,
@@ -191,19 +242,27 @@ export async function GET(request: Request) {
     });
 
     const inWindow: OwnerSaleRow[] = sales.filter((s: OwnerSaleRow) => {
-      // Aplicar mismo criterio de "día/mes local tienda" que el SQL.
+      // Aplicar mismo criterio de "día/mes/rango local tienda" que el SQL.
       const local = new Date(s.createdAt.getTime() + offsetMinutes * 60_000);
       const y = local.getUTCFullYear();
       const m = String(local.getUTCMonth() + 1).padStart(2, "0");
       const d = String(local.getUTCDate()).padStart(2, "0");
       const ymd = `${y}-${m}-${d}`;
       const ym = `${y}-${m}`;
-      return mode === "day" ? ymd === key : ym === key;
+      if (mode === "day") return ymd === key;
+      if (mode === "month") return ym === key;
+      if (mode === "range") return ymd >= (from ?? "") && ymd <= (to ?? "");
+      return false;
     });
 
     const osmar = totalsByOwner.get("OSMAR")?.totalCents ?? 0;
     const alex = totalsByOwner.get("ALEX")?.totalCents ?? 0;
     const count = (totalsByOwner.get("OSMAR")?.count ?? 0) + (totalsByOwner.get("ALEX")?.count ?? 0);
+
+    const windowMeta =
+      mode === "range"
+        ? { mode, key, from: from ?? "", to: to ?? "" }
+        : { mode: mode as "day" | "month", key };
 
     return NextResponse.json({
       meta: {
@@ -211,7 +270,7 @@ export async function GET(request: Request) {
         tzOffsetMinutes: offsetMinutes,
         note: "Deudas de dueños: descuenta stock al crear. Mientras está PENDIENTE no cuenta en ingresos/ganancia/cuadre. Al pagar, se crea una Sale normal a costo (sin tocar stock). Ventana calculada en ‘hora local tienda’ (TL_TZ_OFFSET_MINUTES).",
       },
-      window: { mode, key },
+      window: windowMeta,
       totals: {
         OSMAR: osmar,
         ALEX: alex,
