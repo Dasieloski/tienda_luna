@@ -8,7 +8,15 @@ import { auditRequestMeta } from "@/lib/audit-meta";
 
 type MovementWithRelations = Prisma.InventoryMovementGetPayload<{
   include: {
-    product: { select: { id: true; name: true; sku: true } };
+    product: {
+      select: {
+        id: true;
+        name: true;
+        sku: true;
+        supplierId: true;
+        supplierName: true;
+      };
+    };
     event: {
       select: {
         id: true;
@@ -26,12 +34,14 @@ const querySchema = z.object({
   limit: z.coerce.number().int().min(5).max(100).default(25),
   q: z.string().trim().max(120).optional(),
   productId: z.string().trim().optional(),
+  supplierId: z.string().trim().optional(),
+  supplierName: z.string().trim().max(160).optional(),
   actorType: z.enum(["USER", "DEVICE"]).optional(),
   actorId: z.string().trim().optional(),
   from: z.string().datetime().optional(),
   to: z.string().datetime().optional(),
   sortKey: z
-    .enum(["createdAt", "product", "delta", "actorType", "reason"])
+    .enum(["createdAt", "product", "supplier", "delta", "actorType", "reason"])
     .optional(),
   sortDir: z.enum(["asc", "desc"]).optional(),
 });
@@ -122,6 +132,8 @@ export async function GET(request: Request) {
     limit: url.searchParams.get("limit") ?? undefined,
     q: url.searchParams.get("q") ?? undefined,
     productId: url.searchParams.get("productId") ?? undefined,
+    supplierId: url.searchParams.get("supplierId") ?? undefined,
+    supplierName: url.searchParams.get("supplierName") ?? undefined,
     actorType: url.searchParams.get("actorType") ?? undefined,
     actorId: url.searchParams.get("actorId") ?? undefined,
     from: url.searchParams.get("from") ?? undefined,
@@ -133,11 +145,12 @@ export async function GET(request: Request) {
     return NextResponse.json({ error: "INVALID_QUERY" }, { status: 400 });
   }
 
-  const { page, limit, q, productId, actorType, actorId, from, to, sortKey, sortDir } = parsed.data;
+  const { page, limit, q, productId, supplierId, supplierName, actorType, actorId, from, to, sortKey, sortDir } = parsed.data;
   const fromD = safeDate(from);
   const toD = safeDate(to);
 
   const needle = q?.trim().toLowerCase() || "";
+  const supplierNeedle = supplierName?.trim() || "";
 
   let userIdsMatchingEmail: string[] = [];
   if (needle.length >= 3) {
@@ -160,6 +173,7 @@ export async function GET(request: Request) {
     { actorId: { contains: needle, mode: "insensitive" } },
     { product: { name: { contains: needle, mode: "insensitive" } } },
     { product: { sku: { contains: needle, mode: "insensitive" } } },
+    { product: { supplierName: { contains: needle, mode: "insensitive" } } },
   ];
   if (userIdsMatchingEmail.length > 0) {
     needleOr.push({ actorId: { in: userIdsMatchingEmail } });
@@ -168,9 +182,14 @@ export async function GET(request: Request) {
     needleOr.push({ actorId: STATIC_ADMIN_JWT_SUB });
   }
 
+  const productFilter: Record<string, unknown> = {};
+  if (supplierId) productFilter.supplierId = supplierId;
+  if (supplierNeedle) productFilter.supplierName = { contains: supplierNeedle, mode: "insensitive" };
+
   const where: Record<string, unknown> = {
     storeId: session.storeId,
     ...(productId ? { productId } : {}),
+    ...(Object.keys(productFilter).length > 0 ? { product: productFilter } : {}),
     ...(actorType ? { actorType } : {}),
     ...(actorId ? { actorId } : {}),
     ...(fromD || toD
@@ -193,7 +212,12 @@ export async function GET(request: Request) {
           ? [{ reason: sortDir ?? "asc" }, { createdAt: "desc" }]
           : sortKey === "product"
             ? [{ product: { name: sortDir ?? "asc" } }, { createdAt: "desc" }]
-            : [{ createdAt: sortDir ?? "desc" }];
+            : sortKey === "supplier"
+              ? [
+                  { product: { supplierName: sortDir ?? "asc" } },
+                  { createdAt: "desc" },
+                ]
+              : [{ createdAt: sortDir ?? "desc" }];
 
   const skip = (page - 1) * limit;
 
@@ -206,7 +230,15 @@ export async function GET(request: Request) {
         skip,
         take: limit,
         include: {
-          product: { select: { id: true, name: true, sku: true } },
+          product: {
+            select: {
+              id: true,
+              name: true,
+              sku: true,
+              supplierId: true,
+              supplierName: true,
+            },
+          },
           event: {
             select: {
               id: true,
@@ -300,7 +332,15 @@ export async function GET(request: Request) {
           id: r.id,
           createdAt: r.createdAt,
           productId: r.productId,
-          product: r.product ? { id: r.product.id, name: r.product.name, sku: r.product.sku } : null,
+          product: r.product
+            ? {
+                id: r.product.id,
+                name: r.product.name,
+                sku: r.product.sku,
+                supplierId: r.product.supplierId,
+                supplierName: r.product.supplierName,
+              }
+            : null,
           delta: r.delta,
           beforeQty: r.beforeQty,
           afterQty: r.afterQty,

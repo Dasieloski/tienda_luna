@@ -13,7 +13,13 @@ type MovementRow = {
   id: string;
   createdAt: string;
   productId: string;
-  product: { id: string; name: string; sku: string } | null;
+  product: {
+    id: string;
+    name: string;
+    sku: string;
+    supplierId: string | null;
+    supplierName: string | null;
+  } | null;
   delta: number;
   beforeQty: number;
   afterQty: number;
@@ -67,7 +73,7 @@ function InventoryMovementsPageClient() {
   const [error, setError] = useState<string | null>(null);
 
   const [page, setPage] = useState(1);
-  const [limit] = useState(25);
+  const [limit, setLimit] = useState(100);
   const [totalPages, setTotalPages] = useState(1);
   const [total, setTotal] = useState(0);
 
@@ -240,15 +246,17 @@ function InventoryMovementsPageClient() {
       const actorType = filters.actorType?.kind === "select" ? filters.actorType.value : "";
       const actorId = filters.actorId?.kind === "text" ? filters.actorId.value : "";
       const productId = filters.productId?.kind === "text" ? filters.productId.value : "";
+      const supplierFilter = filters.supplier?.kind === "text" ? filters.supplier.value.trim() : "";
 
       if (actorType) params.set("actorType", actorType);
       if (actorId.trim()) params.set("actorId", actorId.trim());
       if (productId.trim()) params.set("productId", productId.trim());
+      if (supplierFilter) params.set("supplierName", supplierFilter);
 
       if (sorting.key) {
         // API limita a llaves conocidas
         const k = sorting.key;
-        if (["createdAt", "product", "delta", "actorType", "reason"].includes(k)) {
+        if (["createdAt", "product", "supplier", "delta", "actorType", "reason"].includes(k)) {
           params.set("sortKey", k);
           params.set("sortDir", sorting.dir);
         }
@@ -312,16 +320,46 @@ function InventoryMovementsPageClient() {
         ),
       },
       {
+        key: "supplier",
+        label: "Proveedor",
+        sortable: true,
+        width: "180px",
+        sortValue: (r) => (r.product?.supplierName ?? "").toLowerCase(),
+        filter: {
+          kind: "text",
+          placeholder: "Filtrar proveedor…",
+          getValue: (r) => r.product?.supplierName ?? "",
+        },
+        render: (r) => {
+          const name = r.product?.supplierName?.trim();
+          if (!name) {
+            return <span className="text-xs italic text-tl-muted">Sin proveedor</span>;
+          }
+          return <span className="text-sm text-tl-ink-secondary">{name}</span>;
+        },
+      },
+      {
         key: "delta",
         label: "Δ",
         sortable: true,
         align: "right",
         width: "80px",
-        render: (r) => (
-          <span className={cn("tabular-nums font-semibold", r.delta >= 0 ? "text-tl-success" : "text-tl-warning")}>
-            {r.delta >= 0 ? `+${r.delta}` : String(r.delta)}
-          </span>
-        ),
+        render: (r) => {
+          const isOwnerConsumption = r.reason === "OWNER_SALE";
+          const colorClass = isOwnerConsumption
+            ? "text-tl-danger"
+            : r.delta >= 0
+              ? "text-tl-success"
+              : "text-tl-warning";
+          return (
+            <span
+              className={cn("tabular-nums font-semibold", colorClass)}
+              title={isOwnerConsumption ? "Consumo de dueño" : undefined}
+            >
+              {r.delta >= 0 ? `+${r.delta}` : String(r.delta)}
+            </span>
+          );
+        },
       },
       {
         key: "beforeQty",
@@ -548,7 +586,7 @@ function InventoryMovementsPageClient() {
             </div>
             <div className="min-w-0 flex-1 sm:min-w-[240px]">
               <label className="mb-1 block text-xs font-semibold uppercase tracking-wider text-tl-muted">
-                Buscar (producto, sku, actor, motivo)
+                Buscar (producto, sku, proveedor, actor, motivo)
               </label>
               <input
                 value={q}
@@ -630,7 +668,7 @@ function InventoryMovementsPageClient() {
           keyExtractor={(r) => r.id}
           searchable={false}
           emptyMessage="No hay movimientos para el filtro actual."
-          maxHeight="calc(100vh - 460px)"
+          maxHeight="calc(100vh - 260px)"
           loading={loading}
           skeletonRows={12}
           sorting={sorting}
@@ -647,6 +685,12 @@ function InventoryMovementsPageClient() {
             page,
             totalPages,
             onPageChange: setPage,
+            pageSize: limit,
+            pageSizeOptions: [50, 100, 200, 300, 400],
+            onPageSizeChange: (next) => {
+              setPage(1);
+              setLimit(next);
+            },
             summary: `${total.toLocaleString("es-ES")} movimientos · página ${page} de ${totalPages}`,
           }}
         />
