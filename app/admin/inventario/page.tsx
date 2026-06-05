@@ -5,6 +5,9 @@ import {
   ArchiveRestoreIcon as ArchiveRestore,
   BoxesIcon as Boxes,
   ChevronRightIcon as ChevronRight,
+  FileDownIcon as FileDown,
+  FileSpreadsheetIcon as FileSpreadsheet,
+  FileTextIcon as FileText,
   PackageIcon as Package,
   PencilIcon as Pencil,
   PlusIcon as Plus,
@@ -19,6 +22,16 @@ import { CupUsdMoney } from "@/components/admin/cup-usd-money";
 import { TablePriceCupCell } from "@/components/admin/table-price-cup-cell";
 import { useToast } from "@/components/ui/toast";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
+import { Modal } from "@/components/ui/modal";
+import {
+  buildInventoryCsv,
+  buildBulkPayload,
+  diffInventory,
+  parseInventoryCsv,
+  type InventoryDiff,
+  type ProductExportRow,
+} from "@/lib/inventory-csv";
+import { buildInventoryPdf } from "@/lib/inventory-pdf";
 
 type ProductRow = {
   id: string;
@@ -116,6 +129,17 @@ export default function InventoryPage() {
 
   const [confirmDeleteOpen, setConfirmDeleteOpen] = useState(false);
   const [confirmDeleteProduct, setConfirmDeleteProduct] = useState<ProductRow | null>(null);
+
+  // Importación CSV
+  const csvFileInputRef = useRef<HTMLInputElement | null>(null);
+  const [importOpen, setImportOpen] = useState(false);
+  const [importBusy, setImportBusy] = useState(false);
+  const [importFileName, setImportFileName] = useState<string | null>(null);
+  const [importDiffs, setImportDiffs] = useState<InventoryDiff[]>([]);
+  const [importSelected, setImportSelected] = useState<Set<number>>(new Set());
+  const [importMissing, setImportMissing] = useState<{ sku: string; rowIndex: number; name: string }[]>([]);
+  const [importParseErrors, setImportParseErrors] = useState<{ rowIndex: number; message: string }[]>([]);
+  const [expandedDiffs, setExpandedDiffs] = useState<Set<number>>(new Set([0]));
 
   // Alta (SKU lo asigna el servidor)
   const [formName, setFormName] = useState("");
@@ -681,6 +705,248 @@ export default function InventoryPage() {
   const lowStockCount = activeProducts.filter((p) => p.stockQty <= p.lowStockAt).length;
   const totalValue = activeProducts.reduce((acc, p) => acc + p.priceCents * p.stockQty, 0);
 
+  function toExportRow(p: ProductRow): ProductExportRow {
+    return {
+      id: p.id,
+      sku: p.sku,
+      name: p.name,
+      priceCents: p.priceCents,
+      transferPriceCents: p.transferPriceCents ?? p.priceCents,
+      priceUsdCents: p.priceUsdCents ?? 0,
+      costCents: p.costCents,
+      unitsPerBox: p.unitsPerBox ?? 1,
+      wholesaleCupCents: p.wholesaleCupCents,
+      stockQty: p.stockQty,
+      lowStockAt: p.lowStockAt,
+      supplierId: p.supplierId,
+      supplierName: p.supplierName,
+      active: p.active,
+    };
+  }
+
+  function downloadBlob(blob: Blob, filename: string) {
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+  }
+
+  function timestampSlug() {
+    const d = new Date();
+    const pad = (n: number) => String(n).padStart(2, "0");
+    return `${d.getFullYear()}${pad(d.getMonth() + 1)}${pad(d.getDate())}-${pad(d.getHours())}${pad(d.getMinutes())}${pad(d.getSeconds())}`;
+  }
+
+  function handleExportCsv() {
+    const exportRows = activeProducts.map(toExportRow);
+    if (exportRows.length === 0) {
+      toast.push({ kind: "warning", title: "Sin productos para exportar" });
+      return;
+    }
+    const csv = buildInventoryCsv(exportRows);
+    // BOM para que Excel detecte UTF-8.
+    const blob = new Blob(["\ufeff" + csv], { type: "text/csv;charset=utf-8" });
+    downloadBlob(blob, `inventario-${timestampSlug()}.csv`);
+    toast.push({
+      kind: "success",
+      title: "CSV generado",
+      description: `${exportRows.length} productos exportados.`,
+    });
+  }
+
+  function handleExportPdf() {
+    const exportRows = activeProducts.map(toExportRow);
+    if (exportRows.length === 0) {
+      toast.push({ kind: "warning", title: "Sin productos para exportar" });
+      return;
+    }
+    try {
+      const blob = buildInventoryPdf(exportRows);
+      downloadBlob(blob, `inventario-${timestampSlug()}.pdf`);
+      toast.push({
+        kind: "success",
+        title: "PDF generado",
+        description: `${exportRows.length} productos exportados.`,
+      });
+    } catch (e) {
+      console.error("[inventario] export PDF", e);
+      toast.push({
+        kind: "error",
+        title: "No se pudo generar el PDF",
+        description: "Inténtalo de nuevo.",
+      });
+    }
+  }
+
+  function handleOpenImport() {
+    csvFileInputRef.current?.click();
+  }
+
+  function handleCsvFileChange(ev: React.ChangeEvent<HTMLInputElement>) {
+    const file = ev.target.files?.[0];
+    ev.target.value = "";
+    if (!file) return;
+    if (!/\.csv$/i.test(file.name) && file.type && !file.type.includes("csv") && !file.type.includes("text")) {
+      toast.push({
+        kind: "warning",
+        title: "Formato no reconocido",
+        description: "El archivo debe ser CSV. Se intentará procesar igualmente.",
+      });
+    }
+    const reader = new FileReader();
+    reader.onerror = () => {
+      toast.push({ kind: "error", title: "No se pudo leer el archivo" });
+    };
+    reader.onload = () => {
+      const text = String(reader.result ?? "");
+      try {
+        const parsed = parseInventoryCsv(text);
+        const currentRows = activeProducts.map(toExportRow);
+        const supplierNames = new Set(suppliers.map((s) => s.name));
+        const { diffs, missing, parseErrors } = diffInventory(
+          currentRows,
+          parsed,
+          supplierNames,
+        );
+        setImportDiffs(diffs);
+        setImportMissing(missing);
+        setImportParseErrors(parseErrors);
+        setImportFileName(file.name);
+        const allIndexes = new Set(diffs.map((_, i) => i));
+        setImportSelected(allIndexes);
+        setExpandedDiffs(new Set(diffs.length > 0 ? [0] : []));
+        setImportOpen(true);
+        if (diffs.length === 0 && missing.length === 0 && parseErrors.length === 0) {
+          toast.push({
+            kind: "info",
+            title: "Sin cambios detectados",
+            description: "El CSV no tiene diferencias frente al catálogo actual.",
+          });
+        } else if (parseErrors.length > 0) {
+          toast.push({
+            kind: "warning",
+            title: `CSV con ${parseErrors.length} aviso(s)`,
+            description: "Revisa los errores antes de aplicar.",
+          });
+        }
+      } catch (e) {
+        console.error("[inventario] parse CSV", e);
+        toast.push({
+          kind: "error",
+          title: "No se pudo procesar el CSV",
+          description: "Verifica el formato del archivo.",
+        });
+      }
+    };
+    reader.readAsText(file);
+  }
+
+  function toggleDiffSelected(index: number) {
+    setImportSelected((prev) => {
+      const next = new Set(prev);
+      if (next.has(index)) next.delete(index);
+      else next.add(index);
+      return next;
+    });
+  }
+
+  function toggleAllSelected() {
+    setImportSelected((prev) => {
+      const selectable = importDiffs
+        .map((d, i) => (d.selectable ? i : -1))
+        .filter((i) => i >= 0);
+      const allSelected = selectable.length > 0 && selectable.every((i) => prev.has(i));
+      if (allSelected) return new Set();
+      return new Set(selectable);
+    });
+  }
+
+  function toggleDiffExpanded(index: number) {
+    setExpandedDiffs((prev) => {
+      const next = new Set(prev);
+      if (next.has(index)) next.delete(index);
+      else next.add(index);
+      return next;
+    });
+  }
+
+  function closeImport() {
+    if (importBusy) return;
+    setImportOpen(false);
+    setImportDiffs([]);
+    setImportSelected(new Set());
+    setImportMissing([]);
+    setImportParseErrors([]);
+    setImportFileName(null);
+    setExpandedDiffs(new Set());
+  }
+
+  async function handleApplyImport() {
+    if (importSelected.size === 0) {
+      toast.push({ kind: "warning", title: "No hay cambios seleccionados" });
+      return;
+    }
+    const updates = buildBulkPayload(importDiffs, importSelected);
+    if (updates.length === 0) {
+      toast.push({
+        kind: "warning",
+        title: "Los cambios seleccionados no son válidos",
+        description: "Revisa los valores marcados con aviso.",
+      });
+      return;
+    }
+    setImportBusy(true);
+    try {
+      const res = await fetch("/api/admin/products/bulk-update", {
+        method: "POST",
+        credentials: "include",
+        headers: { "Content-Type": "application/json", "x-tl-csrf": "1" },
+        body: JSON.stringify({ updates }),
+      });
+      if (!res.ok) {
+        const j = (await res.json().catch(() => ({}))) as {
+          error?: string;
+          hint?: string;
+          message?: string;
+        };
+        toast.push({
+          kind: "error",
+          title: "No se pudieron aplicar los cambios",
+          description:
+            j.hint ??
+            j.message ??
+            (j.error === "PRODUCTS_NOT_FOUND"
+              ? "Algunos productos ya no existen. Recarga la página."
+              : j.error === "DATABASE_SCHEMA_MISMATCH"
+                ? "La BD no soporta algunas columnas del CSV. Ejecuta migraciones."
+                : "Inténtalo de nuevo."),
+        });
+        return;
+      }
+      const json = (await res.json()) as {
+        productsUpdated: number;
+        appliedCount: number;
+      };
+      toast.push({
+        kind: "success",
+        title: "Cambios aplicados",
+        description: `${json.productsUpdated} productos actualizados (${json.appliedCount} campos).`,
+      });
+      closeImport();
+      void loadProducts();
+    } catch (e) {
+      console.error("[inventario] bulk-update", e);
+      toast.push({ kind: "error", title: "Error de red al aplicar cambios" });
+    } finally {
+      setImportBusy(false);
+    }
+  }
+
+
   const supplierFilterOptions = useMemo(() => {
     const base = suppliers
       .slice()
@@ -1110,6 +1376,49 @@ export default function InventoryPage() {
             maxHeight="calc(100vh - 340px)"
             loading={loading}
             skeletonRows={12}
+            actions={
+              <div className="flex flex-wrap items-center gap-2">
+                <input
+                  ref={csvFileInputRef}
+                  type="file"
+                  accept=".csv,text/csv,application/vnd.ms-excel"
+                  className="sr-only"
+                  onChange={handleCsvFileChange}
+                  aria-hidden
+                  tabIndex={-1}
+                />
+                <button
+                  type="button"
+                  className="tl-btn tl-btn-secondary tl-interactive tl-hover-lift tl-press tl-focus !h-9 !px-3 !py-0 text-xs"
+                  onClick={handleExportPdf}
+                  disabled={loading || activeProducts.length === 0}
+                  title="Descargar PDF con nombre, precio de venta, precio de proveedor, proveedor y stock"
+                >
+                  <FileText className="h-3.5 w-3.5" aria-hidden />
+                  PDF
+                </button>
+                <button
+                  type="button"
+                  className="tl-btn tl-btn-secondary tl-interactive tl-hover-lift tl-press tl-focus !h-9 !px-3 !py-0 text-xs"
+                  onClick={handleExportCsv}
+                  disabled={loading || activeProducts.length === 0}
+                  title="Descargar CSV con toda la información de la tabla"
+                >
+                  <FileSpreadsheet className="h-3.5 w-3.5" aria-hidden />
+                  CSV
+                </button>
+                <button
+                  type="button"
+                  className="tl-btn tl-btn-primary tl-interactive tl-hover-lift tl-press tl-focus !h-9 !px-3 !py-0 text-xs"
+                  onClick={handleOpenImport}
+                  disabled={loading}
+                  title="Subir un CSV editado para aplicar cambios al catálogo"
+                >
+                  <FileDown className="h-3.5 w-3.5" aria-hidden />
+                  Importar CSV
+                </button>
+              </div>
+            }
           />
 
           <div className="h-fit tl-glass tl-gradient-border rounded-xl p-5">
@@ -1816,6 +2125,273 @@ export default function InventoryPage() {
           });
         }}
       />
+
+      {importOpen ? (
+        <ImportCsvDialog
+          fileName={importFileName}
+          diffs={importDiffs}
+          selected={importSelected}
+          missing={importMissing}
+          parseErrors={importParseErrors}
+          expanded={expandedDiffs}
+          busy={importBusy}
+          onClose={closeImport}
+          onToggleAll={toggleAllSelected}
+          onToggleProduct={toggleDiffSelected}
+          onToggleExpanded={toggleDiffExpanded}
+          onApply={handleApplyImport}
+        />
+      ) : null}
     </AdminShell>
+  );
+}
+
+type ImportCsvDialogProps = {
+  fileName: string | null;
+  diffs: InventoryDiff[];
+  selected: Set<number>;
+  missing: { sku: string; rowIndex: number; name: string }[];
+  parseErrors: { rowIndex: number; message: string }[];
+  expanded: Set<number>;
+  busy: boolean;
+  onClose: () => void;
+  onToggleAll: () => void;
+  onToggleProduct: (index: number) => void;
+  onToggleExpanded: (index: number) => void;
+  onApply: () => void;
+};
+
+function ImportCsvDialog({
+  fileName,
+  diffs,
+  selected,
+  missing,
+  parseErrors,
+  expanded,
+  busy,
+  onClose,
+  onToggleAll,
+  onToggleProduct,
+  onToggleExpanded,
+  onApply,
+}: ImportCsvDialogProps) {
+  const selectableCount = diffs.filter((d) => d.selectable).length;
+  const allSelected = selectableCount > 0 && Array.from({ length: diffs.length }, (_, i) => i)
+    .filter((i) => diffs[i]!.selectable)
+    .every((i) => selected.has(i));
+  const selectedChangesCount = diffs.reduce(
+    (acc, d, i) => (selected.has(i) ? acc + d.changes.filter((c) => !c.warning).length : acc),
+    0,
+  );
+
+  return (
+    <Modal
+      open
+      title="Importar cambios desde CSV"
+      description={
+        fileName
+          ? `Archivo: ${fileName}. Revisa los cambios y marca los que quieres aplicar.`
+          : "Revisa los cambios y marca los que quieres aplicar."
+      }
+      onClose={onClose}
+      closeOnOverlayClick={!busy}
+      maxWidthClassName="max-w-3xl"
+    >
+      <div className="space-y-4">
+        {parseErrors.length > 0 ? (
+          <div className="rounded-xl border border-tl-warning/25 bg-tl-warning-subtle px-3 py-2.5 text-xs text-tl-warning">
+            <p className="font-semibold">
+              {parseErrors.length === 1
+                ? "1 aviso al leer el CSV"
+                : `${parseErrors.length} avisos al leer el CSV`}
+            </p>
+            <ul className="mt-1.5 ml-4 list-disc space-y-0.5">
+              {parseErrors.slice(0, 5).map((e, i) => (
+                <li key={`${e.rowIndex}-${i}`}>
+                  Fila {e.rowIndex}: {e.message}
+                </li>
+              ))}
+              {parseErrors.length > 5 ? (
+                <li>…y {parseErrors.length - 5} más.</li>
+              ) : null}
+            </ul>
+          </div>
+        ) : null}
+
+        {missing.length > 0 ? (
+          <div className="rounded-xl border border-tl-warning/25 bg-tl-warning-subtle px-3 py-2.5 text-xs text-tl-warning">
+            <p className="font-semibold">
+              {missing.length === 1
+                ? "1 fila con SKU no encontrado en el catálogo (se ignora)"
+                : `${missing.length} filas con SKU no encontrado en el catálogo (se ignoran)`}
+            </p>
+            <ul className="mt-1.5 ml-4 list-disc space-y-0.5">
+              {missing.slice(0, 5).map((m, i) => (
+                <li key={`${m.sku}-${i}`}>
+                  Fila {m.rowIndex}: SKU <span className="font-mono">{m.sku}</span>
+                  {m.name ? ` (${m.name})` : ""} no existe en el catálogo.
+                </li>
+              ))}
+              {missing.length > 5 ? <li>…y {missing.length - 5} más.</li> : null}
+            </ul>
+          </div>
+        ) : null}
+
+        {diffs.length === 0 ? (
+          <div className="rounded-xl border border-tl-line bg-tl-canvas-inset px-3 py-6 text-center text-sm text-tl-muted">
+            No se detectaron cambios entre el CSV y el catálogo actual.
+          </div>
+        ) : (
+          <>
+            <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-tl-muted">
+              <div>
+                {diffs.length === 1
+                  ? "1 producto con cambios"
+                  : `${diffs.length} productos con cambios`}
+                {selectedChangesCount > 0 ? (
+                  <span className="ml-2 font-semibold text-tl-ink">
+                    · {selectedChangesCount} campos seleccionados
+                  </span>
+                ) : null}
+              </div>
+              <label className="flex cursor-pointer items-center gap-2 text-xs text-tl-ink">
+                <input
+                  type="checkbox"
+                  className="h-4 w-4 rounded border-tl-line"
+                  checked={allSelected}
+                  onChange={onToggleAll}
+                  disabled={selectableCount === 0}
+                />
+                Seleccionar todos los aplicables
+              </label>
+            </div>
+
+            <ul className="max-h-[55vh] space-y-2 overflow-y-auto pr-1">
+              {diffs.map((d, i) => {
+                const isSelected = selected.has(i);
+                const isExpanded = expanded.has(i);
+                const productSelectedChanges = isSelected
+                  ? d.changes.filter((c) => !c.warning).length
+                  : 0;
+                return (
+                  <li
+                    key={`${d.productId}-${i}`}
+                    className={cn(
+                      "rounded-xl border transition-colors",
+                      isSelected
+                        ? "border-tl-accent/30 bg-tl-accent-subtle/30"
+                        : "border-tl-line bg-tl-canvas-inset",
+                    )}
+                  >
+                    <div className="flex items-start gap-3 px-3 py-2.5">
+                      <input
+                        type="checkbox"
+                        className="mt-1 h-4 w-4 rounded border-tl-line"
+                        checked={isSelected}
+                        onChange={() => onToggleProduct(i)}
+                        disabled={!d.selectable}
+                        aria-label={`Aplicar cambios a ${d.productName}`}
+                      />
+                      <div className="min-w-0 flex-1">
+                        <button
+                          type="button"
+                          className="flex w-full items-center justify-between gap-2 text-left"
+                          onClick={() => onToggleExpanded(i)}
+                        >
+                          <div className="min-w-0">
+                            <p className="truncate text-sm font-semibold text-tl-ink">
+                              {d.productName}
+                            </p>
+                            <p className="mt-0.5 truncate text-[11px] font-mono text-tl-muted">
+                              {d.sku}
+                            </p>
+                          </div>
+                          <div className="flex items-center gap-2">
+                            <span className="rounded-full border border-tl-line bg-tl-canvas px-2 py-0.5 text-[11px] font-semibold text-tl-ink">
+                              {d.changes.length === 1
+                                ? "1 cambio"
+                                : `${d.changes.length} cambios`}
+                            </span>
+                            <ChevronRight
+                              className={cn(
+                                "h-4 w-4 text-tl-muted transition-transform",
+                                isExpanded && "rotate-90",
+                              )}
+                              aria-hidden
+                            />
+                          </div>
+                        </button>
+                        {!isExpanded && productSelectedChanges > 0 ? (
+                          <p className="mt-1 text-[11px] text-tl-muted">
+                            {productSelectedChanges} campo(s) listo(s) para aplicar.
+                          </p>
+                        ) : null}
+                        {isExpanded ? (
+                          <ul className="mt-2 space-y-1.5">
+                            {d.changes.map((c, ci) => (
+                              <li
+                                key={`${c.field}-${ci}`}
+                                className={cn(
+                                  "rounded-lg border px-2.5 py-1.5 text-[12px]",
+                                  c.warning
+                                    ? "border-tl-warning/30 bg-tl-warning-subtle/50"
+                                    : "border-tl-line bg-tl-canvas",
+                                )}
+                              >
+                                <div className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5">
+                                  <span className="font-semibold text-tl-ink">{c.label}:</span>
+                                  <span className="text-tl-muted line-through decoration-tl-danger/60 decoration-1">
+                                    {c.before || "(vacío)"}
+                                  </span>
+                                  <span className="text-tl-muted">→</span>
+                                  <span className="font-semibold text-tl-accent">
+                                    {c.after || "(vacío)"}
+                                  </span>
+                                </div>
+                                {c.warning ? (
+                                  <p className="mt-1 text-[11px] text-tl-warning">{c.warning}</p>
+                                ) : null}
+                              </li>
+                            ))}
+                          </ul>
+                        ) : null}
+                        {!d.selectable ? (
+                          <p className="mt-1 text-[11px] text-tl-warning">
+                            Este producto tiene campos con valores no válidos. No se puede aplicar.
+                          </p>
+                        ) : null}
+                      </div>
+                    </div>
+                  </li>
+                );
+              })}
+            </ul>
+          </>
+        )}
+
+        <div className="flex flex-col-reverse gap-2 border-t border-tl-line pt-3 sm:flex-row sm:items-center sm:justify-end">
+          <button
+            type="button"
+            className="tl-btn tl-btn-secondary !px-4 !py-2 text-sm"
+            onClick={onClose}
+            disabled={busy}
+          >
+            Cancelar
+          </button>
+          <button
+            type="button"
+            className="tl-btn-primary !px-4 !py-2 text-sm"
+            onClick={onApply}
+            disabled={busy || selectedChangesCount === 0}
+          >
+            {busy
+              ? "Aplicando…"
+              : selectedChangesCount === 0
+                ? "Sin cambios para aplicar"
+                : `Aplicar ${selectedChangesCount} cambio(s)`}
+          </button>
+        </div>
+      </div>
+    </Modal>
   );
 }
