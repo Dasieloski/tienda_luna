@@ -2197,179 +2197,181 @@ function ImportCsvDialog({
       closeOnOverlayClick={!busy}
       maxWidthClassName="max-w-3xl"
     >
-      <div className="space-y-4">
-        {parseErrors.length > 0 ? (
-          <div className="rounded-xl border border-tl-warning/25 bg-tl-warning-subtle px-3 py-2.5 text-xs text-tl-warning">
-            <p className="font-semibold">
-              {parseErrors.length === 1
-                ? "1 aviso al leer el CSV"
-                : `${parseErrors.length} avisos al leer el CSV`}
-            </p>
-            <ul className="mt-1.5 ml-4 list-disc space-y-0.5">
-              {parseErrors.slice(0, 5).map((e, i) => (
-                <li key={`${e.rowIndex}-${i}`}>
-                  Fila {e.rowIndex}: {e.message}
-                </li>
-              ))}
-              {parseErrors.length > 5 ? (
-                <li>…y {parseErrors.length - 5} más.</li>
-              ) : null}
-            </ul>
-          </div>
-        ) : null}
-
-        {missing.length > 0 ? (
-          <div className="rounded-xl border border-tl-warning/25 bg-tl-warning-subtle px-3 py-2.5 text-xs text-tl-warning">
-            <p className="font-semibold">
-              {missing.length === 1
-                ? "1 fila con SKU no encontrado en el catálogo (se ignora)"
-                : `${missing.length} filas con SKU no encontrado en el catálogo (se ignoran)`}
-            </p>
-            <ul className="mt-1.5 ml-4 list-disc space-y-0.5">
-              {missing.slice(0, 5).map((m, i) => (
-                <li key={`${m.sku}-${i}`}>
-                  Fila {m.rowIndex}: SKU <span className="font-mono">{m.sku}</span>
-                  {m.name ? ` (${m.name})` : ""} no existe en el catálogo.
-                </li>
-              ))}
-              {missing.length > 5 ? <li>…y {missing.length - 5} más.</li> : null}
-            </ul>
-          </div>
-        ) : null}
-
-        {diffs.length === 0 ? (
-          <div className="rounded-xl border border-tl-line bg-tl-canvas-inset px-3 py-6 text-center text-sm text-tl-muted">
-            No se detectaron cambios entre el CSV y el catálogo actual.
-          </div>
-        ) : (
-          <>
-            <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-tl-muted">
-              <div>
-                {diffs.length === 1
-                  ? "1 producto con cambios"
-                  : `${diffs.length} productos con cambios`}
-                {selectedChangesCount > 0 ? (
-                  <span className="ml-2 font-semibold text-tl-ink">
-                    · {selectedChangesCount} campos seleccionados
-                  </span>
-                ) : null}
-              </div>
-              <label className="flex cursor-pointer items-center gap-2 text-xs text-tl-ink">
-                <input
-                  type="checkbox"
-                  className="h-4 w-4 rounded border-tl-line"
-                  checked={allSelected}
-                  onChange={onToggleAll}
-                  disabled={selectableCount === 0}
-                />
-                Seleccionar todos los aplicables
-              </label>
-            </div>
-
-            <ul className="max-h-[55vh] space-y-2 overflow-y-auto pr-1">
-              {diffs.map((d, i) => {
-                const isSelected = selected.has(i);
-                const isExpanded = expanded.has(i);
-                const productSelectedChanges = isSelected
-                  ? d.changes.filter((c) => !c.warning).length
-                  : 0;
-                return (
-                  <li
-                    key={`${d.productId}-${i}`}
-                    className={cn(
-                      "rounded-xl border transition-colors",
-                      isSelected
-                        ? "border-tl-accent/30 bg-tl-accent-subtle/30"
-                        : "border-tl-line bg-tl-canvas-inset",
-                    )}
-                  >
-                    <div className="flex items-start gap-3 px-3 py-2.5">
-                      <input
-                        type="checkbox"
-                        className="mt-1 h-4 w-4 rounded border-tl-line"
-                        checked={isSelected}
-                        onChange={() => onToggleProduct(i)}
-                        disabled={!d.selectable}
-                        aria-label={`Aplicar cambios a ${d.productName}`}
-                      />
-                      <div className="min-w-0 flex-1">
-                        <button
-                          type="button"
-                          className="flex w-full items-center justify-between gap-2 text-left"
-                          onClick={() => onToggleExpanded(i)}
-                        >
-                          <div className="min-w-0">
-                            <p className="truncate text-sm font-semibold text-tl-ink">
-                              {d.productName}
-                            </p>
-                            <p className="mt-0.5 truncate text-[11px] font-mono text-tl-muted">
-                              {d.sku}
-                            </p>
-                          </div>
-                          <div className="flex items-center gap-2">
-                            <span className="rounded-full border border-tl-line bg-tl-canvas px-2 py-0.5 text-[11px] font-semibold text-tl-ink">
-                              {d.changes.length === 1
-                                ? "1 cambio"
-                                : `${d.changes.length} cambios`}
-                            </span>
-                            <ChevronRight
-                              className={cn(
-                                "h-4 w-4 text-tl-muted transition-transform",
-                                isExpanded && "rotate-90",
-                              )}
-                              aria-hidden
-                            />
-                          </div>
-                        </button>
-                        {!isExpanded && productSelectedChanges > 0 ? (
-                          <p className="mt-1 text-[11px] text-tl-muted">
-                            {productSelectedChanges} campo(s) listo(s) para aplicar.
-                          </p>
-                        ) : null}
-                        {isExpanded ? (
-                          <ul className="mt-2 space-y-1.5">
-                            {d.changes.map((c, ci) => (
-                              <li
-                                key={`${c.field}-${ci}`}
-                                className={cn(
-                                  "rounded-lg border px-2.5 py-1.5 text-[12px]",
-                                  c.warning
-                                    ? "border-tl-warning/30 bg-tl-warning-subtle/50"
-                                    : "border-tl-line bg-tl-canvas",
-                                )}
-                              >
-                                <div className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5">
-                                  <span className="font-semibold text-tl-ink">{c.label}:</span>
-                                  <span className="text-tl-muted line-through decoration-tl-danger/60 decoration-1">
-                                    {c.before || "(vacío)"}
-                                  </span>
-                                  <span className="text-tl-muted">→</span>
-                                  <span className="font-semibold text-tl-accent">
-                                    {c.after || "(vacío)"}
-                                  </span>
-                                </div>
-                                {c.warning ? (
-                                  <p className="mt-1 text-[11px] text-tl-warning">{c.warning}</p>
-                                ) : null}
-                              </li>
-                            ))}
-                          </ul>
-                        ) : null}
-                        {!d.selectable ? (
-                          <p className="mt-1 text-[11px] text-tl-warning">
-                            Este producto tiene campos con valores no válidos. No se puede aplicar.
-                          </p>
-                        ) : null}
-                      </div>
-                    </div>
+      <div className="flex max-h-[80vh] flex-col">
+        <div className="flex-1 space-y-4 overflow-y-auto pr-1">
+          {parseErrors.length > 0 ? (
+            <div className="rounded-xl border border-tl-warning/25 bg-tl-warning-subtle px-3 py-2.5 text-xs text-tl-warning">
+              <p className="font-semibold">
+                {parseErrors.length === 1
+                  ? "1 aviso al leer el CSV"
+                  : `${parseErrors.length} avisos al leer el CSV`}
+              </p>
+              <ul className="mt-1.5 ml-4 list-disc space-y-0.5">
+                {parseErrors.slice(0, 5).map((e, i) => (
+                  <li key={`${e.rowIndex}-${i}`}>
+                    Fila {e.rowIndex}: {e.message}
                   </li>
-                );
-              })}
-            </ul>
-          </>
-        )}
+                ))}
+                {parseErrors.length > 5 ? (
+                  <li>…y {parseErrors.length - 5} más.</li>
+                ) : null}
+              </ul>
+            </div>
+          ) : null}
 
-        <div className="flex flex-col-reverse gap-2 border-t border-tl-line pt-3 sm:flex-row sm:items-center sm:justify-end">
+          {missing.length > 0 ? (
+            <div className="rounded-xl border border-tl-warning/25 bg-tl-warning-subtle px-3 py-2.5 text-xs text-tl-warning">
+              <p className="font-semibold">
+                {missing.length === 1
+                  ? "1 fila con SKU no encontrado en el catálogo (se ignora)"
+                  : `${missing.length} filas con SKU no encontrado en el catálogo (se ignoran)`}
+              </p>
+              <ul className="mt-1.5 ml-4 list-disc space-y-0.5">
+                {missing.slice(0, 5).map((m, i) => (
+                  <li key={`${m.sku}-${i}`}>
+                    Fila {m.rowIndex}: SKU <span className="font-mono">{m.sku}</span>
+                    {m.name ? ` (${m.name})` : ""} no existe en el catálogo.
+                  </li>
+                ))}
+                {missing.length > 5 ? <li>…y {missing.length - 5} más.</li> : null}
+              </ul>
+            </div>
+          ) : null}
+
+          {diffs.length === 0 ? (
+            <div className="rounded-xl border border-tl-line bg-tl-canvas-inset px-3 py-6 text-center text-sm text-tl-muted">
+              No se detectaron cambios entre el CSV y el catálogo actual.
+            </div>
+          ) : (
+            <>
+              <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-tl-muted">
+                <div>
+                  {diffs.length === 1
+                    ? "1 producto con cambios"
+                    : `${diffs.length} productos con cambios`}
+                  {selectedChangesCount > 0 ? (
+                    <span className="ml-2 font-semibold text-tl-ink">
+                      · {selectedChangesCount} campos seleccionados
+                    </span>
+                  ) : null}
+                </div>
+                <label className="flex cursor-pointer items-center gap-2 text-xs text-tl-ink">
+                  <input
+                    type="checkbox"
+                    className="h-4 w-4 rounded border-tl-line"
+                    checked={allSelected}
+                    onChange={onToggleAll}
+                    disabled={selectableCount === 0}
+                  />
+                  Seleccionar todos los aplicables
+                </label>
+              </div>
+
+              <ul className="space-y-2">
+                {diffs.map((d, i) => {
+                  const isSelected = selected.has(i);
+                  const isExpanded = expanded.has(i);
+                  const productSelectedChanges = isSelected
+                    ? d.changes.filter((c) => !c.warning).length
+                    : 0;
+                  return (
+                    <li
+                      key={`${d.productId}-${i}`}
+                      className={cn(
+                        "rounded-xl border transition-colors",
+                        isSelected
+                          ? "border-tl-accent/30 bg-tl-accent-subtle/30"
+                          : "border-tl-line bg-tl-canvas-inset",
+                      )}
+                    >
+                      <div className="flex items-start gap-3 px-3 py-2.5">
+                        <input
+                          type="checkbox"
+                          className="mt-1 h-4 w-4 rounded border-tl-line"
+                          checked={isSelected}
+                          onChange={() => onToggleProduct(i)}
+                          disabled={!d.selectable}
+                          aria-label={`Aplicar cambios a ${d.productName}`}
+                        />
+                        <div className="min-w-0 flex-1">
+                          <button
+                            type="button"
+                            className="flex w-full items-center justify-between gap-2 text-left"
+                            onClick={() => onToggleExpanded(i)}
+                          >
+                            <div className="min-w-0">
+                              <p className="truncate text-sm font-semibold text-tl-ink">
+                                {d.productName}
+                              </p>
+                              <p className="mt-0.5 truncate text-[11px] font-mono text-tl-muted">
+                                {d.sku}
+                              </p>
+                            </div>
+                            <div className="flex items-center gap-2">
+                              <span className="rounded-full border border-tl-line bg-tl-canvas px-2 py-0.5 text-[11px] font-semibold text-tl-ink">
+                                {d.changes.length === 1
+                                  ? "1 cambio"
+                                  : `${d.changes.length} cambios`}
+                              </span>
+                              <ChevronRight
+                                className={cn(
+                                  "h-4 w-4 text-tl-muted transition-transform",
+                                  isExpanded && "rotate-90",
+                                )}
+                                aria-hidden
+                              />
+                            </div>
+                          </button>
+                          {!isExpanded && productSelectedChanges > 0 ? (
+                            <p className="mt-1 text-[11px] text-tl-muted">
+                              {productSelectedChanges} campo(s) listo(s) para aplicar.
+                            </p>
+                          ) : null}
+                          {isExpanded ? (
+                            <ul className="mt-2 space-y-1.5">
+                              {d.changes.map((c, ci) => (
+                                <li
+                                  key={`${c.field}-${ci}`}
+                                  className={cn(
+                                    "rounded-lg border px-2.5 py-1.5 text-[12px]",
+                                    c.warning
+                                      ? "border-tl-warning/30 bg-tl-warning-subtle/50"
+                                      : "border-tl-line bg-tl-canvas",
+                                  )}
+                                >
+                                  <div className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5">
+                                    <span className="font-semibold text-tl-ink">{c.label}:</span>
+                                    <span className="text-tl-muted line-through decoration-tl-danger/60 decoration-1">
+                                      {c.before || "(vacío)"}
+                                    </span>
+                                    <span className="text-tl-muted">→</span>
+                                    <span className="font-semibold text-tl-accent">
+                                      {c.after || "(vacío)"}
+                                    </span>
+                                  </div>
+                                  {c.warning ? (
+                                    <p className="mt-1 text-[11px] text-tl-warning">{c.warning}</p>
+                                  ) : null}
+                                </li>
+                              ))}
+                            </ul>
+                          ) : null}
+                          {!d.selectable ? (
+                            <p className="mt-1 text-[11px] text-tl-warning">
+                              Este producto tiene campos con valores no válidos. No se puede aplicar.
+                            </p>
+                          ) : null}
+                        </div>
+                      </div>
+                    </li>
+                  );
+                })}
+              </ul>
+            </>
+          )}
+        </div>
+
+        <div className="mt-4 flex flex-col-reverse gap-2 border-t border-tl-line pt-3 sm:flex-row sm:items-center sm:justify-end">
           <button
             type="button"
             className="tl-btn tl-btn-secondary !px-4 !py-2 text-sm"
