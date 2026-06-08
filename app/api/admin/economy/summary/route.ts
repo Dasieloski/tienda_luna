@@ -162,6 +162,23 @@ export async function GET(request: Request) {
         `,
     );
 
+    const salaryTaxRows = await cacheGetOrSet(
+      `economy-summary-salary-tax:${session.storeId}:${dayYmd}:tz${offsetMinutes}:v1`,
+      30_000,
+      () =>
+        prisma.$queryRaw<{ total_cents: bigint }[]>`
+          SELECT
+            COALESCE(SUM(e."salaryTaxCents"), 0)::bigint AS total_cents
+          FROM "Expense" e
+          WHERE e."storeId" = ${session.storeId}
+            AND e."salaryTaxCents" IS NOT NULL
+            AND to_char(
+              date_trunc('day', (e."occurredAt" + (${offsetInterval}::interval))),
+              'YYYY-MM-DD'
+            ) = ${dayYmd}
+        `,
+    );
+
     const buckets: EconomyBucket[] = rows.map((r) => ({
       method: r.method ?? "desconocido",
       ventas: Number(r.ventas ?? BigInt(0)),
@@ -195,7 +212,8 @@ export async function GET(request: Request) {
     const mr = marginRows[0];
     const soldRevenueWithCostCents = Number(mr?.revenue ?? BigInt(0));
     const supplierCostCents = Number(mr?.cost ?? BigInt(0));
-    const marginCents = soldRevenueWithCostCents - supplierCostCents;
+    const salaryTaxCents = Number(salaryTaxRows[0]?.total_cents ?? BigInt(0));
+    const marginCents = soldRevenueWithCostCents - supplierCostCents - salaryTaxCents;
     const grossPlusHalfProfitCents = Math.round(soldRevenueWithCostCents + 0.5 * marginCents);
 
     return NextResponse.json({
@@ -218,6 +236,7 @@ export async function GET(request: Request) {
         cajaNetaCents,
         soldRevenueWithCostCents,
         supplierCostCents,
+        salaryTaxCents,
         marginCents,
         grossPlusHalfProfitCents,
       },
@@ -243,6 +262,7 @@ export async function GET(request: Request) {
           cajaNetaCents: 0,
           soldRevenueWithCostCents: 0,
           supplierCostCents: 0,
+          salaryTaxCents: 0,
           marginCents: 0,
           grossPlusHalfProfitCents: 0,
         },

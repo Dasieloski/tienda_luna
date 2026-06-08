@@ -14,6 +14,13 @@ const listSchema = z.object({
   limit: z.coerce.number().int().min(1).max(500).optional().default(200),
 });
 
+function computeSalaryTax(salaryBaseCents?: number | null) {
+  if (!salaryBaseCents || salaryBaseCents <= 0) return 0;
+  const base = Math.round(salaryBaseCents * 1.0909);
+  const tax = Math.round(base * 0.175);
+  return tax;
+}
+
 const createSchema = z.object({
   concept: z.string().trim().min(1).max(160),
   categoryId: z.string().min(1).optional().nullable(),
@@ -30,6 +37,9 @@ const createSchema = z.object({
   splitStrategy: z.enum(["PARTES_IGUALES", "PORCENTAJE_CUSTOM", "UN_SOLO_DUENO"]).default("PARTES_IGUALES"),
   osmarPct: z.number().int().min(0).max(100).optional(),
   singleOwner: z.enum(["OSMAR", "ALEX"]).optional().nullable(),
+  /** Solo para gastos de salario */
+  salaryBaseCents: z.number().int().min(0).optional().nullable(),
+  supplierId: z.string().min(1).optional().nullable(),
 });
 
 const updateSchema = createSchema
@@ -126,7 +136,7 @@ export async function GET(request: Request) {
     where,
     orderBy: { occurredAt: "desc" },
     take: limit,
-    include: { category: { select: { id: true, name: true } } },
+    include: { category: { select: { id: true, name: true } }, supplier: { select: { id: true, name: true } } },
   });
 
   const totals = rows.reduce(
@@ -158,6 +168,10 @@ export async function GET(request: Request) {
       currency: r.currency,
       originalAmount: r.originalAmount ?? null,
       usdRateCup: r.usdRateCup ?? null,
+      salaryBaseCents: r.salaryBaseCents ?? null,
+      salaryTaxCents: r.salaryTaxCents ?? null,
+      supplierId: r.supplierId ?? null,
+      supplierName: r.supplier?.name ?? null,
       occurredAt: r.occurredAt.toISOString(),
       impactMonth: (r as any).impactMonth ?? null,
       paidBy: r.paidBy ?? null,
@@ -193,6 +207,10 @@ export async function POST(request: Request) {
     storeUsdRateCup: storeUsd,
   });
 
+  const isSalary = (parsed.data.categoryName ?? "").trim().toLowerCase() === "salarios";
+  const salaryBase = isSalary ? (parsed.data.salaryBaseCents ?? computed.amountCents) : null;
+  const salaryTax = isSalary && salaryBase ? computeSalaryTax(salaryBase) : null;
+
   const row = await prisma.expense.create({
     data: {
       storeId: guard.session.storeId,
@@ -204,6 +222,9 @@ export async function POST(request: Request) {
       currency: computed.currency,
       originalAmount: computed.originalAmount,
       usdRateCup: computed.usdRateCup,
+      salaryBaseCents: salaryBase,
+      salaryTaxCents: salaryTax,
+      supplierId: isSalary ? (parsed.data.supplierId ?? null) : null,
       occurredAt: new Date(parsed.data.occurredAt),
       paidBy: parsed.data.paidBy ?? null,
       notes: parsed.data.notes ?? null,
@@ -303,6 +324,16 @@ export async function PATCH(request: Request) {
     data.currency = computed.currency;
     data.originalAmount = computed.originalAmount;
     data.usdRateCup = computed.usdRateCup;
+  }
+
+  const isSalary = (parsed.data.categoryName ?? existing.categoryName ?? "").trim().toLowerCase() === "salarios";
+  if ("salaryBaseCents" in parsed.data || "categoryName" in parsed.data || "amountCupCents" in parsed.data) {
+    const base = parsed.data.salaryBaseCents ?? (isSalary ? (parsed.data.amountCupCents ?? existing.amountCents) : null);
+    (data as any).salaryBaseCents = isSalary && base ? base : null;
+    (data as any).salaryTaxCents = isSalary && base ? computeSalaryTax(base) : null;
+  }
+  if ("supplierId" in parsed.data) {
+    (data as any).supplierId = isSalary ? (parsed.data.supplierId ?? null) : null;
   }
 
   const updated = await prisma.expense.update({ where: { id: existing.id }, data });

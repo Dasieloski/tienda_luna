@@ -97,6 +97,7 @@ model Supplier {
   products Product[]
   debtPayments SupplierDebtPayment[]
   withdrawals SupplierWithdrawal[]
+  salaryExpenses Expense[]
 
   @@unique([storeId, name])
   @@index([storeId, active])
@@ -498,6 +499,14 @@ model Expense {
   originalAmount Int?
   usdRateCup  Int?
 
+  /// Salario base (solo para gastos de categoría Salarios)
+  salaryBaseCents Int?
+  /// Impuesto calculado sobre salario: (salario*1.0909)*0.175 (solo Salarios)
+  salaryTaxCents Int?
+  /// Proveedor al que se le debe el impuesto de nómina (solo Salarios)
+  supplierId String?
+  supplier   Supplier? @relation(fields: [supplierId], references: [id], onDelete: SetNull)
+
   /// Fecha real del gasto (cuando ocurrió/pagó)
   occurredAt DateTime
   /// Periodo contable de impacto (acumulación), separado de caja. Formato `YYYY-MM`.
@@ -527,6 +536,7 @@ model Expense {
   @@index([storeId, impactMonth])
   @@index([storeId, categoryId, occurredAt])
   @@index([storeId, splitStrategy, occurredAt])
+  @@index([storeId, supplierId])
 }
 
 /// Sub-ledger contable para asientos manuales/ajustes (acumulaciones, reclasificaciones).

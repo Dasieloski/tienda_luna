@@ -57,6 +57,7 @@ export async function GET(request: Request) {
     payments_cents: bigint;
     withdrawals_cost_cents: bigint;
     withdrawals_retail_cents: bigint;
+    salary_tax_cents: bigint;
     balance_pending_cents: bigint;
     pending_in_range_cents: bigint;
   };
@@ -125,12 +126,25 @@ export async function GET(request: Request) {
         AND (${supplierId}::text IS NULL OR w."supplierId" = ${supplierId})
       GROUP BY 1
     ),
+    salary_expenses AS (
+      SELECT
+        e."supplierId" AS supplier_id,
+        COALESCE(SUM(e."salaryTaxCents"),0)::bigint AS salary_tax_cents
+      FROM "Expense" e
+      WHERE e."storeId" = ${storeId}
+        AND e."occurredAt" >= ${from}
+        AND e."occurredAt" < ${toExclusive}
+        AND e."salaryTaxCents" IS NOT NULL
+        AND (${supplierId}::text IS NULL OR e."supplierId" = ${supplierId})
+      GROUP BY 1
+    ),
     balance AS (
       SELECT
         p."supplierId" AS supplier_id,
         COALESCE(SUM(CASE WHEN COALESCE(sl."unitCostCents", p."costCents") IS NULL THEN 0 ELSE COALESCE(sl."unitCostCents", p."costCents") * sl.quantity END),0)::bigint
         - COALESCE((SELECT SUM(dp."amountCents") FROM "SupplierDebtPayment" dp WHERE dp."storeId"=${storeId} AND dp."supplierId"=p."supplierId"),0)::bigint
         - COALESCE((SELECT SUM(w."totalCostCents") FROM "SupplierWithdrawal" w WHERE w."storeId"=${storeId} AND w."supplierId"=p."supplierId"),0)::bigint
+        + COALESCE((SELECT SUM(se."salaryTaxCents") FROM "Expense" se WHERE se."storeId"=${storeId} AND se."supplierId"=p."supplierId" AND se."salaryTaxCents" IS NOT NULL),0)::bigint
         AS balance_pending_cents
       FROM "Sale" s
       JOIN "SaleLine" sl ON sl."saleId" = s.id
@@ -148,15 +162,18 @@ export async function GET(request: Request) {
       COALESCE(p.payments_cents,0)::bigint AS payments_cents,
       COALESCE(w.withdrawals_cost_cents,0)::bigint AS withdrawals_cost_cents,
       COALESCE(w.withdrawals_retail_cents,0)::bigint AS withdrawals_retail_cents,
+      COALESCE(se.salary_tax_cents,0)::bigint AS salary_tax_cents,
       COALESCE(b.balance_pending_cents,0)::bigint AS balance_pending_cents,
       (
         s.sales_cost_cents
         - COALESCE(p.payments_cents,0)::bigint
         - COALESCE(w.withdrawals_cost_cents,0)::bigint
+        + COALESCE(se.salary_tax_cents,0)::bigint
       )::bigint AS pending_in_range_cents
     FROM sales s
     LEFT JOIN payments p ON p.supplier_id = s.supplier_id
     LEFT JOIN withdrawals w ON w.supplier_id = s.supplier_id
+    LEFT JOIN salary_expenses se ON se.supplier_id = s.supplier_id
     LEFT JOIN balance b ON b.supplier_id = s.supplier_id
     ORDER BY balance_pending_cents DESC, sales_cost_cents DESC, supplier_name ASC
   `;
@@ -175,6 +192,7 @@ export async function GET(request: Request) {
         paymentsCents: Number(r.payments_cents ?? BigInt(0)),
         withdrawalsCostCents: Number(r.withdrawals_cost_cents ?? BigInt(0)),
         withdrawalsRetailCents: Number(r.withdrawals_retail_cents ?? BigInt(0)),
+        salaryTaxCents: Number(r.salary_tax_cents ?? BigInt(0)),
       },
       pendingCents: Number(r.balance_pending_cents ?? BigInt(0)),
       pendingInRangeCents: Number(r.pending_in_range_cents ?? BigInt(0)),

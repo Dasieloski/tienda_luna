@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
+  BanknoteIcon as Banknote,
   BoltIcon as Bolt,
   CalendarIcon as Calendar,
   CreditCardIcon as CreditCard,
@@ -33,6 +34,10 @@ type ExpenseDto = {
   currency: string;
   originalAmount: number | null;
   usdRateCup: number | null;
+  salaryBaseCents: number | null;
+  salaryTaxCents: number | null;
+  supplierId: string | null;
+  supplierName: string | null;
   occurredAt: string;
   paidBy: string | null;
   notes: string | null;
@@ -70,6 +75,7 @@ const EXPENSE_CATEGORIES = [
   { id: "alquiler", label: "Alquiler" },
   { id: "transporte", label: "Transporte" },
   { id: "personal", label: "Personal" },
+  { id: "salarios", label: "Salarios" },
   { id: "mantenimiento", label: "Mantenimiento" },
   { id: "impuestos", label: "Impuestos" },
   { id: "otros", label: "Otros" },
@@ -84,6 +90,7 @@ function categoryLabel(name: string | null | undefined) {
 
 function categoryIcon(cat: string) {
   const c = cat.trim().toLowerCase();
+  if (c.includes("salario")) return Banknote;
   if (c.includes("servicio") || c.includes("luz") || c.includes("electric") || c.includes("agua")) return Bolt;
   if (c.includes("alquiler") || c.includes("renta") || c.includes("local")) return Home;
   if (c.includes("transporte") || c.includes("gas") || c.includes("combust")) return Truck;
@@ -109,11 +116,11 @@ function splitOwnerShare(exp: { splitStrategy: string; osmarPct: number | null; 
 export default function GastosPage() {
   const toast = useToast();
   const today = useMemo(() => utcTodayYmd(), []);
-  const firstOfMonth = useMemo(() => {
-    const [y, m] = today.split("-");
-    return `${y}-${m}-01`;
+  const firstOfYear = useMemo(() => {
+    const [y] = today.split("-");
+    return `${y}-01-01`;
   }, [today]);
-  const [fromDay, setFromDay] = useState(() => firstOfMonth);
+  const [fromDay, setFromDay] = useState(() => firstOfYear);
   const [toDay, setToDay] = useState(() => today);
   const [q, setQ] = useState("");
   const [category, setCategory] = useState<string>("");
@@ -179,6 +186,22 @@ export default function GastosPage() {
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
   const [deleteBusy, setDeleteBusy] = useState(false);
 
+  const [detailOpen, setDetailOpen] = useState(false);
+  const [detailExpense, setDetailExpense] = useState<ExpenseDto | null>(null);
+
+  const [suppliers, setSuppliers] = useState<{ id: string; name: string }[]>([]);
+
+  useEffect(() => {
+    fetch("/api/admin/suppliers?includeInactive=1", { credentials: "include" })
+      .then((r) => r.json().catch(() => null))
+      .then((json) => {
+        if (json && Array.isArray(json.suppliers)) {
+          setSuppliers(json.suppliers.map((s: any) => ({ id: s.id, name: s.name })));
+        }
+      })
+      .catch(() => {});
+  }, []);
+
   function openCreate() {
     setEditing(null);
     setModalOpen(true);
@@ -186,6 +209,10 @@ export default function GastosPage() {
   function openEdit(exp: ExpenseDto) {
     setEditing(exp);
     setModalOpen(true);
+  }
+  function openDetail(exp: ExpenseDto) {
+    setDetailExpense(exp);
+    setDetailOpen(true);
   }
 
   const visibleRows = useMemo(() => {
@@ -361,14 +388,22 @@ export default function GastosPage() {
                   visibleRows.map((r) => {
                     const cat = categoryLabel(r.categoryName);
                     const Icon = categoryIcon(cat);
+                    const isSalaryRow = cat === "Salarios";
                     return (
-                      <tr key={r.id} className="hover:bg-tl-canvas-subtle/50">
+                      <tr
+                        key={r.id}
+                        className="hover:bg-tl-canvas-subtle/50 cursor-pointer"
+                        onClick={() => openDetail(r)}
+                      >
                         <td className="px-4 py-3 text-xs tabular-nums text-tl-muted">
                           {new Date(r.occurredAt).toLocaleDateString("es-ES")}
                         </td>
                         <td className="px-4 py-3">
                           <div className="font-semibold text-tl-ink">{r.concept}</div>
                           {r.notes ? <div className="mt-0.5 line-clamp-1 text-xs text-tl-muted">{r.notes}</div> : null}
+                          {isSalaryRow && r.supplierName ? (
+                            <div className="mt-0.5 text-xs text-tl-accent">Proveedor: {r.supplierName}</div>
+                          ) : null}
                         </td>
                         <td className="px-4 py-3">
                           <span className="inline-flex items-center gap-2 rounded-full border border-tl-line bg-tl-canvas-inset px-3 py-1 text-xs font-semibold text-tl-ink">
@@ -378,13 +413,18 @@ export default function GastosPage() {
                         </td>
                         <td className="px-4 py-3 text-right">
                           <TablePriceCupCell cupCents={r.amountCents} compact />
+                          {isSalaryRow && r.salaryTaxCents ? (
+                            <div className="mt-1 text-[11px] text-tl-warning">
+                              + impuesto <TablePriceCupCell cupCents={r.salaryTaxCents} compact />
+                            </div>
+                          ) : null}
                         </td>
                         <td className="px-4 py-3 text-xs text-tl-muted">{r.paidBy ?? "—"}</td>
                         <td className="px-4 py-3 text-xs font-semibold text-tl-muted">
                           {splitLabelNice(r)}
                         </td>
                         <td className="px-4 py-3">
-                          <div className="flex justify-end gap-2">
+                          <div className="flex justify-end gap-2" onClick={(e) => e.stopPropagation()}>
                             <button
                               type="button"
                               className="tl-btn tl-btn-secondary !px-2.5 !py-2 text-xs"
@@ -420,11 +460,18 @@ export default function GastosPage() {
           open={modalOpen}
           editing={editing}
           defaultCategory={category || ""}
+          suppliers={suppliers}
           onClose={() => setModalOpen(false)}
           onSaved={async () => {
             setModalOpen(false);
             await load();
           }}
+        />
+
+        <ExpenseDetailModal
+          open={detailOpen}
+          expense={detailExpense}
+          onClose={() => { setDetailOpen(false); setDetailExpense(null); }}
         />
 
         <ConfirmDialog
@@ -480,12 +527,14 @@ function ExpenseModal({
   open,
   editing,
   defaultCategory,
+  suppliers,
   onClose,
   onSaved,
 }: {
   open: boolean;
   editing: ExpenseDto | null;
   defaultCategory: string;
+  suppliers: { id: string; name: string }[];
   onClose: () => void;
   onSaved: () => Promise<void>;
 }) {
@@ -503,8 +552,13 @@ function ExpenseModal({
   const [osmarPct, setOsmarPct] = useState<number>(50);
   const [singleOwner, setSingleOwner] = useState<OwnerName>("OSMAR");
 
+  const [salaryBase, setSalaryBase] = useState<string>("");
+  const [supplierId, setSupplierId] = useState<string>("");
+
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
+
+  const isSalary = categoryLabel(categoryName) === "Salarios";
 
   useEffect(() => {
     if (!open) return;
@@ -521,6 +575,8 @@ function ExpenseModal({
       setSplitStrategy("PARTES_IGUALES");
       setOsmarPct(50);
       setSingleOwner("OSMAR");
+      setSalaryBase("");
+      setSupplierId("");
       return;
     }
     setConcept(editing.concept ?? "");
@@ -546,7 +602,17 @@ function ExpenseModal({
     );
     setOsmarPct(editing.osmarPct ?? 50);
     setSingleOwner(editing.singleOwner === "ALEX" ? "ALEX" : "OSMAR");
+    setSalaryBase(editing.salaryBaseCents ? String((editing.salaryBaseCents / 100).toFixed(2)) : "");
+    setSupplierId(editing.supplierId ?? "");
   }, [defaultCategory, editing, open]);
+
+  const salaryTaxComputed = useMemo(() => {
+    const baseNum = Number(String(salaryBase).replace(",", "."));
+    if (!Number.isFinite(baseNum) || baseNum <= 0) return 0;
+    const base = Math.round(baseNum * 100 * 1.0909);
+    const tax = Math.round(base * 0.175);
+    return tax;
+  }, [salaryBase]);
 
   const split = useMemo(() => splitOwnerShare({ splitStrategy, osmarPct, singleOwner }), [osmarPct, singleOwner, splitStrategy]);
 
@@ -584,6 +650,20 @@ function ExpenseModal({
       payload.amountCupCents = Math.round(amountNum * 100);
     }
 
+    if (isSalary) {
+      const sb = Number(String(salaryBase).replace(",", "."));
+      if (!Number.isFinite(sb) || sb <= 0) {
+        setErr("El salario base es obligatorio para gastos de salario.");
+        return;
+      }
+      payload.salaryBaseCents = Math.round(sb * 100);
+      if (!supplierId) {
+        setErr("Debes seleccionar un proveedor para gastos de salario.");
+        return;
+      }
+      payload.supplierId = supplierId;
+    }
+
     setBusy(true);
     setErr(null);
     try {
@@ -611,7 +691,7 @@ function ExpenseModal({
     <Modal
       open={open}
       title={editing ? "Editar gasto" : "Nuevo gasto"}
-      description="Reparto: PARTES_IGUALES, PORCENTAJE_CUSTOM o UN_SOLO_DUENO."
+      description={isSalary ? "Gasto de salario: calcula impuesto y asigna proveedor." : "Reparto: PARTES_IGUALES, PORCENTAJE_CUSTOM o UN_SOLO_DUENO."}
       onClose={onClose}
       maxWidthClassName="max-w-3xl"
     >
@@ -664,33 +744,71 @@ function ExpenseModal({
                   </div>
                 </div>
               </div>
-              <div className="grid gap-3 sm:grid-cols-2">
-                <div>
-                  <label className="text-xs font-semibold uppercase tracking-wider text-tl-muted">
-                    Monto ({currency})
-                  </label>
-                  <input
-                    inputMode="decimal"
-                    className="tl-input mt-1 h-10"
-                    value={amount}
-                    onChange={(e) => setAmount(e.target.value)}
-                    placeholder={currency === "USD" ? "Ej: 5.00" : "Ej: 125.00"}
-                  />
+              {isSalary ? (
+                <div className="rounded-2xl border border-tl-accent/30 bg-tl-canvas p-4 space-y-3">
+                  <div>
+                    <label className="text-xs font-semibold uppercase tracking-wider text-tl-muted">Salario base (CUP)</label>
+                    <input
+                      inputMode="decimal"
+                      className="tl-input mt-1 h-10"
+                      value={salaryBase}
+                      onChange={(e) => setSalaryBase(e.target.value)}
+                      placeholder="Ej: 5000.00"
+                    />
+                  </div>
+                  <div>
+                    <label className="text-xs font-semibold uppercase tracking-wider text-tl-muted">Proveedor a pagar</label>
+                    <select className="tl-input mt-1 h-10" value={supplierId} onChange={(e) => setSupplierId(e.target.value)}>
+                      <option value="">Seleccionar…</option>
+                      {suppliers.map((s) => (
+                        <option key={s.id} value={s.id}>{s.name}</option>
+                      ))}
+                    </select>
+                  </div>
+                  {salaryTaxComputed > 0 ? (
+                    <div className="rounded-xl border border-tl-line bg-tl-canvas-inset px-3 py-2">
+                      <p className="text-[11px] font-semibold uppercase tracking-wider text-tl-muted">Cálculo del impuesto (17.5% sobre base)</p>
+                      <p className="mt-1 text-sm font-bold text-tl-ink">
+                        Base: {((Number(String(salaryBase).replace(",", ".")) * 100 * 1.0909) / 100).toFixed(2)} CUP
+                      </p>
+                      <p className="text-sm font-bold text-tl-accent">
+                        Impuesto: {(salaryTaxComputed / 100).toFixed(2)} CUP
+                      </p>
+                      <p className="mt-1 text-[11px] text-tl-muted">
+                        Este importe se rebaja del margen de ganancias y se suma a la deuda del proveedor.
+                      </p>
+                    </div>
+                  ) : null}
                 </div>
-                <div>
-                  <label className="text-xs font-semibold uppercase tracking-wider text-tl-muted">
-                    Cambio USD→CUP (opcional)
-                  </label>
-                  <input
-                    inputMode="numeric"
-                    className={cn("tl-input mt-1 h-10", currency !== "USD" && "opacity-60")}
-                    value={usdRateCup}
-                    onChange={(e) => setUsdRateCup(e.target.value)}
-                    placeholder="Ej: 520"
-                    disabled={currency !== "USD"}
-                  />
+              ) : (
+                <div className="grid gap-3 sm:grid-cols-2">
+                  <div>
+                    <label className="text-xs font-semibold uppercase tracking-wider text-tl-muted">
+                      Monto ({currency})
+                    </label>
+                    <input
+                      inputMode="decimal"
+                      className="tl-input mt-1 h-10"
+                      value={amount}
+                      onChange={(e) => setAmount(e.target.value)}
+                      placeholder={currency === "USD" ? "Ej: 5.00" : "Ej: 125.00"}
+                    />
+                  </div>
+                  <div>
+                    <label className="text-xs font-semibold uppercase tracking-wider text-tl-muted">
+                      Cambio USD→CUP (opcional)
+                    </label>
+                    <input
+                      inputMode="numeric"
+                      className={cn("tl-input mt-1 h-10", currency !== "USD" && "opacity-60")}
+                      value={usdRateCup}
+                      onChange={(e) => setUsdRateCup(e.target.value)}
+                      placeholder="Ej: 520"
+                      disabled={currency !== "USD"}
+                    />
+                  </div>
                 </div>
-              </div>
+              )}
               <div>
                 <label className="text-xs font-semibold uppercase tracking-wider text-tl-muted">Notas</label>
                 <textarea className="tl-input mt-1 min-h-[88px] resize-y p-3" value={notes} onChange={(e) => setNotes(e.target.value)} placeholder="Opcional: detalles del gasto…" />
@@ -833,6 +951,103 @@ function ExpenseModal({
               {busy ? "Guardando…" : editing ? "Guardar cambios" : "Crear gasto"}
             </button>
           </div>
+    </Modal>
+  );
+}
+
+function ExpenseDetailModal({
+  open,
+  expense,
+  onClose,
+}: {
+  open: boolean;
+  expense: ExpenseDto | null;
+  onClose: () => void;
+}) {
+  if (!open || !expense) return null;
+  const cat = categoryLabel(expense.categoryName);
+  const Icon = categoryIcon(cat);
+  const isSalaryRow = cat === "Salarios";
+  const split = splitOwnerShare(expense);
+
+  return (
+    <Modal open={open} title="Detalle del gasto" onClose={onClose} maxWidthClassName="max-w-lg">
+      <div className="space-y-4">
+        <div className="flex items-center gap-3">
+          <span className="inline-flex items-center gap-2 rounded-full border border-tl-line bg-tl-canvas-inset px-3 py-1 text-xs font-semibold text-tl-ink">
+            <Icon className="h-4 w-4 text-tl-muted" aria-hidden />
+            {cat}
+          </span>
+          <span className="text-xs text-tl-muted">{new Date(expense.occurredAt).toLocaleDateString("es-ES")}</span>
+        </div>
+
+        <div>
+          <p className="text-lg font-bold text-tl-ink">{expense.concept}</p>
+          {expense.notes ? <p className="mt-1 text-sm text-tl-muted">{expense.notes}</p> : null}
+        </div>
+
+        <div className="grid gap-3 sm:grid-cols-2">
+          <div className="rounded-xl border border-tl-line bg-tl-canvas-inset px-4 py-3">
+            <p className="text-[11px] font-semibold uppercase tracking-wider text-tl-muted">Monto</p>
+            <p className="mt-1 text-lg font-bold text-tl-ink">
+              <CupUsdMoney cents={expense.amountCents} />
+            </p>
+          </div>
+          {isSalaryRow && expense.salaryTaxCents ? (
+            <div className="rounded-xl border border-tl-line bg-tl-canvas-inset px-4 py-3">
+              <p className="text-[11px] font-semibold uppercase tracking-wider text-tl-muted">Impuesto calculado</p>
+              <p className="mt-1 text-lg font-bold text-tl-accent">
+                <CupUsdMoney cents={expense.salaryTaxCents} />
+              </p>
+            </div>
+          ) : null}
+          {isSalaryRow && expense.supplierName ? (
+            <div className="rounded-xl border border-tl-line bg-tl-canvas-inset px-4 py-3">
+              <p className="text-[11px] font-semibold uppercase tracking-wider text-tl-muted">Proveedor a pagar</p>
+              <p className="mt-1 text-sm font-bold text-tl-ink">{expense.supplierName}</p>
+            </div>
+          ) : null}
+          <div className="rounded-xl border border-tl-line bg-tl-canvas-inset px-4 py-3">
+            <p className="text-[11px] font-semibold uppercase tracking-wider text-tl-muted">Responsable</p>
+            <p className="mt-1 text-sm font-bold text-tl-ink">{expense.paidBy ?? "—"}</p>
+          </div>
+          <div className="rounded-xl border border-tl-line bg-tl-canvas-inset px-4 py-3">
+            <p className="text-[11px] font-semibold uppercase tracking-wider text-tl-muted">Reparto</p>
+            <p className="mt-1 text-sm font-bold text-tl-ink">{splitLabelNice(expense)}</p>
+            <div className="mt-2 grid grid-cols-2 gap-2 text-xs">
+              <div className="rounded-lg border border-tl-line bg-tl-canvas px-2 py-1">
+                <span className="text-tl-muted">Osmar</span> <span className="font-semibold">{split.osmarPct}%</span>
+              </div>
+              <div className="rounded-lg border border-tl-line bg-tl-canvas px-2 py-1">
+                <span className="text-tl-muted">Álex</span> <span className="font-semibold">{split.alexPct}%</span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div className="rounded-xl border border-tl-line bg-tl-canvas-inset px-4 py-3">
+          <p className="text-[11px] font-semibold uppercase tracking-wider text-tl-muted">Dueño efectivo</p>
+          <div className="mt-2 grid grid-cols-2 gap-2 text-sm">
+            <div>
+              <span className="text-tl-muted">Osmar:</span>{" "}
+              <span className="font-bold text-tl-ink">
+                <CupUsdMoney cents={Math.round((expense.amountCents * split.osmarPct) / 100)} />
+              </span>
+            </div>
+            <div>
+              <span className="text-tl-muted">Álex:</span>{" "}
+              <span className="font-bold text-tl-ink">
+                <CupUsdMoney cents={expense.amountCents - Math.round((expense.amountCents * split.osmarPct) / 100)} />
+              </span>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div className="mt-5 flex items-center justify-end border-t border-tl-line pt-4">
+        <button type="button" className="tl-btn tl-btn-secondary !px-4 !py-2" onClick={onClose}>
+          Cerrar
+        </button>
+      </div>
     </Modal>
   );
 }
