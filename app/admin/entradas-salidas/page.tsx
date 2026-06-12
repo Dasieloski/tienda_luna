@@ -346,15 +346,23 @@ function InventoryMovementsPageClient() {
         width: "80px",
         render: (r) => {
           const isOwnerConsumption = r.reason === "OWNER_SALE";
+          const isMerma = r.reason === "MERMA" || r.reason === "ROTURA";
           const colorClass = isOwnerConsumption
             ? "text-tl-danger"
-            : r.delta >= 0
-              ? "text-tl-success"
-              : "text-tl-warning";
+            : isMerma
+              ? "text-tl-info"
+              : r.delta >= 0
+                ? "text-tl-success"
+                : "text-tl-warning";
+          const title = isOwnerConsumption
+            ? "Consumo de dueño"
+            : isMerma
+              ? r.reason === "ROTURA" ? "Rotura" : "Merma"
+              : undefined;
           return (
             <span
               className={cn("tabular-nums font-semibold", colorClass)}
-              title={isOwnerConsumption ? "Consumo de dueño" : undefined}
+              title={title}
             >
               {r.delta >= 0 ? `+${r.delta}` : String(r.delta)}
             </span>

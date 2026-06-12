@@ -36,6 +36,8 @@ const patchSchema = z
     active: z.boolean().optional(),
     /** Solo para restaurar producto archivado (admin). */
     restore: z.literal(true).optional(),
+    /** Razón del movimiento de inventario (default: MANUAL_ADJUST). */
+    reason: z.string().min(1).optional(),
   })
   .refine((d) => Object.keys(d).length > 0, { message: "EMPTY" });
 
@@ -144,6 +146,7 @@ export async function PATCH(request: Request, ctx: RouteCtx) {
       });
 
       if (stockChanged) {
+        const movementReason = data.reason || "MANUAL_ADJUST";
         await tx.inventoryMovement.create({
           data: {
             storeId: guard.session.storeId,
@@ -151,7 +154,7 @@ export async function PATCH(request: Request, ctx: RouteCtx) {
             delta: nextStockQty - existing.stockQty,
             beforeQty: existing.stockQty,
             afterQty: nextStockQty,
-            reason: "MANUAL_ADJUST",
+            reason: movementReason,
             actorType: "USER",
             actorId: guard.session.sub,
             eventId: null,

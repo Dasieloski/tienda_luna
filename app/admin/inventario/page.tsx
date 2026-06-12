@@ -8,6 +8,7 @@ import {
   FileDownIcon as FileDown,
   FileSpreadsheetIcon as FileSpreadsheet,
   FileTextIcon as FileText,
+  MinusIcon as Minus,
   PackageIcon as Package,
   PencilIcon as Pencil,
   PlusIcon as Plus,
@@ -192,6 +193,18 @@ export default function InventoryPage() {
   const entryPrevFocusRef = useRef<HTMLElement | null>(null);
   const entryDialogRef = useRef<HTMLDivElement | null>(null);
 
+  // Merma / rebaja de stock (modal)
+  const [mermaOpen, setMermaOpen] = useState(false);
+  const [mermaProduct, setMermaProduct] = useState<ProductRow | null>(null);
+  const [mermaMode, setMermaMode] = useState<"units" | "boxes">("units");
+  const [mermaQty, setMermaQty] = useState("");
+  const [mermaBusy, setMermaBusy] = useState(false);
+  const [mermaMsg, setMermaMsg] = useState<string | null>(null);
+  const [mermaReason, setMermaReason] = useState<"MERMA" | "ROTURA">("MERMA");
+
+  const mermaPrevFocusRef = useRef<HTMLElement | null>(null);
+  const mermaDialogRef = useRef<HTMLDivElement | null>(null);
+
   const closeEdit = useCallback(() => {
     setEditOpen(false);
   }, []);
@@ -207,6 +220,16 @@ export default function InventoryPage() {
     setEntryQty("");
     setEntryMsg(null);
     setEntryOpen(true);
+  }
+
+  function openMerma(p: ProductRow) {
+    mermaPrevFocusRef.current = document.activeElement as HTMLElement | null;
+    setMermaProduct(p);
+    setMermaMode("units");
+    setMermaQty("");
+    setMermaReason("MERMA");
+    setMermaMsg(null);
+    setMermaOpen(true);
   }
 
   const loadSuppliers = useCallback(async () => {
@@ -699,6 +722,62 @@ export default function InventoryPage() {
     void loadProducts();
   }
 
+  async function onSaveMerma(e: React.FormEvent) {
+    e.preventDefault();
+    if (!mermaProduct) return;
+    setMermaBusy(true);
+    setMermaMsg(null);
+
+    const qty = parseInt(mermaQty, 10);
+    if (Number.isNaN(qty) || qty <= 0) {
+      setMermaMsg("Por favor, introduce una cantidad válida mayor que cero.");
+      setMermaBusy(false);
+      return;
+    }
+
+    const factor = mermaMode === "boxes" ? Math.max(1, mermaProduct.unitsPerBox ?? 1) : 1;
+    const removedUnits = qty * factor;
+
+    if (removedUnits > mermaProduct.stockQty) {
+      setMermaMsg("No puedes rebajar más unidades de las que hay en stock.");
+      setMermaBusy(false);
+      return;
+    }
+
+    const nextStock = mermaProduct.stockQty - removedUnits;
+
+    const res = await fetch(`/api/products/${encodeURIComponent(mermaProduct.id)}`, {
+      method: "PATCH",
+      credentials: "include",
+      headers: { "Content-Type": "application/json", "x-tl-csrf": "1" },
+      body: JSON.stringify({
+        stockQty: nextStock,
+        reason: mermaReason,
+      }),
+    });
+
+    setMermaBusy(false);
+    if (!res.ok) {
+      const j = (await res.json().catch(() => ({}))) as { error?: string; hint?: string };
+      setMermaMsg(
+        j.error === "RATE_LIMITED"
+          ? "Demasiados ajustes de inventario. Inténtalo más tarde."
+          : j.error === "MFA_REQUIRED"
+            ? "Se requiere verificación de dos factores (2FA)."
+            : j.hint ?? j.error ?? "No se pudo actualizar el stock del producto.",
+      );
+      return;
+    }
+
+    setMermaOpen(false);
+    toast.push({
+      kind: "success",
+      title: "Rebaja registrada",
+      description: `Se rebajaron ${removedUnits} unidades de "${mermaProduct.name}" por ${mermaReason === "MERMA" ? "merma" : "rotura"}.`,
+    });
+    void loadProducts();
+  }
+
   const totalActive = activeProducts.length;
   const totalInactive = inactiveProducts.length;
   const totalDeleted = deletedProducts.length;
@@ -1087,6 +1166,18 @@ export default function InventoryPage() {
             }}
           >
             <Plus className="h-3.5 w-3.5" aria-hidden />
+          </button>
+          <button
+            type="button"
+            className="tl-btn tl-btn-secondary tl-interactive tl-press tl-focus !px-2 !py-1 text-tl-info"
+            title="Rebajar por merma / rotura"
+            aria-label={`Rebajar ${row.name}`}
+            onClick={(ev) => {
+              ev.stopPropagation();
+              openMerma(row);
+            }}
+          >
+            <Minus className="h-3.5 w-3.5" aria-hidden />
           </button>
           <button
             type="button"
@@ -2095,6 +2186,243 @@ export default function InventoryPage() {
                   className="tl-btn-primary flex-1 py-3 text-sm justify-center font-medium shadow-sm shadow-tl-accent/25 hover:shadow-md transition-all"
                 >
                   {entryBusy ? "Guardando..." : "Confirmar entrada"}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {mermaOpen && mermaProduct && (
+        <div
+          className="fixed inset-0 z-[100] flex items-end justify-center bg-black/50 p-4 sm:items-center"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="merma-product-title"
+          onClick={() => setMermaOpen(false)}
+        >
+          <div
+            className="tl-glass max-h-[90vh] w-full max-w-md overflow-y-auto rounded-2xl p-6 shadow-xl animate-in fade-in zoom-in-95 duration-150"
+            ref={mermaDialogRef}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <h2 id="merma-product-title" className="text-lg font-semibold text-tl-ink">
+                  Rebajar por merma / rotura
+                </h2>
+                <p className="mt-1 text-xs text-tl-muted">
+                  {mermaProduct.name} &bull; <span className="font-mono">{mermaProduct.sku}</span>
+                </p>
+              </div>
+              <button
+                type="button"
+                className="tl-btn tl-btn-secondary !p-2"
+                aria-label="Cerrar"
+                onClick={() => setMermaOpen(false)}
+              >
+                <X className="h-4 w-4" aria-hidden />
+              </button>
+            </div>
+
+            <form onSubmit={onSaveMerma} className="mt-6 space-y-5">
+              {/* Selector de modo: Unidades o Cajas */}
+              <div>
+                <span className="text-xs font-semibold uppercase tracking-wider text-tl-muted">
+                  Modo de rebaja
+                </span>
+                <div className="mt-2 grid grid-cols-2 gap-2">
+                  <button
+                    type="button"
+                    className={cn(
+                      "tl-btn justify-center text-sm py-2.5 transition-all",
+                      mermaMode === "units"
+                        ? "tl-btn-primary bg-tl-accent text-white shadow-sm"
+                        : "tl-btn-secondary border-tl-line text-tl-ink hover:bg-tl-canvas-subtle",
+                    )}
+                    onClick={() => {
+                      setMermaMode("units");
+                      setMermaMsg(null);
+                    }}
+                  >
+                    Unidades
+                  </button>
+                  <button
+                    type="button"
+                    className={cn(
+                      "tl-btn justify-center text-sm py-2.5 transition-all",
+                      mermaMode === "boxes"
+                        ? "tl-btn-primary bg-tl-accent text-white shadow-sm"
+                        : "tl-btn-secondary border-tl-line text-tl-ink hover:bg-tl-canvas-subtle",
+                    )}
+                    onClick={() => {
+                      setMermaMode("boxes");
+                      setMermaMsg(null);
+                    }}
+                  >
+                    Cajas
+                  </button>
+                </div>
+              </div>
+
+              {/* Selector de motivo */}
+              <div>
+                <span className="text-xs font-semibold uppercase tracking-wider text-tl-muted">
+                  Motivo de la rebaja
+                </span>
+                <div className="mt-2 grid grid-cols-2 gap-2">
+                  <button
+                    type="button"
+                    className={cn(
+                      "tl-btn justify-center text-sm py-2.5 transition-all",
+                      mermaReason === "MERMA"
+                        ? "tl-btn-primary bg-tl-accent text-white shadow-sm"
+                        : "tl-btn-secondary border-tl-line text-tl-ink hover:bg-tl-canvas-subtle",
+                    )}
+                    onClick={() => {
+                      setMermaReason("MERMA");
+                      setMermaMsg(null);
+                    }}
+                  >
+                    Merma
+                  </button>
+                  <button
+                    type="button"
+                    className={cn(
+                      "tl-btn justify-center text-sm py-2.5 transition-all",
+                      mermaReason === "ROTURA"
+                        ? "tl-btn-primary bg-tl-accent text-white shadow-sm"
+                        : "tl-btn-secondary border-tl-line text-tl-ink hover:bg-tl-canvas-subtle",
+                    )}
+                    onClick={() => {
+                      setMermaReason("ROTURA");
+                      setMermaMsg(null);
+                    }}
+                  >
+                    Rotura
+                  </button>
+                </div>
+              </div>
+
+              {/* Input de cantidad */}
+              <div>
+                <label className="text-xs font-semibold uppercase tracking-wider text-tl-muted" htmlFor="mr-qty">
+                  {mermaMode === "boxes" ? "Cantidad de cajas a rebajar" : "Cantidad de unidades a rebajar"}
+                </label>
+                <div className="relative mt-2">
+                  <input
+                    id="mr-qty"
+                    type="number"
+                    min={1}
+                    step={1}
+                    value={mermaQty}
+                    onChange={(e) => {
+                      setMermaQty(e.target.value);
+                      setMermaMsg(null);
+                    }}
+                    placeholder="Ej. 3"
+                    className="tl-input w-full pr-12 text-lg font-medium tabular-nums"
+                    required
+                  />
+                  <div className="absolute inset-y-0 right-3 flex items-center pointer-events-none text-sm text-tl-muted font-medium">
+                    {mermaMode === "boxes" ? "cajas" : "uds"}
+                  </div>
+                </div>
+              </div>
+
+              {/* Información de la caja si aplica */}
+              {mermaMode === "boxes" && (
+                <div className="rounded-xl border border-tl-info/20 bg-tl-info-subtle/30 p-3.5 text-xs text-tl-ink flex items-start gap-2.5">
+                  <div className="mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded bg-tl-info/10">
+                    <Boxes className="h-3.5 w-3.5 text-tl-info" aria-hidden />
+                  </div>
+                  <div>
+                    <span className="font-semibold text-tl-info">Información del producto:</span>
+                    <p className="mt-0.5 text-tl-muted">
+                      Este producto tiene definido <span className="font-semibold text-tl-ink">{Math.max(1, mermaProduct.unitsPerBox ?? 1)} unidades</span> por caja.
+                    </p>
+                    {parseInt(mermaQty, 10) > 0 && (
+                      <p className="mt-1.5 font-medium text-tl-ink">
+                        Equivale a: <span className="underline decoration-tl-info decoration-2">{parseInt(mermaQty, 10) * Math.max(1, mermaProduct.unitsPerBox ?? 1)} unidades</span> rebajadas.
+                      </p>
+                    )}
+                  </div>
+                </div>
+              )}
+
+              {/* Comparador visual de Stock */}
+              <div className="rounded-xl border border-tl-line bg-tl-canvas-subtle p-4">
+                <span className="text-[11px] font-bold uppercase tracking-wider text-tl-muted">
+                  Previsualización del Stock
+                </span>
+                <div className="mt-3 flex items-center justify-between text-center">
+                  <div className="flex-1">
+                    <div className="text-xs text-tl-muted">Actual</div>
+                    <div className="mt-1 text-2xl font-bold tabular-nums text-tl-ink">
+                      {mermaProduct.stockQty}
+                    </div>
+                  </div>
+
+                  <div className="px-2">
+                    <div className="flex h-7 w-7 items-center justify-center rounded-full bg-tl-warning-subtle text-tl-warning">
+                      <Minus className="h-4 w-4" />
+                    </div>
+                  </div>
+
+                  <div className="flex-1">
+                    <div className="text-xs text-tl-muted">Rebajando</div>
+                    <div className="mt-1 text-2xl font-bold tabular-nums text-tl-warning">
+                      {parseInt(mermaQty, 10) > 0
+                        ? (mermaMode === "boxes"
+                            ? parseInt(mermaQty, 10) * Math.max(1, mermaProduct.unitsPerBox ?? 1)
+                            : parseInt(mermaQty, 10))
+                        : 0}
+                    </div>
+                  </div>
+
+                  <div className="px-2">
+                    <div className="text-tl-muted font-bold text-lg">&rarr;</div>
+                  </div>
+
+                  <div className="flex-1">
+                    <div className="text-xs font-semibold text-tl-accent">Resultante</div>
+                    <div className="mt-1 text-2xl font-black tabular-nums text-tl-accent">
+                      {Math.max(
+                        0,
+                        mermaProduct.stockQty -
+                          (parseInt(mermaQty, 10) > 0
+                            ? (mermaMode === "boxes"
+                                ? parseInt(mermaQty, 10) * Math.max(1, mermaProduct.unitsPerBox ?? 1)
+                                : parseInt(mermaQty, 10))
+                            : 0),
+                      )}
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {mermaMsg && (
+                <p className="text-xs font-medium text-tl-warning bg-tl-warning-subtle/50 px-3 py-2 rounded-lg border border-tl-warning/20">
+                  {mermaMsg}
+                </p>
+              )}
+
+              {/* Botones de acción */}
+              <div className="flex gap-3 pt-2">
+                <button
+                  type="button"
+                  className="tl-btn tl-btn-secondary flex-1 py-3 text-sm justify-center font-medium"
+                  onClick={() => setMermaOpen(false)}
+                  disabled={mermaBusy}
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="submit"
+                  disabled={mermaBusy || !mermaQty || parseInt(mermaQty, 10) <= 0}
+                  className="tl-btn-primary flex-1 py-3 text-sm justify-center font-medium shadow-sm shadow-tl-info/25 hover:shadow-md transition-all"
+                >
+                  {mermaBusy ? "Guardando..." : "Confirmar rebaja"}
                 </button>
               </div>
             </form>
