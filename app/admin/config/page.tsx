@@ -13,6 +13,7 @@ import {
   XCircleIcon as XCircle,
 } from "@/components/ui/icons";
 import { AdminShell } from "@/components/admin/admin-shell";
+import { BackupSection } from "@/components/admin/backup-section";
 import { cn } from "@/lib/utils";
 
 type Overview = {
@@ -452,6 +453,9 @@ export default function SettingsPage() {
             </li>
           </ul>
         </div>
+
+        {/* Backup & Restore */}
+        <BackupSection />
 
         {/* Navigation */}
         <div className="flex flex-wrap gap-3">
