@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import type { Prisma } from "@prisma/client";
+import AdmZip from "adm-zip";
 import { requireAdminRequest } from "@/lib/admin-auth";
 import { prisma } from "@/lib/db";
 
@@ -52,10 +53,7 @@ export async function POST(request: Request) {
   }
 
   try {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const AdmZipMod: any = await import("adm-zip");
-    const AdmZipCtor = AdmZipMod.default ?? AdmZipMod;
-    const zip = new AdmZipCtor(buffer);
+    const zip = new AdmZip(buffer);
 
     const metadataEntry = zip.getEntry("metadata.json");
     const dataEntry = zip.getEntry("data.json");

@@ -1,4 +1,6 @@
 import { NextResponse } from "next/server";
+// @ts-expect-error -- archiver v7 CJS; @types/archiver no declara default export
+import archiver from "archiver";
 import { requireAdminRequest } from "@/lib/admin-auth";
 import { prisma } from "@/lib/db";
 
@@ -55,12 +57,8 @@ export async function POST(request: Request) {
       totalRecords,
     };
 
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const archiverMod: any = await import("archiver");
-    const archiverFn = archiverMod.default ?? archiverMod;
-
     const chunks: Buffer[] = [];
-    const archive = archiverFn("zip", { zlib: { level: 9 } });
+    const archive = archiver("zip", { zlib: { level: 9 } });
 
     const zipPromise = new Promise<Buffer>((resolve, reject) => {
       archive.on("data", (chunk: Buffer) => chunks.push(chunk));
