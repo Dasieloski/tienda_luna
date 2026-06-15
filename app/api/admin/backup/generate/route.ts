@@ -1,7 +1,10 @@
 import { NextResponse } from "next/server";
-import JSZip from "jszip";
+import * as JSZipModule from "jszip";
 import { requireAdminRequest } from "@/lib/admin-auth";
 import { prisma } from "@/lib/db";
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+const JSZip: any = (JSZipModule as any).default || JSZipModule;
 
 async function getTableNames(): Promise<string[]> {
   const rows = await prisma.$queryRaw<Array<{ table_name: string }>>`
