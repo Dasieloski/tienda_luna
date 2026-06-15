@@ -1,6 +1,5 @@
 import { NextResponse } from "next/server";
-// @ts-expect-error -- archiver v7 CJS; @types/archiver no declara default export
-import archiver from "archiver";
+import JSZip from "jszip";
 import { requireAdminRequest } from "@/lib/admin-auth";
 import { prisma } from "@/lib/db";
 
@@ -57,20 +56,10 @@ export async function POST(request: Request) {
       totalRecords,
     };
 
-    const chunks: Buffer[] = [];
-    const archive = archiver("zip", { zlib: { level: 9 } });
-
-    const zipPromise = new Promise<Buffer>((resolve, reject) => {
-      archive.on("data", (chunk: Buffer) => chunks.push(chunk));
-      archive.on("end", () => resolve(Buffer.concat(chunks)));
-      archive.on("error", reject);
-    });
-
-    archive.append(JSON.stringify(metadata, null, 2), { name: "metadata.json" });
-    archive.append(JSON.stringify(data, null, 2), { name: "data.json" });
-    archive.finalize();
-
-    const zipBuffer = await zipPromise;
+    const zip = new JSZip();
+    zip.file("metadata.json", JSON.stringify(metadata, null, 2));
+    zip.file("data.json", JSON.stringify(data, null, 2));
+    const zipBuffer = await zip.generateAsync({ type: "nodebuffer", compression: "DEFLATE", compressionOptions: { level: 9 } });
 
     const now = new Date();
     const pad = (n: number) => String(n).padStart(2, "0");
