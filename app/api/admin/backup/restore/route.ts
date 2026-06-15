@@ -1,19 +1,8 @@
 import { NextResponse } from "next/server";
-import { createRequire } from "node:module";
 import type { Prisma } from "@prisma/client";
 import { requireAdminRequest } from "@/lib/admin-auth";
 import { prisma } from "@/lib/db";
 
-const require = createRequire(import.meta.url);
-const AdmZipCtor = require("adm-zip");
-type AdmZip = InstanceType<typeof AdmZipCtor>;
-
-/**
- * Orden de inserción tras restauración (padres antes que hijos).
- * Si se agregan nuevas entidades, se deben ubicar en la posición correcta.
- *
- * Orden inferido del schema de Prisma para respetar FK constraints.
- */
 const INSERT_ORDER: string[] = [
   "Store",
   "User",
@@ -62,40 +51,37 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "No se pudo leer el archivo." }, { status: 400 });
   }
 
-  let zip: AdmZip;
   try {
-    zip = new AdmZipCtor(buffer) as AdmZip;
-  } catch {
-    return NextResponse.json({ error: "El archivo no es un ZIP válido o está corrupto." }, { status: 400 });
-  }
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const AdmZipMod: any = await import("adm-zip");
+    const AdmZipCtor = AdmZipMod.default ?? AdmZipMod;
+    const zip = new AdmZipCtor(buffer);
 
-  const metadataEntry = zip.getEntry("metadata.json");
-  const dataEntry = zip.getEntry("data.json");
+    const metadataEntry = zip.getEntry("metadata.json");
+    const dataEntry = zip.getEntry("data.json");
 
-  if (!metadataEntry || !dataEntry) {
-    return NextResponse.json({ error: "Backup inválido: faltan metadata.json o data.json." }, { status: 400 });
-  }
+    if (!metadataEntry || !dataEntry) {
+      return NextResponse.json({ error: "Backup inválido: faltan metadata.json o data.json." }, { status: 400 });
+    }
 
-  let metadata: Record<string, unknown>;
-  let backupData: Record<string, unknown[]>;
-  try {
-    metadata = JSON.parse(metadataEntry.getData().toString("utf-8"));
-    backupData = JSON.parse(dataEntry.getData().toString("utf-8"));
-  } catch {
-    return NextResponse.json({ error: "Backup corrupto: JSON ilegible." }, { status: 400 });
-  }
+    let metadata: Record<string, unknown>;
+    let backupData: Record<string, unknown[]>;
+    try {
+      metadata = JSON.parse(metadataEntry.getData().toString("utf-8"));
+      backupData = JSON.parse(dataEntry.getData().toString("utf-8"));
+    } catch {
+      return NextResponse.json({ error: "Backup corrupto: JSON ilegible." }, { status: 400 });
+    }
 
-  if (!metadata.appName || !metadata.createdAt) {
-    return NextResponse.json({ error: "Backup inválido: metadatos incompletos." }, { status: 400 });
-  }
+    if (!metadata.appName || !metadata.createdAt) {
+      return NextResponse.json({ error: "Backup inválido: metadatos incompletos." }, { status: 400 });
+    }
 
-  const backupTotalRecords = Number(metadata.totalRecords) || 0;
-  const restoredBy = guard.user.email;
-  const restoredByUserId = guard.user.id;
+    const backupTotalRecords = Number(metadata.totalRecords) || 0;
+    const restoredBy = guard.user.email;
+    const restoredByUserId = guard.user.id;
 
-  try {
     await prisma.$transaction(async (tx) => {
-      // 1. Truncar todas las tablas (excepto _prisma_migrations) con CASCADE
       await tx.$executeRawUnsafe(`
         DO $$ DECLARE r RECORD; BEGIN
           FOR r IN (
@@ -107,8 +93,8 @@ export async function POST(request: Request) {
         END $$;
       `);
 
-      // 2. Insertar datos en orden de dependencia (padres primero)
-      const client = tx as unknown as Record<string, { createMany: (args: { data: unknown[] }) => Promise<unknown> }>;
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const client = tx as unknown as Record<string, { createMany: (args: { data: unknown[] }) => Promise<any> }>;
 
       for (const modelName of INSERT_ORDER) {
         const records = backupData[modelName];
@@ -127,7 +113,6 @@ export async function POST(request: Request) {
       }
     });
 
-    // 3. Registrar en AuditLog (fuera de la transacción para no afectar el rollback)
     try {
       await prisma.auditLog.create({
         data: {
