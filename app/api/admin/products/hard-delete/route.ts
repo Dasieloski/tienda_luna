@@ -47,6 +47,14 @@ export async function POST(request: Request) {
         where: { productId: p.id },
         data: { productName: p.name, productSku: p.sku, productId: null },
       });
+      await (tx as any).saleReturnLine.updateMany({
+        where: { productId: p.id },
+        data: { productName: p.name, productSku: p.sku, productId: null },
+      });
+      await (tx as any).supplierWithdrawalLine.updateMany({
+        where: { productId: p.id },
+        data: { productName: p.name, productSku: p.sku, productId: null },
+      });
 
       await tx.auditLog.create({
         data: {

@@ -341,6 +341,8 @@ export async function GET(request: Request) {
                 supplierName: r.product.supplierName,
               }
             : null,
+          productName: r.productName ?? null,
+          productSku: r.productSku ?? null,
           delta: r.delta,
           beforeQty: r.beforeQty,
           afterQty: r.afterQty,

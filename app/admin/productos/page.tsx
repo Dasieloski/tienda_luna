@@ -19,6 +19,8 @@ type ProductOption = {
   id: string;
   sku: string;
   name: string;
+  active: boolean;
+  deletedAt: string | null;
 };
 
 type ProductInsight = {
@@ -109,7 +111,7 @@ export default function ProductosPage() {
     async function loadProducts() {
       setLoadingList(true);
       try {
-        const res = await fetch("/api/products", { credentials: "include" });
+        const res = await fetch("/api/products?includeDeleted=1", { credentials: "include" });
         if (!res.ok) {
           if (!cancelled) {
             const hint =
@@ -120,8 +122,8 @@ export default function ProductosPage() {
           }
           return;
         }
-        const json = (await res.json()) as { products?: { id: string; sku: string; name: string }[] };
-        const opts = (json.products ?? []).map((p) => ({ id: p.id, sku: p.sku, name: p.name }));
+        const json = (await res.json()) as { products?: { id: string; sku: string; name: string; active: boolean; deletedAt: string | null }[] };
+        const opts = (json.products ?? []).map((p) => ({ id: p.id, sku: p.sku, name: p.name, active: p.active, deletedAt: p.deletedAt }));
         opts.sort((a, b) => a.name.localeCompare(b.name));
         if (cancelled) return;
         setProducts(opts);
@@ -202,22 +204,38 @@ export default function ProductosPage() {
         <div className="tl-glass rounded-xl p-4">
           <div className="flex flex-wrap items-end gap-3">
             <div className="min-w-[260px] flex-1">
-              <label className="text-xs font-semibold uppercase tracking-wider text-tl-muted" htmlFor="product">
+                <label className="text-xs font-semibold uppercase tracking-wider text-tl-muted" htmlFor="product">
                 Producto
               </label>
-              <select
-                id="product"
-                value={selectedId}
-                onChange={(e) => setSelectedId(e.target.value)}
-                className="tl-input mt-1 h-9 text-sm"
-                disabled={loadingList}
-              >
-                {products.map((p) => (
-                  <option key={p.id} value={p.id}>
-                    {p.name} · {p.sku}
-                  </option>
-                ))}
-              </select>
+              <div className="mt-1 flex items-center gap-2">
+                <select
+                  id="product"
+                  value={selectedId}
+                  onChange={(e) => setSelectedId(e.target.value)}
+                  className="tl-input h-9 flex-1 text-sm"
+                  disabled={loadingList}
+                >
+                  {products.map((p) => {
+                    let label = `${p.name} · ${p.sku}`;
+                    if (p.deletedAt) label += " [ELIMINADO]";
+                    else if (!p.active) label += " [INACTIVO]";
+                    return (
+                      <option key={p.id} value={p.id}>
+                        {label}
+                      </option>
+                    );
+                  })}
+                </select>
+                {(() => {
+                  const sel = products.find((p) => p.id === selectedId);
+                  if (!sel) return null;
+                  if (sel.deletedAt)
+                    return <span className="shrink-0 rounded-md bg-tl-danger/15 px-2 py-0.5 text-xs font-semibold text-tl-danger">ELIMINADO</span>;
+                  if (!sel.active)
+                    return <span className="shrink-0 rounded-md bg-tl-warning/15 px-2 py-0.5 text-xs font-semibold text-tl-warning">INACTIVO</span>;
+                  return <span className="shrink-0 rounded-md bg-tl-success/15 px-2 py-0.5 text-xs font-semibold text-tl-success">ACTIVO</span>;
+                })()}
+              </div>
               {loadingList ? (
                 <p className="mt-2 text-xs text-tl-muted">Cargando catálogo…</p>
               ) : null}

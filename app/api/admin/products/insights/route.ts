@@ -199,7 +199,7 @@ export async function GET(request: Request) {
           storeId,
           entityType: "Product",
           entityId: productId,
-          action: { in: ["PRODUCT_UPDATE", "PRODUCT_UPDATE_STOCK", "PRODUCT_RESTORE", "PRODUCT_CREATE"] },
+          action: { in: ["PRODUCT_UPDATE", "PRODUCT_UPDATE_STOCK", "PRODUCT_RESTORE", "PRODUCT_CREATE", "PRODUCT_ARCHIVE"] },
           createdAt: { gte: fromUtc, lt: toUtcExclusive },
         },
         orderBy: { createdAt: "asc" },

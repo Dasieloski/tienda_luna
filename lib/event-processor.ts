@@ -391,10 +391,13 @@ export async function processBatch(
             data: { stockQty: next },
           });
           const rec = await record({ status: "ACCEPTED" });
+          const pStock = productById.get(productId);
           await tx.inventoryMovement.create({
             data: {
               storeId: params.storeId,
               productId,
+              productName: pStock?.name ?? null,
+              productSku: pStock?.sku ?? null,
               delta: -Math.trunc(quantity),
               beforeQty: current,
               afterQty: next,
@@ -2108,23 +2111,40 @@ export async function processBatch(
             );
             break;
           }
-          if (!row.active) {
+          if (row.deletedAt) {
             productById.delete(productId);
             stock.delete(productId);
             results.push(
               await record({
                 status: "ACCEPTED",
-                correctionNote: "ALREADY_INACTIVE",
+                correctionNote: "ALREADY_DELETED",
               }),
             );
             break;
           }
+          const archivedSku = `__arch__${productId.slice(-12)}__${row.sku}`.slice(0, 240);
           await tx.product.update({
             where: { id: productId },
-            data: { active: false },
+            data: { active: false, deletedAt: new Date(), sku: archivedSku },
           });
           productById.delete(productId);
           stock.delete(productId);
+          try {
+            await tx.auditLog.create({
+              data: {
+                storeId: params.storeId,
+                actorType: "DEVICE",
+                actorId: params.deviceId ?? "unknown",
+                action: "PRODUCT_ARCHIVE",
+                entityType: "Product",
+                entityId: productId,
+                before: { sku: row.sku, name: row.name, active: row.active, deletedAt: row.deletedAt },
+                after: { sku: archivedSku, name: row.name, active: false, deletedAt: new Date() },
+              },
+            });
+          } catch (auditErr) {
+            console.error("[event-processor PRODUCT_DELETED] auditLog", auditErr);
+          }
           results.push(await record({ status: "ACCEPTED" }));
           break;
         }

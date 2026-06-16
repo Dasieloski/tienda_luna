@@ -20,6 +20,8 @@ type MovementRow = {
     supplierId: string | null;
     supplierName: string | null;
   } | null;
+  productName: string | null;
+  productSku: string | null;
   delta: number;
   beforeQty: number;
   afterQty: number;
@@ -311,13 +313,20 @@ function InventoryMovementsPageClient() {
         key: "product",
         label: "Producto",
         sortable: true,
-        sortValue: (r) => r.product?.name ?? "",
-        render: (r) => (
-          <div className="flex flex-col">
-            <span className="font-medium text-tl-ink">{r.product?.name ?? "—"}</span>
-            {r.product?.sku ? <span className="text-xs font-mono text-tl-muted">{r.product.sku}</span> : null}
-          </div>
-        ),
+        sortValue: (r) => r.product?.name ?? r.productName ?? "",
+        render: (r) => {
+          const name = r.product?.name ?? r.productName ?? "—";
+          const sku = r.product?.sku ?? r.productSku ?? null;
+          const isSnapshot = !r.product && !!r.productName;
+          return (
+            <div className="flex flex-col">
+              <span className="font-medium text-tl-ink">
+                {name}{isSnapshot ? <span className="ml-1 text-xs italic text-tl-muted">(eliminado)</span> : null}
+              </span>
+              {sku ? <span className="text-xs font-mono text-tl-muted">{sku}</span> : null}
+            </div>
+          );
+        },
       },
       {
         key: "supplier",
