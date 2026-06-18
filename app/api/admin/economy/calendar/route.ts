@@ -65,7 +65,7 @@ export async function GET(request: Request) {
   const storeId = session.storeId;
 
   try {
-    const payload = await cacheGetOrSet(`economy-calendar:${storeId}:${year}:v2`, 60_000, async () => {
+    const payload = await cacheGetOrSet(`economy-calendar:${storeId}:${year}:v3`, 60_000, async () => {
       const fromUtc = new Date(Date.UTC(year, 0, 1, 0, 0, 0, 0));
       const toUtcExclusive = new Date(Date.UTC(year + 1, 0, 1, 0, 0, 0, 0));
 
@@ -92,12 +92,12 @@ export async function GET(request: Request) {
           to_char(date_trunc('day', (s."completedAt" + (${offsetInterval}::interval))), 'YYYY-MM-DD') AS day_local,
           COALESCE(SUM(
             CASE
-              WHEN p."costCents" IS NOT NULL THEN (sl."subtotalCents" - (p."costCents" * sl."quantity"))
+              WHEN COALESCE(sl."unitCostCents", p."costCents") IS NOT NULL THEN (sl."subtotalCents" - (COALESCE(sl."unitCostCents", p."costCents") * sl."quantity"))
               ELSE 0
             END
           ), 0)::bigint AS margin_cents,
-          COALESCE(SUM(CASE WHEN p."costCents" IS NOT NULL THEN (p."costCents" * sl."quantity") ELSE 0 END), 0)::bigint AS cost_cents,
-          COALESCE(SUM(CASE WHEN p."costCents" IS NOT NULL THEN sl."quantity" ELSE 0 END), 0)::bigint AS units_with_cost,
+          COALESCE(SUM(CASE WHEN COALESCE(sl."unitCostCents", p."costCents") IS NOT NULL THEN (COALESCE(sl."unitCostCents", p."costCents") * sl."quantity") ELSE 0 END), 0)::bigint AS cost_cents,
+          COALESCE(SUM(CASE WHEN COALESCE(sl."unitCostCents", p."costCents") IS NOT NULL THEN sl."quantity" ELSE 0 END), 0)::bigint AS units_with_cost,
           COALESCE(SUM(sl."quantity"), 0)::bigint AS units_total
         FROM "Sale" s
         JOIN "SaleLine" sl ON sl."saleId" = s.id

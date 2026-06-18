@@ -266,13 +266,13 @@ export async function queryDailyMarginProfit(
 ): Promise<DailyMarginAggRow[]> {
   return prisma.$queryRaw<DailyMarginAggRow[]>`
     SELECT
-      COALESCE(SUM(CASE WHEN p."costCents" IS NOT NULL THEN sl."subtotalCents" ELSE 0 END), 0)::bigint AS revenue,
-      COALESCE(SUM(CASE WHEN p."costCents" IS NOT NULL THEN p."costCents" * sl."quantity" ELSE 0 END), 0)::bigint AS cost,
-      COALESCE(SUM(CASE WHEN p."costCents" IS NOT NULL THEN 1 ELSE 0 END), 0)::bigint AS lines_with_cost,
-      COALESCE(SUM(CASE WHEN p."costCents" IS NULL THEN 1 ELSE 0 END), 0)::bigint AS lines_without_cost
+      COALESCE(SUM(CASE WHEN COALESCE(sl."unitCostCents", p."costCents") IS NOT NULL THEN sl."subtotalCents" ELSE 0 END), 0)::bigint AS revenue,
+      COALESCE(SUM(CASE WHEN COALESCE(sl."unitCostCents", p."costCents") IS NOT NULL THEN COALESCE(sl."unitCostCents", p."costCents") * sl."quantity" ELSE 0 END), 0)::bigint AS cost,
+      COALESCE(SUM(CASE WHEN COALESCE(sl."unitCostCents", p."costCents") IS NOT NULL THEN 1 ELSE 0 END), 0)::bigint AS lines_with_cost,
+      COALESCE(SUM(CASE WHEN COALESCE(sl."unitCostCents", p."costCents") IS NULL THEN 1 ELSE 0 END), 0)::bigint AS lines_without_cost
     FROM "SaleLine" sl
     INNER JOIN "Sale" s ON s."id" = sl."saleId"
-    INNER JOIN "Product" p ON p."id" = sl."productId"
+    LEFT JOIN "Product" p ON p."id" = sl."productId"
     WHERE s."storeId" = ${storeId}
       AND s."status" = 'COMPLETED'
       AND s."completedAt" >= ${from}
