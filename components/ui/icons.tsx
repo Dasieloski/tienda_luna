@@ -107,6 +107,7 @@ import {
   BadgeCheck,
   Filter,
   Save,
+  Globe,
 } from "lucide-react";
 
 // Lucide Animated (shadcn registry) — donde exista, preferimos estos.
@@ -125,7 +126,10 @@ export { SettingsIcon as SettingsAnimatedIcon } from "@/components/ui/settings";
 export { UserIcon as UserAnimatedIcon } from "@/components/ui/user";
 export { UsersIcon as UsersAnimatedIcon } from "@/components/ui/users";
 
-function wrapLucide(Icon: LucideIcon, opts?: { hover?: "lift" | "spin" | "nudge" }) {
+function wrapLucide(
+  Icon: LucideIcon,
+  opts?: { hover?: "lift" | "spin" | "nudge" },
+) {
   const hover =
     opts?.hover === "spin"
       ? { rotate: 18, scale: 1.04 }
@@ -133,19 +137,26 @@ function wrapLucide(Icon: LucideIcon, opts?: { hover?: "lift" | "spin" | "nudge"
         ? { x: 1, y: -1, scale: 1.03 }
         : { y: -1, scale: 1.03 };
 
-  const Wrapped = React.forwardRef<SVGSVGElement, LucideProps>(({ className, ...props }, ref) => {
-    return (
-      <motion.span
-        className={className}
-        whileHover={hover}
-        whileTap={{ scale: 0.98 }}
-        transition={{ type: "spring", stiffness: 520, damping: 34, mass: 0.6 }}
-        aria-hidden={props["aria-label"] ? undefined : true}
-      >
-        <Icon ref={ref} {...props} className="h-full w-full" />
-      </motion.span>
-    );
-  });
+  const Wrapped = React.forwardRef<SVGSVGElement, LucideProps>(
+    ({ className, ...props }, ref) => {
+      return (
+        <motion.span
+          className={className}
+          whileHover={hover}
+          whileTap={{ scale: 0.98 }}
+          transition={{
+            type: "spring",
+            stiffness: 520,
+            damping: 34,
+            mass: 0.6,
+          }}
+          aria-hidden={props["aria-label"] ? undefined : true}
+        >
+          <Icon ref={ref} {...props} className="h-full w-full" />
+        </motion.span>
+      );
+    },
+  );
 
   Wrapped.displayName = `${Icon.displayName ?? Icon.name ?? "Icon"}Wrapped`;
   return Wrapped;
@@ -157,7 +168,9 @@ export const ActivityIcon = wrapLucide(Activity, { hover: "lift" });
 export const ArrowDownIcon = wrapLucide(ArrowDown, { hover: "nudge" });
 export const ArrowLeftIcon = wrapLucide(ArrowLeft, { hover: "nudge" });
 export const ArrowRightIcon = wrapLucide(ArrowRight, { hover: "nudge" });
-export const ArrowRightLeftIcon = wrapLucide(ArrowRightLeft, { hover: "nudge" });
+export const ArrowRightLeftIcon = wrapLucide(ArrowRightLeft, {
+  hover: "nudge",
+});
 export const ArrowUpIcon = wrapLucide(ArrowUp, { hover: "nudge" });
 export const ArrowUpDownIcon = wrapLucide(ArrowUpDown, { hover: "nudge" });
 export const ArrowUpRightIcon = wrapLucide(ArrowUpRight, { hover: "nudge" });
@@ -182,7 +195,9 @@ export const InfoIcon = wrapLucide(Info, { hover: "lift" });
 export const DownloadIcon = wrapLucide(Download, { hover: "lift" });
 export const FileDownIcon = wrapLucide(FileDown, { hover: "lift" });
 export const FileTextIcon = wrapLucide(FileText, { hover: "lift" });
-export const FileSpreadsheetIcon = wrapLucide(FileSpreadsheet, { hover: "lift" });
+export const FileSpreadsheetIcon = wrapLucide(FileSpreadsheet, {
+  hover: "lift",
+});
 export const HomeIcon = wrapLucide(Home, { hover: "lift" });
 export const HelpCircleIcon = wrapLucide(HelpCircle, { hover: "lift" });
 export const LayersIcon = wrapLucide(Layers, { hover: "lift" });
@@ -195,7 +210,9 @@ export const CloudOffIcon = wrapLucide(CloudOff, { hover: "lift" });
 export const CloudyIcon = wrapLucide(Cloudy, { hover: "lift" });
 export const KeyRoundIcon = wrapLucide(KeyRound, { hover: "lift" });
 export const LandmarkLucideIcon = wrapLucide(Landmark, { hover: "lift" });
-export const LayoutDashboardIcon = wrapLucide(LayoutDashboard, { hover: "lift" });
+export const LayoutDashboardIcon = wrapLucide(LayoutDashboard, {
+  hover: "lift",
+});
 export const LayoutGridIcon = wrapLucide(LayoutGrid, { hover: "lift" });
 export const Layers3Icon = wrapLucide(Layers3, { hover: "lift" });
 export const Link2Icon = wrapLucide(Link2, { hover: "nudge" });
@@ -225,7 +242,9 @@ export const ThumbsUpIcon = wrapLucide(ThumbsUp, { hover: "lift" });
 export const TrendingDownIcon = wrapLucide(TrendingDown, { hover: "nudge" });
 export const TrendingUpIcon = wrapLucide(TrendingUp, { hover: "nudge" });
 export const TruckIcon = wrapLucide(Truck, { hover: "nudge" });
-export const UtensilsCrossedIcon = wrapLucide(UtensilsCrossed, { hover: "lift" });
+export const UtensilsCrossedIcon = wrapLucide(UtensilsCrossed, {
+  hover: "lift",
+});
 export const UserLucideIcon = wrapLucide(User, { hover: "lift" });
 export const UsersLucideIcon = wrapLucide(Users, { hover: "lift" });
 export const WifiOffIcon = wrapLucide(WifiOff, { hover: "lift" });
@@ -255,4 +274,4 @@ export const BadgeCheckIcon = wrapLucide(BadgeCheck, { hover: "lift" });
 export const FilterIcon = wrapLucide(Filter, { hover: "lift" });
 export const SaveIcon = wrapLucide(Save, { hover: "lift" });
 export const StoreIcon = wrapLucide(Store, { hover: "lift" });
-
+export const GlobeIcon = wrapLucide(Globe, { hover: "lift" });

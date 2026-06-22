@@ -1,10 +1,25 @@
 "use client";
 
-import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  Suspense,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import { useSearchParams } from "next/navigation";
-import { FilterIcon as Filter, RefreshCwIcon as RefreshCw } from "@/components/ui/icons";
+import {
+  FilterIcon as Filter,
+  RefreshCwIcon as RefreshCw,
+} from "@/components/ui/icons";
 import { AdminShell } from "@/components/admin/admin-shell";
-import { DataTable, type Column, type DataTableFilters, type DataTableSorting } from "@/components/admin/data-table";
+import {
+  DataTable,
+  type Column,
+  type DataTableFilters,
+  type DataTableSorting,
+} from "@/components/admin/data-table";
 import { cn } from "@/lib/utils";
 import { Modal } from "@/components/ui/modal";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
@@ -62,7 +77,10 @@ function fromDatetimeLocalValue(v: string) {
 function useDebouncedValue<T>(value: T, delayMs: number) {
   const [debounced, setDebounced] = useState(value);
   useEffect(() => {
-    const id = window.setTimeout(() => setDebounced(value), Math.max(0, delayMs));
+    const id = window.setTimeout(
+      () => setDebounced(value),
+      Math.max(0, delayMs),
+    );
     return () => window.clearTimeout(id);
   }, [delayMs, value]);
   return debounced;
@@ -85,7 +103,10 @@ function InventoryMovementsPageClient() {
 
   const qDebounced = useDebouncedValue(q, 350);
 
-  const [sorting, setSorting] = useState<DataTableSorting>({ key: "createdAt", dir: "desc" });
+  const [sorting, setSorting] = useState<DataTableSorting>({
+    key: "createdAt",
+    dir: "desc",
+  });
   const [filters, setFilters] = useState<DataTableFilters>({});
   const [revertBusyId, setRevertBusyId] = useState<string | null>(null);
   const [confirmRevertOpen, setConfirmRevertOpen] = useState(false);
@@ -109,7 +130,10 @@ function InventoryMovementsPageClient() {
   const [selectedViewId, setSelectedViewId] = useState<string>("");
 
   const selectedView = useMemo(
-    () => (selectedViewId ? savedViews.find((v) => v.id === selectedViewId) ?? null : null),
+    () =>
+      selectedViewId
+        ? (savedViews.find((v) => v.id === selectedViewId) ?? null)
+        : null,
     [savedViews, selectedViewId],
   );
 
@@ -124,20 +148,27 @@ function InventoryMovementsPageClient() {
       const parsed = arr
         .filter((x): x is SavedView => x && typeof x === "object")
         .map((x: unknown): SavedView => {
-          const obj = x && typeof x === "object" ? (x as Record<string, unknown>) : {};
+          const obj =
+            x && typeof x === "object" ? (x as Record<string, unknown>) : {};
           const sorting: DataTableSorting =
             obj.sorting && typeof obj.sorting === "object"
               ? {
                   key:
-                    typeof (obj.sorting as Record<string, unknown>).key === "string"
+                    typeof (obj.sorting as Record<string, unknown>).key ===
+                    "string"
                       ? ((obj.sorting as Record<string, unknown>).key as string)
                       : null,
-                  dir: (obj.sorting as Record<string, unknown>).dir === "asc" ? "asc" : "desc",
+                  dir:
+                    (obj.sorting as Record<string, unknown>).dir === "asc"
+                      ? "asc"
+                      : "desc",
                 }
               : { key: "createdAt", dir: "desc" };
 
           const filters: DataTableFilters =
-            obj.filters && typeof obj.filters === "object" ? (obj.filters as DataTableFilters) : {};
+            obj.filters && typeof obj.filters === "object"
+              ? (obj.filters as DataTableFilters)
+              : {};
 
           return {
             id: String(obj.id ?? ""),
@@ -147,7 +178,8 @@ function InventoryMovementsPageClient() {
             to: typeof obj.to === "string" ? obj.to : "",
             sorting,
             filters,
-            createdAt: typeof obj.createdAt === "number" ? obj.createdAt : Date.now(),
+            createdAt:
+              typeof obj.createdAt === "number" ? obj.createdAt : Date.now(),
           };
         })
         .filter((x) => x.id && x.name);
@@ -180,7 +212,8 @@ function InventoryMovementsPageClient() {
     const actorId = searchParams.get("actorId");
     const productId = searchParams.get("productId");
 
-    const shouldApply = preset || qParam || fromIso || toIso || actorType || actorId || productId;
+    const shouldApply =
+      preset || qParam || fromIso || toIso || actorType || actorId || productId;
     if (!shouldApply) return;
 
     setPage(1);
@@ -245,10 +278,14 @@ function InventoryMovementsPageClient() {
       }
 
       // DataTable controlled filters -> query params
-      const actorType = filters.actorType?.kind === "select" ? filters.actorType.value : "";
-      const actorId = filters.actorId?.kind === "text" ? filters.actorId.value : "";
-      const productId = filters.productId?.kind === "text" ? filters.productId.value : "";
-      const supplierFilter = filters.supplier?.kind === "text" ? filters.supplier.value.trim() : "";
+      const actorType =
+        filters.actorType?.kind === "select" ? filters.actorType.value : "";
+      const actorId =
+        filters.actorId?.kind === "text" ? filters.actorId.value : "";
+      const productId =
+        filters.productId?.kind === "text" ? filters.productId.value : "";
+      const supplierFilter =
+        filters.supplier?.kind === "text" ? filters.supplier.value.trim() : "";
 
       if (actorType) params.set("actorType", actorType);
       if (actorId.trim()) params.set("actorId", actorId.trim());
@@ -258,16 +295,28 @@ function InventoryMovementsPageClient() {
       if (sorting.key) {
         // API limita a llaves conocidas
         const k = sorting.key;
-        if (["createdAt", "product", "supplier", "delta", "actorType", "reason"].includes(k)) {
+        if (
+          [
+            "createdAt",
+            "product",
+            "supplier",
+            "delta",
+            "actorType",
+            "reason",
+          ].includes(k)
+        ) {
           params.set("sortKey", k);
           params.set("sortDir", sorting.dir);
         }
       }
 
-      const res = await fetch(`/api/admin/inventory/movements?${params.toString()}`, {
-        credentials: "include",
-        signal: controller.signal,
-      });
+      const res = await fetch(
+        `/api/admin/inventory/movements?${params.toString()}`,
+        {
+          credentials: "include",
+          signal: controller.signal,
+        },
+      );
       const json = (await res.json()) as ApiResponse;
       if (!res.ok) {
         setError("No se pudo cargar Entradas/Salidas.");
@@ -321,9 +370,16 @@ function InventoryMovementsPageClient() {
           return (
             <div className="flex flex-col">
               <span className="font-medium text-tl-ink">
-                {name}{isSnapshot ? <span className="ml-1 text-xs italic text-tl-muted">(eliminado)</span> : null}
+                {name}
+                {isSnapshot ? (
+                  <span className="ml-1 text-xs italic text-tl-muted">
+                    (eliminado)
+                  </span>
+                ) : null}
               </span>
-              {sku ? <span className="text-xs font-mono text-tl-muted">{sku}</span> : null}
+              {sku ? (
+                <span className="text-xs font-mono text-tl-muted">{sku}</span>
+              ) : null}
             </div>
           );
         },
@@ -342,7 +398,11 @@ function InventoryMovementsPageClient() {
         render: (r) => {
           const name = r.product?.supplierName?.trim();
           if (!name) {
-            return <span className="text-xs italic text-tl-muted">Sin proveedor</span>;
+            return (
+              <span className="text-xs italic text-tl-muted">
+                Sin proveedor
+              </span>
+            );
           }
           return <span className="text-sm text-tl-ink-secondary">{name}</span>;
         },
@@ -356,18 +416,25 @@ function InventoryMovementsPageClient() {
         render: (r) => {
           const isOwnerConsumption = r.reason === "OWNER_SALE";
           const isMerma = r.reason === "MERMA" || r.reason === "ROTURA";
+          const isWebSale = r.reason === "WEB_SALE";
           const colorClass = isOwnerConsumption
             ? "text-tl-danger"
             : isMerma
               ? "text-tl-info"
-              : r.delta >= 0
-                ? "text-tl-success"
-                : "text-tl-warning";
+              : isWebSale
+                ? "text-tl-accent"
+                : r.delta >= 0
+                  ? "text-tl-success"
+                  : "text-tl-warning";
           const title = isOwnerConsumption
             ? "Consumo de dueño"
             : isMerma
-              ? r.reason === "ROTURA" ? "Rotura" : "Merma"
-              : undefined;
+              ? r.reason === "ROTURA"
+                ? "Rotura"
+                : "Merma"
+              : isWebSale
+                ? "Venta web"
+                : undefined;
           return (
             <span
               className={cn("tabular-nums font-semibold", colorClass)}
@@ -383,21 +450,37 @@ function InventoryMovementsPageClient() {
         label: "Antes",
         align: "right",
         width: "90px",
-        render: (r) => <span className="tabular-nums text-tl-muted">{r.beforeQty}</span>,
+        render: (r) => (
+          <span className="tabular-nums text-tl-muted">{r.beforeQty}</span>
+        ),
       },
       {
         key: "afterQty",
         label: "Después",
         align: "right",
         width: "90px",
-        render: (r) => <span className="tabular-nums text-tl-ink">{r.afterQty}</span>,
+        render: (r) => (
+          <span className="tabular-nums text-tl-ink">{r.afterQty}</span>
+        ),
       },
       {
         key: "reason",
         label: "Motivo",
         sortable: true,
         width: "160px",
-        render: (r) => <span className="text-xs font-semibold uppercase tracking-wide text-tl-muted">{r.reason}</span>,
+        render: (r) => {
+          const isWeb = r.reason === "WEB_SALE";
+          return (
+            <span
+              className={cn(
+                "text-xs font-semibold uppercase tracking-wide",
+                isWeb ? "text-tl-accent" : "text-tl-muted",
+              )}
+            >
+              {isWeb ? "VENTA WEB" : r.reason}
+            </span>
+          );
+        },
       },
       {
         key: "actorType",
@@ -412,7 +495,11 @@ function InventoryMovementsPageClient() {
           ],
           getValue: (r) => r.actorType,
         },
-        render: (r) => <span className="text-xs font-medium text-tl-ink-secondary">{r.actorType}</span>,
+        render: (r) => (
+          <span className="text-xs font-medium text-tl-ink-secondary">
+            {r.actorType}
+          </span>
+        ),
       },
       {
         key: "actorId",
@@ -422,9 +509,14 @@ function InventoryMovementsPageClient() {
         filter: { kind: "text", placeholder: "Filtrar actorId…" },
         render: (r) => {
           const label = r.actorLabel?.trim() || r.actorId;
-          const title = r.actorHover?.trim() || (label !== r.actorId ? `${label}\n${r.actorId}` : r.actorId);
+          const title =
+            r.actorHover?.trim() ||
+            (label !== r.actorId ? `${label}\n${r.actorId}` : r.actorId);
           return (
-            <span className="max-w-[220px] cursor-help truncate text-xs text-tl-ink-secondary" title={title}>
+            <span
+              className="max-w-[220px] cursor-help truncate text-xs text-tl-ink-secondary"
+              title={title}
+            >
               {label}
             </span>
           );
@@ -435,7 +527,10 @@ function InventoryMovementsPageClient() {
         label: "productId",
         filter: { kind: "text", placeholder: "Filtrar productId…" },
         render: (r) => (
-          <span className="truncate font-mono text-[11px] text-tl-muted" title={r.productId}>
+          <span
+            className="truncate font-mono text-[11px] text-tl-muted"
+            title={r.productId}
+          >
             {r.productId}
           </span>
         ),
@@ -477,7 +572,8 @@ function InventoryMovementsPageClient() {
           <div>
             <h1 className="tl-welcome-header">Entradas / Salidas</h1>
             <p className="mt-2 text-sm text-tl-muted">
-              Registro (kardex) de ajustes y salidas por ventas: fecha/hora y quién lo hizo.
+              Registro (kardex) de ajustes y salidas por ventas: fecha/hora y
+              quién lo hizo.
             </p>
           </div>
           <div className="flex items-center gap-2">
@@ -486,7 +582,10 @@ function InventoryMovementsPageClient() {
               onClick={() => void load()}
               className="tl-btn tl-btn-secondary tl-interactive tl-hover-lift tl-press tl-focus !px-4 !py-2"
             >
-              <RefreshCw className={cn("h-4 w-4", loading && "animate-spin")} aria-hidden />
+              <RefreshCw
+                className={cn("h-4 w-4", loading && "animate-spin")}
+                aria-hidden
+              />
               Actualizar
             </button>
           </div>
@@ -731,23 +830,38 @@ function InventoryMovementsPageClient() {
             setRevertBusyId(confirmRevertId);
             setError(null);
             try {
-              const res = await fetch("/api/admin/inventory/revert-manual-adjust", {
-                method: "POST",
-                credentials: "include",
-                headers: { "content-type": "application/json", "x-tl-csrf": "1" },
-                body: JSON.stringify({ movementId: confirmRevertId }),
-              });
+              const res = await fetch(
+                "/api/admin/inventory/revert-manual-adjust",
+                {
+                  method: "POST",
+                  credentials: "include",
+                  headers: {
+                    "content-type": "application/json",
+                    "x-tl-csrf": "1",
+                  },
+                  body: JSON.stringify({ movementId: confirmRevertId }),
+                },
+              );
               const raw: unknown = await res.json().catch(() => ({}));
-              const obj = raw && typeof raw === "object" ? (raw as { error?: unknown }) : null;
+              const obj =
+                raw && typeof raw === "object"
+                  ? (raw as { error?: unknown })
+                  : null;
               if (!res.ok) {
-                setError(typeof obj?.error === "string" ? obj.error : "No se pudo revertir.");
+                setError(
+                  typeof obj?.error === "string"
+                    ? obj.error
+                    : "No se pudo revertir.",
+                );
                 return;
               }
               await load();
               setConfirmRevertOpen(false);
               setConfirmRevertId(null);
             } catch (e) {
-              setError(e instanceof Error ? e.message : "Error de red al revertir.");
+              setError(
+                e instanceof Error ? e.message : "Error de red al revertir.",
+              );
             } finally {
               setRevertBusyId(null);
             }
@@ -774,7 +888,11 @@ function InventoryMovementsPageClient() {
             />
           </label>
           <div className="mt-2 flex items-center justify-end gap-2">
-            <button type="button" className="tl-btn tl-btn-secondary !px-4 !py-2 text-sm" onClick={() => setSaveViewOpen(false)}>
+            <button
+              type="button"
+              className="tl-btn tl-btn-secondary !px-4 !py-2 text-sm"
+              onClick={() => setSaveViewOpen(false)}
+            >
               Cancelar
             </button>
             <button
@@ -833,7 +951,10 @@ export default function InventoryMovementsPage() {
         <AdminShell title="Entradas/Salidas">
           <div className="flex min-h-[60vh] items-center justify-center">
             <div className="flex flex-col items-center gap-3">
-              <RefreshCw className="h-8 w-8 text-tl-accent tl-spin" aria-hidden />
+              <RefreshCw
+                className="h-8 w-8 text-tl-accent tl-spin"
+                aria-hidden
+              />
               <p className="text-sm text-tl-muted">Cargando movimientos...</p>
             </div>
           </div>
@@ -844,4 +965,3 @@ export default function InventoryMovementsPage() {
     </Suspense>
   );
 }
-
