@@ -138,6 +138,9 @@ async function fetchRateFromBrowserRun(
       "'usd_rate_cup' cuyo valor sea el número entero de cuántos CUP cuesta 1 USD. " +
       "No incluyas markdown, explicaciones, ni texto adicional. " +
       'Ejemplo: {"usd_rate_cup": 325}',
+    response_format: {
+      type: "json_object",
+    },
     gotoOptions: getGotoOptions(attempt),
     actionTimeout: 30000,
     bestAttempt: true,

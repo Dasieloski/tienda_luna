@@ -118,6 +118,11 @@ async function fetchRateFromBrowserRun(attempt) {
   var cfg = getCloudflareConfig();
   var endpoint = "https://api.cloudflare.com/client/v4/accounts/" + cfg.accountId + "/browser-rendering/json";
 
+  /**
+   * Browser Run inyecta response_format por defecto si no se provee,
+   * causando error 422 en Workers AI. Sobreescribimos explicitamente
+   * con json_object (no requiere schema) para evitar el error.
+   */
   var body = {
     url: TARGET_URL,
     prompt:
@@ -129,11 +134,15 @@ async function fetchRateFromBrowserRun(attempt) {
       "'usd_rate_cup' cuyo valor sea el numero entero de cuantos CUP cuesta 1 USD. " +
       "No incluyas markdown, explicaciones, ni texto adicional. " +
       "Ejemplo: {\"usd_rate_cup\": 325}",
+    response_format: {
+      type: "json_object",
+    },
     gotoOptions: getGotoOptions(attempt),
     actionTimeout: 30000,
     bestAttempt: true,
   };
 
+  console.log("  [debug] POST /browser-rendering/json (intento " + attempt + ")");
   var res = await fetch(endpoint, {
     method: "POST",
     headers: {
@@ -145,8 +154,11 @@ async function fetchRateFromBrowserRun(attempt) {
 
   if (!res.ok) {
     var text = await res.text().catch(function () { return ""; });
-    throw new ScrapingError("Browser Run responded HTTP " + res.status + ". Body: " + text.slice(0, 500));
+    console.log("  [debug] HTTP " + res.status + " respuesta completa: " + text.slice(0, 1000));
+    throw new ScrapingError("Browser Run responded HTTP " + res.status + ".");
   }
+
+  console.log("  [debug] HTTP 200 OK");
 
   var data = await res.json();
 
