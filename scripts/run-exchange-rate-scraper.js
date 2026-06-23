@@ -71,14 +71,18 @@ async function fetchRateFromBrowserRun() {
     response_format: {
       type: "json_schema",
       json_schema: {
-        type: "object",
-        properties: {
-          usd_rate_cup: {
-            type: "number",
-            description: "Tasa de cambio USD a CUP en el mercado informal cubano",
+        name: "exchange_rate",
+        strict: true,
+        schema: {
+          type: "object",
+          properties: {
+            usd_rate_cup: {
+              type: "number",
+              description: "Tasa de cambio USD a CUP en el mercado informal cubano",
+            },
           },
+          required: ["usd_rate_cup"],
         },
-        required: ["usd_rate_cup"],
       },
     },
     gotoOptions: { waitUntil: "networkidle0" },
