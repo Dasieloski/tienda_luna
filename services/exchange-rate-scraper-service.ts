@@ -165,19 +165,15 @@ async function fetchRateFromBrowserRun(executionId: string): Promise<{ usdRateCu
     response_format: {
       type: "json_schema",
       json_schema: {
-        name: "exchange_rate",
-        strict: true,
-        schema: {
-          type: "object",
-          properties: {
-            usd_rate_cup: {
-              type: "number",
-              description:
-                "Valor numérico de la tasa de cambio USD a CUP en el mercado informal cubano (cuántos CUP cuesta 1 USD). Solo el número, sin símbolos.",
-            },
+        type: "object",
+        properties: {
+          usd_rate_cup: {
+            type: "number",
+            description:
+              "Valor numérico de la tasa de cambio USD a CUP en el mercado informal cubano (cuántos CUP cuesta 1 USD). Solo el número, sin símbolos.",
           },
-          required: ["usd_rate_cup"],
         },
+        required: ["usd_rate_cup"],
       },
     },
     gotoOptions: {
