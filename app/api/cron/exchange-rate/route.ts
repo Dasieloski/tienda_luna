@@ -1,12 +1,14 @@
 /**
  * API Route: GET /api/cron/exchange-rate
  *
- * Endpoint dedicado para ejecución programada (Vercel Cron).
- * No requiere sesión de administrador porque las invocaciones de Vercel Cron
- * vienen verificadas por la infraestructura de Vercel (protegidas por CRON_SECRET).
+ * Endpoint para ejecución programada desde GitHub Actions.
+ * No requiere sesión de administrador porque las invocaciones vienen
+ * protegidas por CRON_SECRET.
  *
- * IMPORTANTE: En producción con Vercel, esta ruta debería validar el header
- * Authorization: Bearer <CRON_SECRET> para evitar ejecuciones no autorizadas.
+ * Schedule en .github/workflows/exchange-rate-scraper.yml (Cuba UTC-4):
+ * - 01:00 UTC = 21:00 Cuba (noche)
+ * - 10:00 UTC = 06:00 Cuba (mañana)
+ * - 17:00 UTC = 13:00 Cuba (mediodía)
  */
 
 import { NextResponse } from "next/server";
@@ -36,11 +38,11 @@ function verifyCronAuth(request: Request): boolean {
 }
 
 /**
- * GET handler para Vercel Cron.
+ * GET handler para GitHub Actions Cron.
  * Actualiza automáticamente la tasa de cambio USD/CUP para TODAS las tiendas.
  *
- * Schedule configurado en vercel.json (Cuba UTC-4):
- * - 01:00 UTC = 21:00 Cuba día anterior (noche)
+ * Schedule en .github/workflows/exchange-rate-scraper.yml (Cuba UTC-4):
+ * - 01:00 UTC = 21:00 Cuba (noche)
  * - 10:00 UTC = 06:00 Cuba (mañana)
  * - 17:00 UTC = 13:00 Cuba (mediodía)
  */
