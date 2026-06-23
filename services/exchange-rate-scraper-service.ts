@@ -164,7 +164,7 @@ async function fetchRateFromBrowserRun(executionId: string): Promise<{ usdRateCu
       "Devuelve solo el número entero correspondiente a cuántos CUP cuesta 1 USD.",
     response_format: {
       type: "json_schema",
-      schema: {
+      json_schema: {
         type: "object",
         properties: {
           usd_rate_cup: {

@@ -70,7 +70,7 @@ async function fetchRateFromBrowserRun() {
       "Devuelve solo el numero entero de cuantos CUP cuesta 1 USD.",
     response_format: {
       type: "json_schema",
-      schema: {
+      json_schema: {
         type: "object",
         properties: {
           usd_rate_cup: {
