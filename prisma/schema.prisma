@@ -43,6 +43,11 @@ enum FxDirection {
   USD_TO_CUP
 }
 
+enum ExchangeRateMode {
+  MANUAL
+  AUTO
+}
+
 model Store {
   id        String   @id @default(cuid())
   name      String
@@ -55,6 +60,12 @@ model Store {
 
   /// Cambio CUP por 1 USD (ej. 520). Usado para mostrar equivalencias en UI.
   usdRateCup Int? @default(250)
+
+  /// Modo de actualización del tipo de cambio: MANUAL (usuario lo fija) o AUTO (scraping desde elToque.com)
+  exchangeRateMode ExchangeRateMode @default(AUTO)
+
+  /// Última actualización automática exitosa desde elToque.com
+  exchangeRateAutoUpdatedAt DateTime?
 
   users      User[]
   devices    Device[]

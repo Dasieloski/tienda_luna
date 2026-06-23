@@ -15,6 +15,8 @@ export function AdminShell({ children, title = "Dashboard" }: AdminShellProps) {
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
   const [usdRateCup, setUsdRateCup] = useState<number | null>(null);
+  const [exchangeRateMode, setExchangeRateMode] = useState<"MANUAL" | "AUTO">("AUTO");
+  const [exchangeRateAutoUpdatedAt, setExchangeRateAutoUpdatedAt] = useState<string | null>(null);
 
   // Tema: token-driven, persistido (claro/oscuro).
   useEffect(() => {
@@ -43,11 +45,17 @@ export function AdminShell({ children, title = "Dashboard" }: AdminShellProps) {
       try {
         const res = await fetch("/api/admin/exchange-rate", { credentials: "include" });
         if (!res.ok) return;
-        const json = (await res.json()) as { usdRateCup?: number };
+        const json = (await res.json()) as {
+          usdRateCup?: number;
+          exchangeRateMode?: "MANUAL" | "AUTO";
+          exchangeRateAutoUpdatedAt?: string | null;
+        };
         const r = Number(json.usdRateCup);
         if (!Number.isFinite(r) || r <= 0) return;
         if (cancelled) return;
         setUsdRateCup(r);
+        setExchangeRateMode(json.exchangeRateMode ?? "AUTO");
+        setExchangeRateAutoUpdatedAt(json.exchangeRateAutoUpdatedAt ?? null);
         (globalThis as unknown as { __TL_USD_RATE_CUP__?: number }).__TL_USD_RATE_CUP__ = r;
       } catch {
         // ignore
@@ -78,10 +86,13 @@ export function AdminShell({ children, title = "Dashboard" }: AdminShellProps) {
           title={title}
           onMenuClick={() => setMobileSidebarOpen((prev) => !prev)}
           usdRateCup={usdRateCup}
+          exchangeRateMode={exchangeRateMode}
+          exchangeRateAutoUpdatedAt={exchangeRateAutoUpdatedAt}
           onUsdRateCupChange={(next) => {
             setUsdRateCup(next);
             (globalThis as unknown as { __TL_USD_RATE_CUP__?: number }).__TL_USD_RATE_CUP__ = next;
           }}
+          onExchangeRateModeChange={(mode) => setExchangeRateMode(mode)}
         />
         <main
           id="admin-main"

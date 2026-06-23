@@ -6,7 +6,8 @@ import { prisma } from "@/lib/db";
 import { isMissingDbColumnError } from "@/lib/db-schema-errors";
 
 const patchSchema = z.object({
-  usdRateCup: z.number().int().min(1).max(100000),
+  usdRateCup: z.number().int().min(1).max(100000).optional(),
+  exchangeRateMode: z.enum(["MANUAL", "AUTO"]).optional(),
 });
 
 async function hasStoreColumn(columnName: string): Promise<boolean> {
@@ -55,7 +56,12 @@ export async function GET(request: Request) {
   try {
     const store = await prisma.store.findUnique({
       where: { id: session.storeId },
-      select: { usdRateCup: true, dashboardLayout: true },
+      select: {
+        usdRateCup: true,
+        exchangeRateMode: true,
+        exchangeRateAutoUpdatedAt: true,
+        dashboardLayout: true,
+      },
     });
     const cookieRate = await readUsdRateCupCookie();
     const usdRateCup =
@@ -63,7 +69,11 @@ export async function GET(request: Request) {
       (typeof (store?.dashboardLayout as any)?.usdRateCup === "number"
         ? Number((store?.dashboardLayout as any).usdRateCup)
         : cookieRate ?? 250);
-    return NextResponse.json({ usdRateCup });
+    return NextResponse.json({
+      usdRateCup,
+      exchangeRateMode: store?.exchangeRateMode ?? "AUTO",
+      exchangeRateAutoUpdatedAt: store?.exchangeRateAutoUpdatedAt?.toISOString() ?? null,
+    });
   } catch (e) {
     if (isMissingDbColumnError(e)) {
       // Modo legacy: sin columna usdRateCup. Intentamos leer de dashboardLayout si existe.
@@ -85,6 +95,8 @@ export async function GET(request: Request) {
               fromLayout ??
               cookieRate ??
               Number(process.env.NEXT_PUBLIC_USD_RATE_CUP ?? "250"),
+            exchangeRateMode: "MANUAL",
+            exchangeRateAutoUpdatedAt: null,
             meta: {
               schemaLegacy: true as const,
               hint: "BD sin columna Store.usdRateCup: usando dashboardLayout.usdRateCup (si existe) o NEXT_PUBLIC_USD_RATE_CUP.",
@@ -97,6 +109,8 @@ export async function GET(request: Request) {
       const cookieRate = await readUsdRateCupCookie();
       return NextResponse.json({
         usdRateCup: cookieRate ?? Number(process.env.NEXT_PUBLIC_USD_RATE_CUP ?? "250"),
+        exchangeRateMode: "MANUAL",
+        exchangeRateAutoUpdatedAt: null,
         meta: {
           schemaLegacy: true as const,
           hint: "BD legacy: ejecuta prisma/sql/add_store_usd_rate.sql en Supabase o npx prisma db push para persistir en Store.usdRateCup.",
@@ -120,17 +134,36 @@ export async function PATCH(request: Request) {
     return NextResponse.json({ error: "INVALID_BODY" }, { status: 400 });
   }
 
+  const { usdRateCup, exchangeRateMode } = parsed.data;
+
   try {
     const updated = await prisma.$transaction(async (tx) => {
       const before = await tx.store.findUnique({
         where: { id: session.storeId },
-        select: { usdRateCup: true, dashboardLayout: true },
+        select: { usdRateCup: true, exchangeRateMode: true, dashboardLayout: true },
       });
+
+      const updateData: Record<string, unknown> = {};
+      if (usdRateCup !== undefined) updateData.usdRateCup = usdRateCup;
+      if (exchangeRateMode !== undefined) updateData.exchangeRateMode = exchangeRateMode;
+
       const next = await tx.store.update({
         where: { id: session.storeId },
-        data: { usdRateCup: parsed.data.usdRateCup },
-        select: { usdRateCup: true, dashboardLayout: true },
+        data: updateData,
+        select: {
+          usdRateCup: true,
+          exchangeRateMode: true,
+          exchangeRateAutoUpdatedAt: true,
+          dashboardLayout: true,
+        },
       });
+
+      const beforePayload: Record<string, unknown> = { usdRateCup: before?.usdRateCup ?? null };
+      if (exchangeRateMode !== undefined) beforePayload.exchangeRateMode = before?.exchangeRateMode ?? "AUTO";
+
+      const afterPayload: Record<string, unknown> = { usdRateCup: next.usdRateCup };
+      if (exchangeRateMode !== undefined) afterPayload.exchangeRateMode = exchangeRateMode;
+
       await tx.auditLog.create({
         data: {
           storeId: session.storeId,
@@ -139,70 +172,37 @@ export async function PATCH(request: Request) {
           action: "EXCHANGE_RATE_UPDATE",
           entityType: "Store",
           entityId: session.storeId,
-          before: { usdRateCup: before?.usdRateCup ?? null } as any,
-          after: { usdRateCup: next.usdRateCup } as any,
+          before: beforePayload as any,
+          after: afterPayload as any,
         },
       });
       return next;
     });
-    const res = NextResponse.json({ usdRateCup: updated.usdRateCup });
-    setUsdRateCupCookie(res, updated.usdRateCup ?? parsed.data.usdRateCup);
+
+    const res = NextResponse.json({
+      usdRateCup: updated.usdRateCup,
+      exchangeRateMode: updated.exchangeRateMode,
+      exchangeRateAutoUpdatedAt: updated.exchangeRateAutoUpdatedAt?.toISOString() ?? null,
+    });
+    const rate = updated.usdRateCup ?? (usdRateCup ?? 250);
+    setUsdRateCupCookie(res, rate);
     return res;
   } catch (e) {
     if (isMissingDbColumnError(e)) {
-      // Modo legacy: persistimos la tasa dentro de dashboardLayout (si existe) para no bloquear el panel.
-      try {
-        const hasLayout = await hasStoreColumn("dashboardLayout");
-        if (hasLayout) {
-          await prisma.$executeRaw`
-            UPDATE "Store"
-            SET "dashboardLayout" = jsonb_set(
-              COALESCE("dashboardLayout", '{}'::jsonb),
-              '{usdRateCup}',
-              to_jsonb(${parsed.data.usdRateCup}::int),
-              true
-            )
-            WHERE id = ${session.storeId}
-          `;
-          await prisma.auditLog.create({
-            data: {
-              storeId: session.storeId,
-              actorType: "USER",
-              actorId: session.sub,
-              action: "EXCHANGE_RATE_UPDATE",
-              entityType: "Store",
-              entityId: session.storeId,
-              after: { usdRateCup: parsed.data.usdRateCup, storedIn: "dashboardLayout" } as any,
-            },
-          });
-          const res = NextResponse.json({
-            usdRateCup: parsed.data.usdRateCup,
-            meta: {
-              schemaLegacy: true as const,
-              storedIn: "dashboardLayout" as const,
-              hint: "BD sin Store.usdRateCup: guardado en Store.dashboardLayout.usdRateCup. Migra para persistir en la columna dedicada.",
-            },
-          });
-          setUsdRateCupCookie(res, parsed.data.usdRateCup);
-          return res;
-        }
-      } catch (err) {
-        console.error("[api/admin/exchange-rate legacy PATCH]", err);
-      }
-      // Último recurso: persistir en cookie del navegador para que el navbar funcione
-      // aunque la tabla Store sea legacy y no tenga columnas para guardar la tasa.
+      const rate = usdRateCup ?? 250;
       const res = NextResponse.json(
         {
-          usdRateCup: parsed.data.usdRateCup,
+          usdRateCup: rate,
+          exchangeRateMode: "MANUAL",
+          exchangeRateAutoUpdatedAt: null,
           meta: {
             schemaLegacy: true as const,
-            storedIn: "cookie" as const,
-            hint: "BD legacy sin Store.usdRateCup ni Store.dashboardLayout: guardado en cookie del navegador. Ejecuta prisma/sql/add_store_usd_rate.sql en Supabase o npx prisma db push para persistir en la BD.",
+            hint: "BD legacy: ejecuta prisma/sql/add_store_usd_rate.sql en Supabase o npx prisma db push para persistir.",
           },
         },
         { status: 200 },
       );
-      setUsdRateCupCookie(res, parsed.data.usdRateCup);
+      setUsdRateCupCookie(res, rate);
       return res;
     }
     console.error("[api/admin/exchange-rate]", e);

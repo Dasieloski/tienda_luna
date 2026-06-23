@@ -236,7 +236,11 @@ async function persistRate(
   await prisma.$transaction(async (tx) => {
     await tx.store.update({
       where: { id: storeId },
-      data: { usdRateCup: newRate },
+      data: {
+        usdRateCup: newRate,
+        exchangeRateMode: "AUTO",
+        exchangeRateAutoUpdatedAt: new Date(),
+      },
     });
 
     await tx.auditLog.create({
@@ -269,6 +273,27 @@ export async function scrapeAndUpdateUsdRate(
   const startedAt = new Date().toISOString();
 
   console.log(`[${executionId}] Iniciando scraping…`);
+
+  // Verificar modo: si es MANUAL, saltar el scraping
+  try {
+    const store = await prisma.store.findUnique({
+      where: { id: storeId },
+      select: { exchangeRateMode: true },
+    });
+    if (store?.exchangeRateMode === "MANUAL") {
+      console.log(`[${executionId}] Modo MANUAL: se omite el scraping automático.`);
+      return {
+        success: true,
+        rateCup: await getLastValidRate(storeId) ?? 250,
+        previousRate: null,
+        updated: false,
+        executionId,
+        details: `Modo MANUAL: scraping omitido. Iniciado: ${startedAt}`,
+      };
+    }
+  } catch (e) {
+    console.error(`[${executionId}] Error verificando modo:`, e);
+  }
 
   let previousRate: number | null = null;
   let extractedRate: number | null = null;

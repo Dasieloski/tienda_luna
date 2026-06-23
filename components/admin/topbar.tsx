@@ -35,6 +35,9 @@ interface TopbarProps {
   onMenuClick?: () => void;
   usdRateCup?: number | null;
   onUsdRateCupChange?: (next: number) => void;
+  exchangeRateMode?: "MANUAL" | "AUTO";
+  exchangeRateAutoUpdatedAt?: string | null;
+  onExchangeRateModeChange?: (mode: "MANUAL" | "AUTO") => void;
 }
 
 type GlobalSearchHit =
@@ -62,6 +65,20 @@ function getString(v: unknown): string | null {
   return typeof v === "string" ? v : null;
 }
 
+function formatTimestamp(iso: string): string {
+  try {
+    const d = new Date(iso);
+    if (isNaN(d.getTime())) return iso;
+    const opts: Intl.DateTimeFormatOptions = {
+      year: "numeric", month: "2-digit", day: "2-digit",
+      hour: "2-digit", minute: "2-digit", hour12: false,
+    };
+    return d.toLocaleDateString("es-CU", opts);
+  } catch {
+    return iso;
+  }
+}
+
 function fmtSince(minutes: number | null) {
   if (minutes == null) return "sin señal";
   const mins = Math.max(0, Math.round(minutes));
@@ -76,6 +93,9 @@ export function Topbar({
   onMenuClick,
   usdRateCup,
   onUsdRateCupChange,
+  exchangeRateMode = "AUTO",
+  exchangeRateAutoUpdatedAt,
+  onExchangeRateModeChange,
 }: TopbarProps) {
   const router = useRouter();
   const toast = useToast();
@@ -316,6 +336,35 @@ export function Topbar({
       setOpen(false);
     } catch (e) {
       setError(e instanceof Error ? e.message : "Error de red.");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function changeMode(mode: "MANUAL" | "AUTO") {
+    setSaving(true);
+    try {
+      const res = await fetch("/api/admin/exchange-rate", {
+        method: "PATCH",
+        credentials: "include",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ exchangeRateMode: mode }),
+      });
+      if (!res.ok) return;
+      const json = (await res.json()) as {
+        usdRateCup?: number;
+        exchangeRateMode?: "MANUAL" | "AUTO";
+        exchangeRateAutoUpdatedAt?: string | null;
+      };
+      if (json.exchangeRateMode) {
+        onExchangeRateModeChange?.(json.exchangeRateMode);
+      }
+      if (Number.isFinite(json.usdRateCup) && json.usdRateCup! > 0) {
+        onUsdRateCupChange?.(json.usdRateCup!);
+        setValue(String(json.usdRateCup!));
+      }
+    } catch {
+      // ignore
     } finally {
       setSaving(false);
     }
@@ -771,7 +820,7 @@ export function Topbar({
           </button>
 
           {open && (
-            <div className="absolute right-0 top-12 z-50 w-[320px] max-w-[90vw] rounded-2xl border border-tl-line bg-tl-canvas p-4 shadow-lg">
+            <div className="absolute right-0 top-12 z-50 w-[340px] max-w-[90vw] rounded-2xl border border-tl-line bg-tl-canvas p-4 shadow-lg">
               <div className="flex items-start justify-between gap-3">
                 <div>
                   <p className="text-sm font-semibold text-tl-ink">Tipo de cambio</p>
@@ -788,44 +837,109 @@ export function Topbar({
                 </button>
               </div>
 
-              <div className="mt-3 grid gap-2">
-                <label className="text-xs font-semibold uppercase tracking-wider text-tl-muted">
-                  CUP por 1 USD
-                </label>
-                <input
-                  inputMode="numeric"
-                  value={value}
-                  onChange={(e) => setValue(e.target.value)}
-                  className="tl-input h-10"
-                  placeholder="Ej: 520"
-                />
-                <p className="text-xs text-tl-muted">
-                  Ejemplo: {formatExample(1872000, Number(value) || (usdRateCup ?? 250))}
-                </p>
-                {error && (
-                  <div className="rounded-xl border border-tl-warning/20 bg-tl-warning-subtle px-3 py-2 text-xs text-tl-warning">
-                    {error}
-                  </div>
-                )}
-                <div className="mt-1 flex items-center justify-end gap-2">
-                  <button
-                    type="button"
-                    onClick={() => setOpen(false)}
-                    className="tl-btn tl-btn-secondary !px-3 !py-2 text-xs"
-                    disabled={saving}
-                  >
-                    Cancelar
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => void save()}
-                    className="tl-btn tl-btn-primary !px-3 !py-2 text-xs"
-                    disabled={saving}
-                  >
-                    {saving ? "Guardando…" : "Guardar"}
-                  </button>
-                </div>
+              {/* Mode toggle */}
+              <div className="mt-4 flex rounded-xl border border-tl-line bg-tl-canvas-inset p-0.5">
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (exchangeRateMode !== "MANUAL") {
+                      void changeMode("MANUAL");
+                    }
+                  }}
+                  className={
+                    "flex-1 rounded-lg px-3 py-1.5 text-xs font-semibold transition-all " +
+                    (exchangeRateMode === "MANUAL"
+                      ? "bg-tl-canvas text-tl-ink shadow-sm"
+                      : "text-tl-muted hover:text-tl-ink")
+                  }
+                >
+                  Manual
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (exchangeRateMode !== "AUTO") {
+                      void changeMode("AUTO");
+                    }
+                  }}
+                  className={
+                    "flex-1 rounded-lg px-3 py-1.5 text-xs font-semibold transition-all " +
+                    (exchangeRateMode === "AUTO"
+                      ? "bg-tl-canvas text-tl-ink shadow-sm"
+                      : "text-tl-muted hover:text-tl-ink")
+                  }
+                >
+                  Automático
+                </button>
               </div>
+
+              {exchangeRateMode === "AUTO" ? (
+                <div className="mt-4 grid gap-2">
+                  <div className="rounded-xl border border-tl-line bg-tl-canvas-inset px-3 py-3">
+                    <div className="flex items-center gap-2 text-xs text-tl-muted">
+                      <RefreshCw className="h-3.5 w-3.5 shrink-0 text-tl-accent" aria-hidden />
+                      <span>
+                        Extraído automáticamente de{" "}
+                        <a
+                          href="https://eltoque.com"
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="font-semibold text-tl-accent underline underline-offset-2"
+                        >
+                          elToque.com
+                        </a>
+                      </span>
+                    </div>
+                    {exchangeRateAutoUpdatedAt && (
+                      <p className="mt-1.5 text-xs text-tl-muted">
+                        Última actualización: {formatTimestamp(exchangeRateAutoUpdatedAt)}
+                      </p>
+                    )}
+                    <p className="mt-4 text-center text-lg font-bold tabular-nums text-tl-ink">
+                      {label.replace("Cambio: ", "")} CUP/USD
+                    </p>
+                  </div>
+                </div>
+              ) : (
+                <div className="mt-4 grid gap-2">
+                  <label className="text-xs font-semibold uppercase tracking-wider text-tl-muted">
+                    CUP por 1 USD
+                  </label>
+                  <input
+                    inputMode="numeric"
+                    value={value}
+                    onChange={(e) => setValue(e.target.value)}
+                    className="tl-input h-10"
+                    placeholder="Ej: 520"
+                  />
+                  <p className="text-xs text-tl-muted">
+                    Ejemplo: {formatExample(1872000, Number(value) || (usdRateCup ?? 250))}
+                  </p>
+                  {error && (
+                    <div className="rounded-xl border border-tl-warning/20 bg-tl-warning-subtle px-3 py-2 text-xs text-tl-warning">
+                      {error}
+                    </div>
+                  )}
+                  <div className="mt-1 flex items-center justify-end gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setOpen(false)}
+                      className="tl-btn tl-btn-secondary !px-3 !py-2 text-xs"
+                      disabled={saving}
+                    >
+                      Cancelar
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => void save()}
+                      className="tl-btn tl-btn-primary !px-3 !py-2 text-xs"
+                      disabled={saving}
+                    >
+                      {saving ? "Guardando…" : "Guardar"}
+                    </button>
+                  </div>
+                </div>
+              )}
             </div>
           )}
         </div>

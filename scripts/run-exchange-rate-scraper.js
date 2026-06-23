@@ -207,14 +207,22 @@ async function scrapeAndUpdateUsdRate(prisma, storeId) {
   console.log("[" + executionId + "] Scraping for store " + storeId + "...");
 
   var previousRate = null;
+  var storeMode = null;
   try {
     var store = await prisma.store.findUnique({
       where: { id: storeId },
-      select: { usdRateCup: true },
+      select: { usdRateCup: true, exchangeRateMode: true },
     });
     previousRate = store && store.usdRateCup != null ? store.usdRateCup : null;
+    storeMode = store ? store.exchangeRateMode : null;
   } catch (e) {
     console.error("[" + executionId + "] Failed to read previous rate: " + e.message);
+  }
+
+  // Si el modo es MANUAL, omitir scraping
+  if (storeMode === "MANUAL") {
+    console.log("[" + executionId + "] Modo MANUAL: scraping omitido.");
+    return { success: true, rate: previousRate, previousRate: previousRate, updated: false };
   }
 
   var extractedRate = null;
@@ -248,7 +256,11 @@ async function scrapeAndUpdateUsdRate(prisma, storeId) {
     await prisma.$transaction(async function (tx) {
       await tx.store.update({
         where: { id: storeId },
-        data: { usdRateCup: extractedRate },
+        data: {
+          usdRateCup: extractedRate,
+          exchangeRateMode: "AUTO",
+          exchangeRateAutoUpdatedAt: new Date(),
+        },
       });
       await tx.auditLog.create({
         data: {
