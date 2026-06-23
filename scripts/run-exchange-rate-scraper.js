@@ -21,6 +21,22 @@ var RETRY_BASE_MS = 1500;
 var USD_RATE_MIN = 20;
 var USD_RATE_MAX = 5000;
 
+/**
+ * Opciones de navegacion adaptativas por intento.
+ * Intento 1: networkidle2 (permite hasta 2 conexiones).
+ * Intento 2: combinacion load + networkidle2.
+ * Intento 3: solo "load" (lo mas permisivo).
+ */
+function getGotoOptions(attempt) {
+  if (attempt === 1) {
+    return { waitUntil: "networkidle2", timeout: 60000 };
+  }
+  if (attempt === 2) {
+    return { waitUntil: ["load", "networkidle2"], timeout: 60000 };
+  }
+  return { waitUntil: "load", timeout: 60000 };
+}
+
 function sleep(ms) {
   return new Promise(function (resolve) { setTimeout(resolve, ms); });
 }
@@ -35,17 +51,32 @@ ScrapingError.prototype = Object.create(Error.prototype);
 function ValidationError(msg) { this.name = "ValidationError"; this.message = msg; }
 ValidationError.prototype = Object.create(Error.prototype);
 
+/**
+ * Convierte un valor desconocido a numero.
+ * Acepta number, string numerico, o null/undefined.
+ */
+function coerceNumber(value) {
+  if (typeof value === "number") return value;
+  if (typeof value === "string") {
+    var cleaned = value.trim().replace(/[,$]/g, "");
+    var num = Number(cleaned);
+    if (!isNaN(num)) return num;
+  }
+  return NaN;
+}
+
 function validateRate(value) {
-  if (typeof value !== "number" || !Number.isFinite(value)) {
+  var num = coerceNumber(value);
+  if (isNaN(num) || !Number.isFinite(num)) {
     throw new ValidationError("Valor no numerico o finito: " + JSON.stringify(value));
   }
-  if (value <= 0) {
-    throw new ValidationError("Valor no positivo: " + value);
+  if (num <= 0) {
+    throw new ValidationError("Valor no positivo: " + num);
   }
-  if (value < USD_RATE_MIN || value > USD_RATE_MAX) {
-    throw new ValidationError("Valor fuera de rango (" + USD_RATE_MIN + "-" + USD_RATE_MAX + "): " + value);
+  if (num < USD_RATE_MIN || num > USD_RATE_MAX) {
+    throw new ValidationError("Valor fuera de rango (" + USD_RATE_MIN + "-" + USD_RATE_MAX + "): " + num);
   }
-  return Math.round(value);
+  return Math.round(num);
 }
 
 function getCloudflareConfig() {
@@ -57,31 +88,50 @@ function getCloudflareConfig() {
   return { accountId: accountId, apiToken: apiToken };
 }
 
-async function fetchRateFromBrowserRun() {
+/**
+ * Busca un valor numerico dentro de un objeto recorriendo todas las claves.
+ * Sirve como fallback cuando la IA no devuelve la estructura esperada,
+ * pero aun asi coloco el valor en alguna propiedad del objeto.
+ */
+function findNumericValue(obj, depth) {
+  if (depth > 3 || obj == null || typeof obj !== "object") return null;
+  for (var key in obj) {
+    if (!Object.prototype.hasOwnProperty.call(obj, key)) continue;
+    var val = obj[key];
+    var num = coerceNumber(val);
+    if (!isNaN(num) && num >= USD_RATE_MIN && num <= USD_RATE_MAX) {
+      return num;
+    }
+    if (typeof val === "object") {
+      var found = findNumericValue(val, depth + 1);
+      if (found !== null) return found;
+    }
+  }
+  return null;
+}
+
+/**
+ * Llamada a la API /json de Cloudflare Browser Run.
+ * Usa solo prompt (sin response_format) para evitar errores 422.
+ */
+async function fetchRateFromBrowserRun(attempt) {
   var cfg = getCloudflareConfig();
   var endpoint = "https://api.cloudflare.com/client/v4/accounts/" + cfg.accountId + "/browser-rendering/json";
 
   var body = {
     url: TARGET_URL,
-    prompt: "Extrae unicamente el valor actual de cambio del dolar estadounidense (USD) " +
+    prompt:
+      "Extrae el valor actual de cambio del dolar estadounidense (USD) " +
       "en el mercado informal de Cuba publicado en eltoque.com. " +
-      "Busca el texto exacto donde aparece '1 USD' seguido de un valor numerico en CUP. " +
-      "Ignora otras monedas como EUR, MLC, CAD, ZELLE, etc. " +
-      "Devuelve solo el numero entero de cuantos CUP cuesta 1 USD.",
-    response_format: {
-      type: "json_schema",
-      json_schema: {
-        type: "object",
-        properties: {
-          usd_rate_cup: {
-            type: "number",
-            description: "Tasa de cambio USD a CUP en el mercado informal cubano",
-          },
-        },
-        required: ["usd_rate_cup"],
-      },
-    },
-    gotoOptions: { waitUntil: "networkidle0" },
+      "Busca donde dice '1 USD' seguido de un numero en CUP. " +
+      "Ignora EUR, MLC, CAD, ZELLE y otras monedas. " +
+      "Devuelve SOLAMENTE un objeto JSON valido con una unica propiedad: " +
+      "'usd_rate_cup' cuyo valor sea el numero entero de cuantos CUP cuesta 1 USD. " +
+      "No incluyas markdown, explicaciones, ni texto adicional. " +
+      "Ejemplo: {\"usd_rate_cup\": 325}",
+    gotoOptions: getGotoOptions(attempt),
+    actionTimeout: 30000,
+    bestAttempt: true,
   };
 
   var res = await fetch(endpoint, {
@@ -108,11 +158,36 @@ async function fetchRateFromBrowserRun() {
     throw new ScrapingError("Cloudflare API error: " + errMsgs);
   }
 
-  if (data.result == null || data.result.usd_rate_cup == null) {
-    throw new ScrapingError("Respuesta sin usd_rate_cup: " + JSON.stringify(data.result).slice(0, 200));
+  if (data.result == null) {
+    throw new ScrapingError("Respuesta vacia: " + JSON.stringify(data).slice(0, 300));
   }
 
-  return { usdRateCup: validateRate(data.result.usd_rate_cup) };
+  // Intento 1: buscar usd_rate_cup directamente
+  if (data.result.usd_rate_cup != null) {
+    return { usdRateCup: validateRate(data.result.usd_rate_cup) };
+  }
+
+  // Intento 2: la IA podria ponerlo en "response" u otra clave comun
+  var possibleKeys = ["response", "rate", "cup", "valor", "precio", "usd", "exchange_rate"];
+  for (var i = 0; i < possibleKeys.length; i++) {
+    var key = possibleKeys[i];
+    if (data.result[key] != null) {
+      try {
+        return { usdRateCup: validateRate(data.result[key]) };
+      } catch (_) {}
+    }
+  }
+
+  // Intento 3: busqueda profunda en todo el objeto resultado
+  var found = findNumericValue(data.result, 0);
+  if (found !== null) {
+    console.log("  [fallback] valor encontrado por busqueda profunda: " + found);
+    return { usdRateCup: Math.round(found) };
+  }
+
+  throw new ScrapingError(
+    "Respuesta sin tasa reconocible. Resultado: " + JSON.stringify(data.result).slice(0, 500)
+  );
 }
 
 async function scrapeAndUpdateUsdRate(prisma, storeId) {
@@ -135,7 +210,7 @@ async function scrapeAndUpdateUsdRate(prisma, storeId) {
 
   for (var attempt = 1; attempt <= MAX_RETRIES; attempt++) {
     try {
-      var result = await fetchRateFromBrowserRun();
+      var result = await fetchRateFromBrowserRun(attempt);
       extractedRate = result.usdRateCup;
       console.log("[" + executionId + "] Attempt #" + attempt + ": extracted = " + extractedRate);
       break;
