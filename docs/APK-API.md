@@ -435,6 +435,7 @@ Orden lógico en un mismo batch (o varios batches ordenados en el tiempo):
 
 - El **total** y líneas monetarias los fija el **servidor** a partir del catálogo al procesar `SALE_COMPLETED` (no fiarse solo del UI local para auditoría).
 - Si hay **falta de stock parcial**, el evento puede quedar en estado corregido y generarse lógica adicional (`SALE_PARTIALLY_FULFILLED`, etc.) — revisar `status` y `correctionNote` en `processed[]`.
+- **El `saleId` debe ser estable**: si el batch falla (timeout, pérdida de conexión), la APK debe **reintentar con el mismo `saleId`** y los mismos `events[].id`. El servidor detecta ventas ya materializadas por `(storeId, clientSaleId)` y responde `ACCEPTED` con `correctionNote: "SALE_ALREADY_EXISTS_IDEMPOTENT"`, sin crear duplicados. **Nunca generar un nuevo `saleId` para la misma venta.**
 
 ### 5.1.1 Venta v2 (recomendada): pagos mixtos, USD y fiado
 
@@ -507,6 +508,8 @@ Nuevo tipo: **`SALE_COMPLETED_V2`**. Es el cierre recomendado para registrar **p
 ```
 
 Si la suma de pagos es menor que el total, la venta queda con `paymentStatus=PARTIAL` y `balanceCents>0`. Si no hay pagos, queda `CREDIT_OPEN`.
+
+**Importante**: el `saleId` en `SALE_COMPLETED_V2` debe ser **el mismo** que se usó en `SALE_CREATED`. Si se reintenta un batch fallido, la APK debe reenviar este mismo `saleId`; el servidor lo usará para detectar que la venta ya existe y evitar duplicados.
 
 **Notas sobre `priceList` (CUP efectivo vs CUP transferencia)**:
 
@@ -733,6 +736,11 @@ Mismo endpoint `POST /api/sync/batch`:
 4. **Tamaño de lote**: acotar número de eventos por request para no timeouts (p. ej. 50–200 según red); reintentar con backoff si `5xx` o red caída.
 5. **Catálogo**: refrescar `GET /api/products` al abrir turno y tras sync masivo si el servidor pudo aplicar `PRODUCT_*` desde otro dispositivo.
 6. **`deviceId`/`storeId`**: obtenerlos de `GET /api/session/me` y validarlos antes de enviar batches.
+7. **Reintentos idempotentes de venta**:
+   - Si un batch falla (timeout, 5xx, red caída), la APK debe reintentarlo con los **mismos `events[].id`** (clientEventId). El servidor los detecta por `@@unique([storeId, clientEventId])` y responde `skipped: true` sin reprocesar.
+   - Si no es posible conservar los mismos `events[].id` (ej. reinicio de la app), la APK debe al menos **conservar el mismo `saleId`** que se usó originalmente. El servidor verifica que no exista un `Sale` con ese `(storeId, clientSaleId)` y, si ya existe, acepta el evento sin materializar la venta de nuevo.
+   - **Nunca generar un `saleId` nuevo al reintentar una misma venta.** Hacerlo crearía una segunda venta en el servidor (stock duplicado, doble cobro).
+   - Usar una **cola persistente local**: no eliminar un evento de la cola hasta recibir una respuesta exitosa (status `ACCEPTED`, `CORRECTED` o `skipped: true`) del servidor.
 
 ---
 

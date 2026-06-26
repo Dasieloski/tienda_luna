@@ -450,6 +450,23 @@ export async function processBatch(
             );
             break;
           }
+
+          // Idempotencia: si la venta ya fue materializada, aceptar el evento y saltar.
+          const existingSaleForClient = await tx.sale.findFirst({
+            where: { storeId: params.storeId, clientSaleId: saleId },
+            select: { id: true },
+          });
+          if (existingSaleForClient) {
+            results.push(
+              await record({
+                status: "ACCEPTED",
+                correctionNote: "SALE_ALREADY_EXISTS_IDEMPOTENT",
+              }),
+            );
+            pendingSales.delete(saleId);
+            break;
+          }
+
           const draft = pendingSales.get(saleId);
           if (!draft || draft.lines.length === 0) {
             results.push(
