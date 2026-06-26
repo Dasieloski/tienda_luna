@@ -132,15 +132,11 @@ async function fetchRateFromBrowserRun(
     prompt:
       "Extrae el valor actual de cambio del dólar estadounidense (USD) " +
       "en el mercado informal de Cuba publicado en eltoque.com. " +
-      "Busca donde dice '1 USD' seguido de un número en CUP. " +
-      "Ignora EUR, MLC, CAD, ZELLE y otras monedas. " +
-      "Devuelve SOLAMENTE un objeto JSON válido con una única propiedad: " +
-      "'usd_rate_cup' cuyo valor sea el número entero de cuántos CUP cuesta 1 USD. " +
-      "No incluyas markdown, explicaciones, ni texto adicional. " +
-      'Ejemplo: {"usd_rate_cup": 325}',
-    response_format: {
-      type: "json_object",
-    },
+      "Busca el texto exacto donde aparece '1 USD' o '$1' seguido " +
+      "de un valor numérico en CUP. Ignora EUR, MLC, CAD, ZELLE. " +
+      "Devuelve SOLAMENTE el número entero de CUP que cuesta 1 USD. " +
+      "No incluyas explicaciones, texto adicional, ni formato. " +
+      "Ejemplo: 325",
     gotoOptions: getGotoOptions(attempt),
     actionTimeout: 30000,
     bestAttempt: true,
@@ -181,16 +177,13 @@ async function fetchRateFromBrowserRun(
     );
   }
 
-  // 1) buscar usd_rate_cup directamente
-  if (resBody.result.usd_rate_cup != null) {
-    return { usdRateCup: validateRate(resBody.result.usd_rate_cup) };
-  }
+  const resultStr = JSON.stringify(resBody.result);
 
-  // 2) buscar en claves comunes alternativas
-  const possibleKeys = [
-    "response", "rate", "cup", "valor", "precio", "usd", "exchange_rate",
+  // 1) buscar en claves comunes
+  const rawKeys = [
+    "usd_rate_cup", "response", "rate", "cup", "valor", "precio", "usd", "exchange_rate",
   ];
-  for (const key of possibleKeys) {
+  for (const key of rawKeys) {
     const val = (resBody.result as Record<string, unknown>)[key];
     if (val != null) {
       try {
@@ -201,16 +194,25 @@ async function fetchRateFromBrowserRun(
     }
   }
 
-  // 3) búsqueda profunda en todo el objeto resultado
+  // 2) búsqueda profunda en todo el objeto
   const found = findNumericValue(resBody.result, 0);
   if (found !== null) {
-    console.log(`  [${executionId}] fallback: valor por búsqueda profunda = ${found}`);
+    console.log(`  [${executionId}] fallback: búsqueda profunda = ${found}`);
     return { usdRateCup: Math.round(found) };
   }
 
+  // 3) extraer número con regex de la respuesta serializada
+  const match = resultStr.match(/"(\d{2,4})"/) || resultStr.match(/(\d{2,4})/);
+  if (match) {
+    const num = Number(match[1]);
+    if (Number.isFinite(num) && num >= USD_RATE_MIN && num <= USD_RATE_MAX) {
+      console.log(`  [${executionId}] fallback: extraído por regex = ${num}`);
+      return { usdRateCup: Math.round(num) };
+    }
+  }
+
   throw new ScrapingError(
-    "Respuesta sin tasa reconocible. Resultado: " +
-      JSON.stringify(resBody.result).slice(0, 500)
+    "Respuesta sin tasa reconocible: " + resultStr.slice(0, 500)
   );
 }
 

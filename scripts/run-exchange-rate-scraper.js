@@ -119,24 +119,20 @@ async function fetchRateFromBrowserRun(attempt) {
   var endpoint = "https://api.cloudflare.com/client/v4/accounts/" + cfg.accountId + "/browser-rendering/json";
 
   /**
-   * Browser Run inyecta response_format por defecto si no se provee,
-   * causando error 422 en Workers AI. Sobreescribimos explicitamente
-   * con json_object (no requiere schema) para evitar el error.
+   * Sin response_format: Browser Run inyecta uno por defecto que causa
+   * error 422. Con json_object da "Unable to form JSON". La estrategia
+   * mas robusta es pedir texto plano y extraer el numero con regex.
    */
   var body = {
     url: TARGET_URL,
     prompt:
       "Extrae el valor actual de cambio del dolar estadounidense (USD) " +
       "en el mercado informal de Cuba publicado en eltoque.com. " +
-      "Busca donde dice '1 USD' seguido de un numero en CUP. " +
-      "Ignora EUR, MLC, CAD, ZELLE y otras monedas. " +
-      "Devuelve SOLAMENTE un objeto JSON valido con una unica propiedad: " +
-      "'usd_rate_cup' cuyo valor sea el numero entero de cuantos CUP cuesta 1 USD. " +
-      "No incluyas markdown, explicaciones, ni texto adicional. " +
-      "Ejemplo: {\"usd_rate_cup\": 325}",
-    response_format: {
-      type: "json_object",
-    },
+      "Busca el texto exacto donde aparece '1 USD' o '$1' seguido " +
+      "de un valor numerico en CUP. Ignora EUR, MLC, CAD, ZELLE. " +
+      "Devuelve SOLAMENTE el numero entero de CUP que cuesta 1 USD. " +
+      "No incluyas explicaciones, texto adicional, ni formato. " +
+      "Ejemplo: 325",
     gotoOptions: getGotoOptions(attempt),
     actionTimeout: 30000,
     bestAttempt: true,
@@ -174,31 +170,38 @@ async function fetchRateFromBrowserRun(attempt) {
     throw new ScrapingError("Respuesta vacia: " + JSON.stringify(data).slice(0, 300));
   }
 
-  // Intento 1: buscar usd_rate_cup directamente
-  if (data.result.usd_rate_cup != null) {
-    return { usdRateCup: validateRate(data.result.usd_rate_cup) };
-  }
+  var resultStr = JSON.stringify(data.result);
 
-  // Intento 2: la IA podria ponerlo en "response" u otra clave comun
-  var possibleKeys = ["response", "rate", "cup", "valor", "precio", "usd", "exchange_rate"];
-  for (var i = 0; i < possibleKeys.length; i++) {
-    var key = possibleKeys[i];
-    if (data.result[key] != null) {
+  // Intento 1: buscar valor numerico directamente en la respuesta
+  // (la IA suele devolver {"result": 325} o {"response": "325"} sin response_format)
+  var rawKeys = ["usd_rate_cup", "response", "rate", "cup", "valor", "precio", "usd", "exchange_rate"];
+  for (var i = 0; i < rawKeys.length; i++) {
+    if (data.result[rawKeys[i]] != null) {
       try {
-        return { usdRateCup: validateRate(data.result[key]) };
+        return { usdRateCup: validateRate(data.result[rawKeys[i]]) };
       } catch (_) {}
     }
   }
 
-  // Intento 3: busqueda profunda en todo el objeto resultado
+  // Intento 2: busqueda profunda en todo el objeto
   var found = findNumericValue(data.result, 0);
   if (found !== null) {
-    console.log("  [fallback] valor encontrado por busqueda profunda: " + found);
+    console.log("  [fallback] busqueda profunda: " + found);
     return { usdRateCup: Math.round(found) };
   }
 
+  // Intento 3: extraer numero con regex de la respuesta serializada
+  var match = resultStr.match(/"(\d{2,4})"/) || resultStr.match(/(\d{2,4})/);
+  if (match) {
+    var num = Number(match[1]);
+    if (Number.isFinite(num) && num >= USD_RATE_MIN && num <= USD_RATE_MAX) {
+      console.log("  [fallback] extraido por regex: " + num);
+      return { usdRateCup: Math.round(num) };
+    }
+  }
+
   throw new ScrapingError(
-    "Respuesta sin tasa reconocible. Resultado: " + JSON.stringify(data.result).slice(0, 500)
+    "Respuesta sin tasa reconocible: " + resultStr.slice(0, 500)
   );
 }
 
