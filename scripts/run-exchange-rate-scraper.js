@@ -111,34 +111,49 @@ function findNumericValue(obj, depth) {
 }
 
 /**
- * Llamada a la API /json de Cloudflare Browser Run.
- * Usa solo prompt (sin response_format) para evitar errores 422.
+ * Patrones de regex para extraer tasa USD/CUP del HTML de eltoque.com.
+ * Cubre formatos como: "1 USD = 325", "$1 USD 325", "USD $325", etc.
+ */
+var RATE_PATTERNS = [
+  /1\s*USD[^0-9]*?(\d{3,4})/i,
+  /\$1\s*USD[^0-9]*?(\d{3,4})/i,
+  /USD\s*\$?\s*(\d{3,4})/i,
+  /TASA\s*(?:DE\s*)?CAMBIO[^0-9]*?(\d{3,4})/i,
+  /(\d{3,4})\s*CUP\s*\/?\s*(?:1\s*)?USD/i,
+  /CUP\s*[×xX*]\s*(\d{3,4})/i,
+];
+
+function extractRateFromHtml(html) {
+  for (var i = 0; i < RATE_PATTERNS.length; i++) {
+    var match = html.match(RATE_PATTERNS[i]);
+    if (match) {
+      var num = Number(match[1]);
+      if (Number.isFinite(num) && num >= USD_RATE_MIN && num <= USD_RATE_MAX) {
+        return Math.round(num);
+      }
+    }
+  }
+  return null;
+}
+
+/**
+ * Llamada al endpoint /content de Cloudflare Browser Run.
+ * Obtiene el HTML renderizado de eltoque.com y extrae
+ * la tasa USD/CUP con regex (mas confiable que AI).
  */
 async function fetchRateFromBrowserRun(attempt) {
   var cfg = getCloudflareConfig();
-  var endpoint = "https://api.cloudflare.com/client/v4/accounts/" + cfg.accountId + "/browser-rendering/json";
+  var endpoint = "https://api.cloudflare.com/client/v4/accounts/" + cfg.accountId + "/browser-rendering/content";
 
-  /**
-   * Sin response_format: Browser Run inyecta uno por defecto que causa
-   * error 422. Con json_object da "Unable to form JSON". La estrategia
-   * mas robusta es pedir texto plano y extraer el numero con regex.
-   */
   var body = {
     url: TARGET_URL,
-    prompt:
-      "Extrae el valor actual de cambio del dolar estadounidense (USD) " +
-      "en el mercado informal de Cuba publicado en eltoque.com. " +
-      "Busca el texto exacto donde aparece '1 USD' o '$1' seguido " +
-      "de un valor numerico en CUP. Ignora EUR, MLC, CAD, ZELLE. " +
-      "Devuelve SOLAMENTE el numero entero de CUP que cuesta 1 USD. " +
-      "No incluyas explicaciones, texto adicional, ni formato. " +
-      "Ejemplo: 325",
     gotoOptions: getGotoOptions(attempt),
     actionTimeout: 30000,
     bestAttempt: true,
+    userAgent: "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36",
   };
 
-  console.log("  [debug] POST /browser-rendering/json (intento " + attempt + ")");
+  console.log("  [debug] POST /browser-rendering/content (intento " + attempt + ")");
   var res = await fetch(endpoint, {
     method: "POST",
     headers: {
@@ -150,11 +165,9 @@ async function fetchRateFromBrowserRun(attempt) {
 
   if (!res.ok) {
     var text = await res.text().catch(function () { return ""; });
-    console.log("  [debug] HTTP " + res.status + " respuesta completa: " + text.slice(0, 1000));
+    console.log("  [debug] HTTP " + res.status + " respuesta: " + text.slice(0, 500));
     throw new ScrapingError("Browser Run responded HTTP " + res.status + ".");
   }
-
-  console.log("  [debug] HTTP 200 OK");
 
   var data = await res.json();
 
@@ -166,42 +179,21 @@ async function fetchRateFromBrowserRun(attempt) {
     throw new ScrapingError("Cloudflare API error: " + errMsgs);
   }
 
-  if (data.result == null) {
-    throw new ScrapingError("Respuesta vacia: " + JSON.stringify(data).slice(0, 300));
+  if (data.result == null || typeof data.result !== "string") {
+    throw new ScrapingError("Respuesta sin HTML: " + JSON.stringify(data).slice(0, 500));
   }
 
-  var resultStr = JSON.stringify(data.result);
-
-  // Intento 1: buscar valor numerico directamente en la respuesta
-  // (la IA suele devolver {"result": 325} o {"response": "325"} sin response_format)
-  var rawKeys = ["usd_rate_cup", "response", "rate", "cup", "valor", "precio", "usd", "exchange_rate"];
-  for (var i = 0; i < rawKeys.length; i++) {
-    if (data.result[rawKeys[i]] != null) {
-      try {
-        return { usdRateCup: validateRate(data.result[rawKeys[i]]) };
-      } catch (_) {}
-    }
+  // Extraer tasa del HTML con regex
+  var rate = extractRateFromHtml(data.result);
+  if (rate !== null) {
+    console.log("  [debug] Tasa extraida del HTML: " + rate);
+    return { usdRateCup: rate };
   }
 
-  // Intento 2: busqueda profunda en todo el objeto
-  var found = findNumericValue(data.result, 0);
-  if (found !== null) {
-    console.log("  [fallback] busqueda profunda: " + found);
-    return { usdRateCup: Math.round(found) };
-  }
-
-  // Intento 3: extraer numero con regex de la respuesta serializada
-  var match = resultStr.match(/"(\d{2,4})"/) || resultStr.match(/(\d{2,4})/);
-  if (match) {
-    var num = Number(match[1]);
-    if (Number.isFinite(num) && num >= USD_RATE_MIN && num <= USD_RATE_MAX) {
-      console.log("  [fallback] extraido por regex: " + num);
-      return { usdRateCup: Math.round(num) };
-    }
-  }
-
+  // fallback: mostrar snippet del HTML para depurar
+  var snippet = data.result.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").slice(0, 500);
   throw new ScrapingError(
-    "Respuesta sin tasa reconocible: " + resultStr.slice(0, 500)
+    "No se encontro tasa en el HTML. Texto extraido: " + snippet
   );
 }
 

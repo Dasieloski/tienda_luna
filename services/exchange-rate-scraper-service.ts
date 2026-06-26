@@ -119,27 +119,43 @@ function findNumericValue(obj: unknown, depth: number): number | null {
   return null;
 }
 
+const RATE_PATTERNS = [
+  /1\s*USD[^0-9]*?(\d{3,4})/i,
+  /\$1\s*USD[^0-9]*?(\d{3,4})/i,
+  /USD\s*\$?\s*(\d{3,4})/i,
+  /TASA\s*(?:DE\s*)?CAMBIO[^0-9]*?(\d{3,4})/i,
+  /(\d{3,4})\s*CUP\s*\/?\s*(?:1\s*)?USD/i,
+  /CUP\s*[×xX*]\s*(\d{3,4})/i,
+];
+
+function extractRateFromHtml(html: string): number | null {
+  for (const re of RATE_PATTERNS) {
+    const match = html.match(re);
+    if (match) {
+      const num = Number(match[1]);
+      if (Number.isFinite(num) && num >= USD_RATE_MIN && num <= USD_RATE_MAX) {
+        return Math.round(num);
+      }
+    }
+  }
+  return null;
+}
+
 async function fetchRateFromBrowserRun(
   executionId: string,
   attempt: number
 ): Promise<{ usdRateCup: number }> {
   console.log(`[${executionId}] Consultando Browser Run (intento #${attempt})…`);
   const { accountId, apiToken } = getCloudflareConfig();
-  const endpoint = `https://api.cloudflare.com/client/v4/accounts/${accountId}/browser-rendering/json`;
+  const endpoint = `https://api.cloudflare.com/client/v4/accounts/${accountId}/browser-rendering/content`;
 
   const body = {
     url: TARGET_URL,
-    prompt:
-      "Extrae el valor actual de cambio del dólar estadounidense (USD) " +
-      "en el mercado informal de Cuba publicado en eltoque.com. " +
-      "Busca el texto exacto donde aparece '1 USD' o '$1' seguido " +
-      "de un valor numérico en CUP. Ignora EUR, MLC, CAD, ZELLE. " +
-      "Devuelve SOLAMENTE el número entero de CUP que cuesta 1 USD. " +
-      "No incluyas explicaciones, texto adicional, ni formato. " +
-      "Ejemplo: 325",
     gotoOptions: getGotoOptions(attempt),
     actionTimeout: 30000,
     bestAttempt: true,
+    userAgent:
+      "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36",
   };
 
   const res = await fetch(endpoint, {
@@ -158,61 +174,37 @@ async function fetchRateFromBrowserRun(
     );
   }
 
-  const resBody = (await res.json()) as {
+  const data = (await res.json()) as {
     success: boolean;
-    result?: Record<string, unknown>;
+    result?: string;
     errors?: { code: number; message: string }[];
   };
 
-  if (!resBody.success) {
+  if (!data.success) {
     const errMsgs =
-      resBody.errors?.map((e) => `[${e.code}] ${e.message}`).join(", ") ||
+      data.errors?.map((e) => `[${e.code}] ${e.message}`).join(", ") ||
       "Error desconocido";
     throw new ScrapingError(`Cloudflare API error: ${errMsgs}`);
   }
 
-  if (!resBody.result) {
+  if (!data.result || typeof data.result !== "string") {
     throw new ScrapingError(
-      "Respuesta vacía: " + JSON.stringify(resBody).slice(0, 300)
+      "Respuesta sin HTML: " + JSON.stringify(data).slice(0, 500)
     );
   }
 
-  const resultStr = JSON.stringify(resBody.result);
-
-  // 1) buscar en claves comunes
-  const rawKeys = [
-    "usd_rate_cup", "response", "rate", "cup", "valor", "precio", "usd", "exchange_rate",
-  ];
-  for (const key of rawKeys) {
-    const val = (resBody.result as Record<string, unknown>)[key];
-    if (val != null) {
-      try {
-        return { usdRateCup: validateRate(val) };
-      } catch {
-        // continue
-      }
-    }
+  const rate = extractRateFromHtml(data.result);
+  if (rate !== null) {
+    console.log(`  [${executionId}] Tasa extraída del HTML: ${rate}`);
+    return { usdRateCup: rate };
   }
 
-  // 2) búsqueda profunda en todo el objeto
-  const found = findNumericValue(resBody.result, 0);
-  if (found !== null) {
-    console.log(`  [${executionId}] fallback: búsqueda profunda = ${found}`);
-    return { usdRateCup: Math.round(found) };
-  }
-
-  // 3) extraer número con regex de la respuesta serializada
-  const match = resultStr.match(/"(\d{2,4})"/) || resultStr.match(/(\d{2,4})/);
-  if (match) {
-    const num = Number(match[1]);
-    if (Number.isFinite(num) && num >= USD_RATE_MIN && num <= USD_RATE_MAX) {
-      console.log(`  [${executionId}] fallback: extraído por regex = ${num}`);
-      return { usdRateCup: Math.round(num) };
-    }
-  }
-
+  const snippet = data.result
+    .replace(/<[^>]+>/g, " ")
+    .replace(/\s+/g, " ")
+    .slice(0, 500);
   throw new ScrapingError(
-    "Respuesta sin tasa reconocible: " + resultStr.slice(0, 500)
+    "No se encontró tasa en el HTML. Texto extraído: " + snippet
   );
 }
 
