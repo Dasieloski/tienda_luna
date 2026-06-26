@@ -1,15 +1,39 @@
+/**
+ * Exchange Rate Scraper Service
+ *
+ * Metodo principal: POST /browser-rendering/content para obtener HTML renderizado.
+ * Fallback: POST /browser-rendering/json con AI solo si HTML no contiene la tasa.
+ *
+ * Basado en documentacion oficial de Cloudflare Browser Run:
+ *   /content endpoint: https://developers.cloudflare.com/browser-run/quick-actions/content-endpoint/
+ *   /json endpoint:    https://developers.cloudflare.com/browser-run/quick-actions/json-endpoint/
+ *   Timeouts:          https://developers.cloudflare.com/browser-run/reference/timeouts/
+ *   API Reference:     https://developers.cloudflare.com/api/resources/browser_rendering/
+ *
+ * El endpoint /content devuelve:
+ *   { meta: { status: number, title: string }, result: "HTML string", success, errors }
+ *
+ * Cache: default TTL es 5s. Usamos cacheTTL: 0 para desactivar.
+ * Recursos: bloqueamos image/stylesheet/font/media para acelerar.
+ * WaitUntil: networkidle2 (intento 1) -> load (intento 2) -> domcontentloaded (intento 3).
+ */
+
 import { prisma } from "@/lib/db";
 import { Prisma } from "@prisma/client";
 import * as cheerio from "cheerio";
 
+// ── Configuration ─────────────────────────────────────────────────────────
+
 const TARGET_URL = "https://eltoque.com";
 const MAX_RETRIES = 3;
-const RETRY_DELAYS = [5000, 15000, 30000];
+const RETRY_DELAYS = [10000, 20000, 40000];
 const RATE_LIMIT_DELAY = 60000;
 const USD_RATE_MIN = 20;
 const USD_RATE_MAX = 5000;
 const SYSTEM_ACTOR_ID = "SYSTEM_BROWSER_RUN";
 const DEBUG = process.env.DEBUG_SCRAPER === "true";
+
+// ── Utilities ──────────────────────────────────────────────────────────────
 
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
@@ -56,36 +80,38 @@ function stripHtml(html: string): string {
   return html.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim();
 }
 
-function extractTitle(html: string): string {
-  const m = html.match(/<title[^>]*>([^<]*)<\/title>/i);
-  return m ? m[1].trim() : "(sin título)";
-}
+// ── HTML Parsing (Cheerio) ─────────────────────────────────────────────────
 
 function extractWithCheerio(html: string): number | null {
   const $ = cheerio.load(html);
   const candidates: number[] = [];
 
-  $("*").each(function () {
+  const containerSelector =
+    "div, span, p, td, li, strong, b, h1, h2, h3, h4, h5, h6, section, article, label, a";
+
+  $(containerSelector).each(function () {
     const el = $(this);
     const text = el.text().trim();
-    if (/USD/i.test(text)) {
-      const nums = text.match(/\d{3,4}/g);
-      if (nums) {
-        for (const n of nums) {
-          const num = Number(n);
-          if (num >= USD_RATE_MIN && num <= USD_RATE_MAX) {
-            candidates.push(num);
-          }
+    if (!text || text.length > 500) return;
+    if (!/USD|d[oó]lar|CUP/i.test(text)) return;
+
+    const nums = text.match(/\d{3,4}/g);
+    if (nums) {
+      for (const n of nums) {
+        const num = Number(n);
+        if (num >= USD_RATE_MIN && num <= USD_RATE_MAX) {
+          candidates.push(num);
         }
       }
-      const parentText = el.parent().text().trim();
-      const parentNums = parentText.match(/\d{3,4}/g);
-      if (parentNums) {
-        for (const pn of parentNums) {
-          const num = Number(pn);
-          if (num >= USD_RATE_MIN && num <= USD_RATE_MAX) {
-            candidates.push(num);
-          }
+    }
+
+    const parentText = el.parent().text().trim();
+    const parentNums = parentText.match(/\d{3,4}/g);
+    if (parentNums) {
+      for (const pn of parentNums) {
+        const num = Number(pn);
+        if (num >= USD_RATE_MIN && num <= USD_RATE_MAX) {
+          candidates.push(num);
         }
       }
     }
@@ -94,11 +120,11 @@ function extractWithCheerio(html: string): number | null {
   if (candidates.length === 0) return null;
 
   const freq: Record<number, number> = {};
+  let best = candidates[0];
+  let bestFreq = 0;
   for (const c of candidates) {
     freq[c] = (freq[c] || 0) + 1;
   }
-  let best = candidates[0];
-  let bestFreq = 0;
   for (const key in freq) {
     if (freq[key] > bestFreq) {
       bestFreq = freq[key];
@@ -107,6 +133,8 @@ function extractWithCheerio(html: string): number | null {
   }
   return best;
 }
+
+// ── Regex Extraction (fallback 1) ──────────────────────────────────────────
 
 const RATE_PATTERNS = [
   /1\s*USD[^0-9]*?(\d{3,4})/i,
@@ -131,23 +159,34 @@ function extractWithRegex(html: string): number | null {
   return null;
 }
 
+// ── AI Extraction (fallback 2) ─────────────────────────────────────────────
+
 async function extractWithAI(cfg: { accountId: string; apiToken: string }): Promise<number> {
   const endpoint = `https://api.cloudflare.com/client/v4/accounts/${cfg.accountId}/browser-rendering/json`;
+
   const body = {
     url: TARGET_URL,
     prompt:
-      "Extrae el valor actual de cambio del dólar estadounidense (USD) " +
+      "Extrae el valor de cambio del dólar estadounidense (USD) " +
       "en el mercado informal de Cuba publicado en eltoque.com. " +
-      "Devuelve SOLAMENTE el número entero de CUP que cuesta 1 USD. " +
-      "Ejemplo: 325",
+      "Devuelve SOLAMENTE el número entero de CUP que cuesta 1 USD.",
+    response_format: {
+      type: "json_schema" as const,
+      schema: {
+        type: "object" as const,
+        properties: {
+          usd_rate_cup: { type: "number" as const },
+        },
+        required: ["usd_rate_cup" as const],
+      },
+    },
     gotoOptions: { waitUntil: "load" as const, timeout: 60000 },
-    actionTimeout: 30000,
+    actionTimeout: 60000,
     bestAttempt: true,
-    userAgent:
-      "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36",
   };
 
-  console.log("    [AI fallback] POST /browser-rendering/json");
+  console.log("    [AI fallback] POST /browser-rendering/json con schema");
+
   const res = await fetch(endpoint, {
     method: "POST",
     headers: {
@@ -159,22 +198,23 @@ async function extractWithAI(cfg: { accountId: string; apiToken: string }): Prom
 
   if (!res.ok) {
     const text = await res.text().catch(() => "");
-    throw new Error(`AI HTTP ${res.status}: ${text.slice(0, 300)}`);
+    throw new Error(`AI HTTP ${res.status}: ${text.slice(0, 500)}`);
   }
 
-  const data = (await res.json()) as { success: boolean; result?: Record<string, unknown> };
+  const data = (await res.json()) as {
+    success: boolean;
+    result?: Record<string, unknown>;
+  };
+
   if (!data.success || data.result == null) {
-    throw new Error(`AI falló: ${JSON.stringify(data).slice(0, 300)}`);
+    throw new Error(`AI falló: ${JSON.stringify(data).slice(0, 500)}`);
   }
 
-  const aiKeys = ["usd_rate_cup", "response", "rate", "cup", "valor", "precio", "usd", "exchange_rate"];
-  for (const key of aiKeys) {
-    if (data.result[key] != null) {
-      try {
-        return validateRate(data.result[key]);
-      } catch {
-        // continue
-      }
+  if (data.result.usd_rate_cup != null) {
+    try {
+      return validateRate(data.result.usd_rate_cup);
+    } catch (e) {
+      console.log(`    [AI] usd_rate_cup inválido: ${e instanceof Error ? e.message : String(e)}`);
     }
   }
 
@@ -187,8 +227,10 @@ async function extractWithAI(cfg: { accountId: string; apiToken: string }): Prom
     }
   }
 
-  throw new Error(`AI respuesta sin tasa: ${resultStr.slice(0, 300)}`);
+  throw new Error(`AI respuesta sin tasa válida: ${resultStr.slice(0, 500)}`);
 }
+
+// ── Types ──────────────────────────────────────────────────────────────────
 
 export type ScrapingResult =
   | {
@@ -208,31 +250,38 @@ export type ScrapingResult =
       details: string;
     };
 
-function getGotoOptions(attempt: number) {
-  if (attempt === 1) {
-    return { waitUntil: "networkidle2" as const, timeout: 60000 };
-  }
-  if (attempt === 2) {
-    return { waitUntil: ["load" as const, "networkidle2" as const], timeout: 60000 };
-  }
-  return { waitUntil: "load" as const, timeout: 60000 };
-}
+// ── Main Scraper ───────────────────────────────────────────────────────────
 
 async function fetchRateFromBrowserRun(
   attempt: number
 ): Promise<{ usdRateCup: number }> {
-  console.log(`  [etapa 1/4] Navegando a ${TARGET_URL} (intento ${attempt})…`);
   const { accountId, apiToken } = getCloudflareConfig();
+
+  console.log(`  [etapa 1/4] POST /browser-rendering/content a ${TARGET_URL} (intento ${attempt})…`);
+
   const endpoint = `https://api.cloudflare.com/client/v4/accounts/${accountId}/browser-rendering/content`;
+
+  const waitUntil = attempt === 1 ? "networkidle2" : attempt === 2 ? "load" : "domcontentloaded";
 
   const body = {
     url: TARGET_URL,
-    gotoOptions: getGotoOptions(attempt),
-    actionTimeout: 30000,
+    cacheTTL: 0,
+    gotoOptions: {
+      waitUntil: waitUntil as "networkidle2" | "load" | "domcontentloaded",
+      timeout: 60000,
+    },
+    setJavaScriptEnabled: true,
+    rejectResourceTypes: ["image", "stylesheet", "font", "media"] as const,
+    actionTimeout: 60000,
     bestAttempt: true,
-    userAgent:
-      "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36",
+    viewport: { width: 1920, height: 1080 },
   };
+
+  console.log(`  [config] waitUntil=${waitUntil}, actionTimeout=60000, cacheTTL=0`);
+
+  if (DEBUG) {
+    console.log(`  [DEBUG] Request body: ${JSON.stringify(body, null, 2)}`);
+  }
 
   const res = await fetch(endpoint, {
     method: "POST",
@@ -247,38 +296,55 @@ async function fetchRateFromBrowserRun(
     throw new Error("RateLimit");
   }
 
+  if (res.status === 422) {
+    const errBody = await res.text().catch(() => "");
+    console.log(`  [WARN] HTTP 422 en /content. Body: ${errBody.slice(0, 500)}`);
+    throw new Error(`Browser Run HTTP 422: ${errBody.slice(0, 300)}`);
+  }
+
   if (!res.ok) {
     const text = await res.text().catch(() => "");
     throw new Error(`Browser Run HTTP ${res.status}: ${text.slice(0, 500)}`);
   }
 
-  console.log("  [etapa 2/4] HTTP 200 OK. Procesando respuesta…");
+  console.log("  [etapa 2/4] HTTP 200 OK. Leyendo respuesta JSON…");
 
   const data = (await res.json()) as {
     success: boolean;
+    meta?: { status?: number; title?: string };
     result?: string;
     errors?: { code: number; message: string }[];
   };
 
   if (!data.success) {
     const errMsgs =
-      data.errors?.map((e) => `[${e.code}] ${e.message}`).join(", ") || "Error desconocido";
+      data.errors?.map((e) => `[${e.code}] ${e.message}`).join(", ") || "Unknown error";
     throw new Error(`Cloudflare API error: ${errMsgs}`);
   }
 
+  const metaStatus = data.meta?.status ?? "N/A";
+  const metaTitle = data.meta?.title ?? "(sin meta.title)";
+
   const html = data.result;
-  if (html == null || typeof html !== "string" || html.length < 50) {
-    console.log(`  [ERROR] HTML vacío o demasiado corto (${html ? html.length : 0} chars)`);
-    if (html) console.log(`  [DEBUG] HTML recibido: ${html.slice(0, 1000)}`);
+  const htmlLen = html ? html.length : 0;
+
+  console.log(`  [diagnóstico] meta.status: ${metaStatus}`);
+  console.log(`  [diagnóstico] meta.title: ${metaTitle}`);
+  console.log(`  [diagnóstico] HTML length: ${htmlLen} chars`);
+
+  if (metaStatus !== 200 && metaStatus !== "N/A") {
+    console.log(`  [WARN] La página destino respondió HTTP ${metaStatus} (posible error/bloqueo)`);
+  }
+
+  if (!html || typeof html !== "string" || htmlLen < 100) {
+    console.log(`  [ERROR] HTML vacío o demasiado corto (${htmlLen} chars)`);
+    if (html) console.log(`  [DEBUG] HTML recibido: ${html.slice(0, 2000)}`);
     throw new Error("HTML vacío o inválido");
   }
 
-  const title = extractTitle(html);
   const visible = stripHtml(html);
-
-  console.log(`  [diagnóstico] document.title: ${title}`);
-  console.log(`  [diagnóstico] HTML length: ${html.length} chars`);
   console.log(`  [diagnóstico] Texto visible length: ${visible.length} chars`);
+  console.log(`  [diagnóstico] Inicio texto visible: ${visible.slice(0, 500)}`);
 
   if (DEBUG) {
     console.log("  [DEBUG] === INICIO HTML (5000 chars) ===");
@@ -292,11 +358,13 @@ async function fetchRateFromBrowserRun(
   const errorIndicators = [
     "captcha", "please complete the security check", "cf-browser-verification",
     "just a moment", "error 1020", "access denied", "attention required",
+    "checking your browser", "verifying you are human", "challenge-platform",
   ];
   const htmlLower = html.toLowerCase();
   for (const indicator of errorIndicators) {
     if (htmlLower.includes(indicator)) {
       console.log(`  [ERROR] Posible bloqueo: '${indicator}' en el HTML`);
+      console.log(`  [diagnóstico] meta.title: ${metaTitle}, meta.status: ${metaStatus}`);
       throw new Error("Página bloqueada por Cloudflare/seguridad");
     }
   }
@@ -326,7 +394,7 @@ async function fetchRateFromBrowserRun(
   }
 
   throw new Error(
-    `No se pudo extraer la tasa. Título: '${title}'. HTML: ${html.slice(0, 200)}`
+    `No se pudo extraer la tasa. meta.title='${metaTitle}', meta.status=${metaStatus}. Inicio HTML: ${html.slice(0, 500)}`
   );
 }
 
@@ -437,7 +505,7 @@ export async function scrapeAndUpdateUsdRate(
       console.error(`[${executionId}] Intento #${attempt} falló: ${msg}`);
       if (attempt === MAX_RETRIES) break;
 
-      const delay = RETRY_DELAYS[attempt - 1] || 15000;
+      const delay = RETRY_DELAYS[attempt - 1] || 10000;
       console.log(`[${executionId}] Esperando ${delay}ms antes del siguiente intento…`);
       await sleep(delay);
     }

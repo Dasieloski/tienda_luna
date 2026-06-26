@@ -1,18 +1,16 @@
 /**
  * Script autonomo para ejecutar el scraper de tasa USD/CUP desde GitHub Actions.
- * Inicializa Prisma, carga las tiendas y ejecuta scrapeAndUpdateUsdRate
- * para cada una. No depende de Next.js ni de rutas API.
+ * Metodo principal: POST /browser-rendering/content para obtener HTML renderizado.
+ * Fallback: POST /browser-rendering/json con AI solo si HTML no contiene la tasa.
  *
- * Estrategia de extraccion:
- *   1. Obtener HTML renderizado via /content de Browser Run.
- *   2. Parsear con Cheerio (busca elementos con "USD" + numero cercano).
- *   3. Fallback: regex sobre el HTML.
- *   4. Fallback: AI via /json (solo si los pasos anteriores fallan).
+ * Basado en documentacion oficial de Cloudflare Browser Run:
+ *   https://developers.cloudflare.com/browser-run/quick-actions/content-endpoint/
+ *   https://developers.cloudflare.com/browser-run/quick-actions/json-endpoint/
+ *   https://developers.cloudflare.com/browser-run/reference/timeouts/
+ *   https://developers.cloudflare.com/api/resources/browser_rendering/
  *
- * Backoff progresivo: 5s, 15s, 30s. HTTP 429: 60s y reintenta.
- *
- * ADVERTENCIA: Este script EVITA template literals con ${} para prevenir
- * errores de parsing en Node.js v20. Usa solo concatenacion de strings.
+ * El endpoint /content devuelve { meta: { status, title }, result: "HTML", success, errors }
+ * El endpoint /json devuelve { result: { ... }, success, errors }
  */
 
 try {
@@ -28,8 +26,8 @@ var cheerio = require("cheerio");
 
 var TARGET_URL = "https://eltoque.com";
 var MAX_RETRIES = 3;
-var RETRY_DELAYS = [5000, 15000, 30000]; // ms entre reintentos
-var RATE_LIMIT_DELAY = 60000; // 60s si recibimos HTTP 429
+var RETRY_DELAYS = [10000, 20000, 40000]; // 10s, 20s, 40s backoff progresivo
+var RATE_LIMIT_DELAY = 60000; // 60s si recibimos HTTP 429 (error 2001)
 var USD_RATE_MIN = 20;
 var USD_RATE_MAX = 5000;
 var DEBUG = process.env.DEBUG_SCRAPER === "true";
@@ -90,69 +88,64 @@ function stripHtml(html) {
   return html.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim();
 }
 
-function extractTitle(html) {
-  var m = html.match(/<title[^>]*>([^<]*)<\/title>/i);
-  return m ? m[1].trim() : "(sin titulo)";
-}
-
 // ── Extraccion por parseo HTML (Cheerio) ───────────────────────────────────
 
 /**
  * Busca la tasa USD/CUP en el HTML usando Cheerio.
- * Recorre elementos que contengan "USD" y busca un numero valido
- * en el mismo elemento, elementos hermanos o el padre cercano.
+ * Optimizado: solo busca en contenedores relevantes (div, span, p, td, li, strong, h1-h6, section, article)
+ * en vez de iterar todos los elementos con $("*").
  */
 function extractWithCheerio(html) {
   var $ = cheerio.load(html);
-
-  // Seleccionar elementos que contienen "USD" en su texto
   var candidates = [];
-  $("*").each(function () {
+
+  // Solo buscar en contenedores de texto relevantes
+  var containerSelector = "div, span, p, td, li, strong, b, h1, h2, h3, h4, h5, h6, section, article, label, a";
+  $(containerSelector).each(function () {
     var el = $(this);
     var text = el.text().trim();
-    if (/USD/i.test(text)) {
-      // Extraer todos los numeros del texto del elemento
-      var nums = text.match(/\d{3,4}/g);
-      if (nums) {
-        for (var i = 0; i < nums.length; i++) {
-          var n = Number(nums[i]);
-          if (n >= USD_RATE_MIN && n <= USD_RATE_MAX) {
-            candidates.push(n);
-          }
+    if (!text || text.length > 500) return; // saltar elementos vacios o muy grandes
+    if (!/USD|d[oó]lar|CUP/i.test(text)) return;
+
+    var nums = text.match(/\d{3,4}/g);
+    if (nums) {
+      for (var i = 0; i < nums.length; i++) {
+        var n = Number(nums[i]);
+        if (n >= USD_RATE_MIN && n <= USD_RATE_MAX) {
+          candidates.push(n);
         }
       }
-      // Tambien revisar el textContent completo del padre (para captar "1 USD = 325")
-      var parentText = el.parent().text().trim();
-      var parentNums = parentText.match(/\d{3,4}/g);
-      if (parentNums) {
-        for (var j = 0; j < parentNums.length; j++) {
-          var pn = Number(parentNums[j]);
-          if (pn >= USD_RATE_MIN && pn <= USD_RATE_MAX) {
-            candidates.push(pn);
-          }
+    }
+
+    // Tambien revisar el texto del padre inmediato
+    var parentText = el.parent().text().trim();
+    var parentNums = parentText.match(/\d{3,4}/g);
+    if (parentNums) {
+      for (var j = 0; j < parentNums.length; j++) {
+        var pn = Number(parentNums[j]);
+        if (pn >= USD_RATE_MIN && pn <= USD_RATE_MAX) {
+          candidates.push(pn);
         }
       }
     }
   });
 
-  if (candidates.length > 0) {
-    // Tomar el valor mas frecuente (el que mas aparece)
-    var freq = {};
-    for (var k = 0; k < candidates.length; k++) {
-      freq[candidates[k]] = (freq[candidates[k]] || 0) + 1;
-    }
-    var best = candidates[0];
-    var bestFreq = 0;
-    for (var key in freq) {
-      if (freq[key] > bestFreq) {
-        bestFreq = freq[key];
-        best = Number(key);
-      }
-    }
-    return best;
-  }
+  if (candidates.length === 0) return null;
 
-  return null;
+  // Tomar el valor mas frecuente
+  var freq = {};
+  var best = candidates[0];
+  var bestFreq = 0;
+  for (var k = 0; k < candidates.length; k++) {
+    freq[candidates[k]] = (freq[candidates[k]] || 0) + 1;
+  }
+  for (var key in freq) {
+    if (freq[key] > bestFreq) {
+      bestFreq = freq[key];
+      best = Number(key);
+    }
+  }
+  return best;
 }
 
 // ── Extraccion por regex (fallback 1) ──────────────────────────────────────
@@ -183,25 +176,38 @@ function extractWithRegex(html) {
 // ── Extraccion por IA (fallback 2) ─────────────────────────────────────────
 
 /**
- * Solo se llama si el parseo HTML fallo.
- * Usa el endpoint /json con prompt para que la IA extraiga la tasa.
+ * Solo se llama si Cheerio y regex fallaron.
+ * Usa POST /browser-rendering/json con prompt + response_format (JSON schema).
+ * Segun docs oficiales:
+ *   - response_format con schema es mas confiable que solo prompt
+ *   - custom_ai permite modelos alternativos
  */
-async function extractWithAI(cfg, attempt) {
+async function extractWithAI(cfg) {
   var endpoint = "https://api.cloudflare.com/client/v4/accounts/" + cfg.accountId + "/browser-rendering/json";
+
   var body = {
     url: TARGET_URL,
     prompt:
-      "Extrae el valor actual de cambio del dolar estadounidense (USD) " +
+      "Extrae el valor de cambio del dolar estadounidense (USD) " +
       "en el mercado informal de Cuba publicado en eltoque.com. " +
-      "Devuelve SOLAMENTE el numero entero de CUP que cuesta 1 USD. " +
-      "Ejemplo: 325",
+      "Devuelve SOLAMENTE el numero entero de CUP que cuesta 1 USD.",
+    response_format: {
+      type: "json_schema",
+      schema: {
+        type: "object",
+        properties: {
+          usd_rate_cup: { type: "number" }
+        },
+        required: ["usd_rate_cup"]
+      }
+    },
     gotoOptions: { waitUntil: "load", timeout: 60000 },
-    actionTimeout: 30000,
+    actionTimeout: 60000,
     bestAttempt: true,
-    userAgent: "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36",
   };
 
-  console.log("    [AI fallback] POST /browser-rendering/json");
+  console.log("    [AI fallback] POST /browser-rendering/json con schema");
+
   var res = await fetch(endpoint, {
     method: "POST",
     headers: {
@@ -213,27 +219,28 @@ async function extractWithAI(cfg, attempt) {
 
   if (!res.ok) {
     var text = await res.text().catch(function () { return ""; });
-    throw new ScrapingError("AI HTTP " + res.status + ": " + text.slice(0, 300));
+    // HTTP 422 del /json: la IA no puede procesar la pagina
+    throw new ScrapingError("AI HTTP " + res.status + ": " + text.slice(0, 500));
   }
 
   var data = await res.json();
   if (!data.success || data.result == null) {
-    throw new ScrapingError("AI fallo: " + JSON.stringify(data).slice(0, 300));
+    throw new ScrapingError("AI fallo: success=false, result=" + JSON.stringify(data).slice(0, 500));
+  }
+
+  // El schema forza { usd_rate_cup: number }
+  if (data.result.usd_rate_cup != null) {
+    try {
+      var validated = validateRate(data.result.usd_rate_cup);
+      return { usdRateCup: validated };
+    } catch (e) {
+      console.log("    [AI] usd_rate_cup invalido: " + e.message);
+    }
   }
 
   var resultStr = JSON.stringify(data.result);
 
-  // Buscar numeros en la respuesta
-  var aiKeys = ["usd_rate_cup", "response", "rate", "cup", "valor", "precio", "usd", "exchange_rate"];
-  for (var i = 0; i < aiKeys.length; i++) {
-    if (data.result[aiKeys[i]] != null) {
-      try {
-        return { usdRateCup: validateRate(data.result[aiKeys[i]]) };
-      } catch (_) {}
-    }
-  }
-
-  // Regex sobre la respuesta serializada
+  // Buscar cualquier numero en la respuesta como ultimo recurso
   var match = resultStr.match(/"(\d{2,4})"/) || resultStr.match(/(\d{2,4})/);
   if (match) {
     var num = Number(match[1]);
@@ -242,37 +249,69 @@ async function extractWithAI(cfg, attempt) {
     }
   }
 
-  throw new ScrapingError("AI respuesta sin tasa: " + resultStr.slice(0, 300));
+  throw new ScrapingError("AI respuesta sin tasa valida: " + resultStr.slice(0, 500));
 }
 
 // ── Llamada principal a Browser Run ────────────────────────────────────────
 
 /**
- * Etapas:
- *   1. Navegacion (goto): configurada via gotoOptions.
- *   2. Renderizado + extraccion HTML: endpoint /content.
- *   3. Validacion del contenido recibido.
- *   4. Parseo: Cheerio -> Regex -> AI.
+ * Flujo segun documentacion oficial:
+ *
+ * 1. POST /browser-rendering/content con:
+ *    - url: TARGET_URL
+ *    - gotoOptions: { waitUntil: "networkidle2", timeout: 60000 }
+ *    - setJavaScriptEnabled: true
+ *    - rejectResourceTypes: ["image", "stylesheet", "font", "media"]
+ *    - cacheTTL: 0 (desactivar cache entre reintentos)
+ *    - actionTimeout: 60000
+ *    - bestAttempt: true
+ *    - viewport: { width: 1920, height: 1080 }
+ *
+ * 2. La respuesta contiene:
+ *    - meta.status: HTTP status de la pagina destino
+ *    - meta.title: document.title
+ *    - result: HTML renderizado completo
+ *
+ * 3. Extraccion:
+ *    a) Cheerio: buscar "USD" + numero en contenedores
+ *    b) Regex: patrones de tasa en HTML plano
+ *    c) AI: POST /browser-rendering/json con schema (solo como ultimo recurso)
  */
 async function fetchRateFromBrowserRun(attempt) {
   var cfg = getCloudflareConfig();
 
-  // --- Etapa 1-2: Navegacion y obtencion de HTML ---
-  console.log("  [etapa 1/4] Navegando a " + TARGET_URL + " (intento " + attempt + ")...");
+  console.log("  [etapa 1/4] POST /browser-rendering/content a " + TARGET_URL + " (intento " + attempt + ")...");
+
   var endpoint = "https://api.cloudflare.com/client/v4/accounts/" + cfg.accountId + "/browser-rendering/content";
 
-  var waitOpts;
-  if (attempt === 1) waitOpts = { waitUntil: "networkidle2", timeout: 60000 };
-  else if (attempt === 2) waitOpts = { waitUntil: ["load", "networkidle2"], timeout: 60000 };
-  else waitOpts = { waitUntil: "load", timeout: 60000 };
+  // Estrategia waitUntil progresiva:
+  //   Intento 1: networkidle2 (espera que termine JS)
+  //   Intento 2: load (menos estricto)
+  //   Intento 3: domcontentloaded (el mas rapido, por si la pagina bloquea)
+  var waitUntil;
+  if (attempt === 1) waitUntil = "networkidle2";
+  else if (attempt === 2) waitUntil = "load";
+  else waitUntil = "domcontentloaded";
 
   var body = {
     url: TARGET_URL,
-    gotoOptions: waitOpts,
-    actionTimeout: 30000,
+    cacheTTL: 0, // Desactivar cache entre reintentos
+    gotoOptions: {
+      waitUntil: waitUntil,
+      timeout: 60000,
+    },
+    setJavaScriptEnabled: true,
+    rejectResourceTypes: ["image", "stylesheet", "font", "media"],
+    actionTimeout: 60000,
     bestAttempt: true,
-    userAgent: "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36",
+    viewport: { width: 1920, height: 1080 },
   };
+
+  console.log("  [config] waitUntil=" + waitUntil + ", actionTimeout=60000, cacheTTL=0");
+
+  if (DEBUG) {
+    console.log("  [DEBUG] Request body: " + JSON.stringify(body, null, 2));
+  }
 
   var res = await fetch(endpoint, {
     method: "POST",
@@ -283,9 +322,16 @@ async function fetchRateFromBrowserRun(attempt) {
     body: JSON.stringify(body),
   });
 
-  // --- Etapa 3: Validacion de la respuesta ---
+  // --- Manejo de errores HTTP ---
   if (res.status === 429) {
     throw new RateLimitError("Rate limit exceeded (HTTP 429)");
+  }
+
+  if (res.status === 422) {
+    // 422 en /content puede indicar timeout de accion o pagina no disponible
+    var errBody422 = await res.text().catch(function () { return ""; });
+    console.log("  [WARN] HTTP 422 en /content. Body: " + errBody422.slice(0, 500));
+    throw new ScrapingError("Browser Run HTTP 422: " + errBody422.slice(0, 300));
   }
 
   if (!res.ok) {
@@ -293,10 +339,11 @@ async function fetchRateFromBrowserRun(attempt) {
     throw new ScrapingError("Browser Run HTTP " + res.status + ": " + errBody.slice(0, 500));
   }
 
-  console.log("  [etapa 2/4] HTTP 200 OK. Procesando respuesta...");
+  console.log("  [etapa 2/4] HTTP 200 OK. Leyendo respuesta JSON...");
 
   var data = await res.json();
 
+  // --- Validacion de la respuesta ---
   if (!data.success) {
     var errMsgs = "Unknown error";
     if (data.errors && data.errors.length > 0) {
@@ -305,20 +352,33 @@ async function fetchRateFromBrowserRun(attempt) {
     throw new ScrapingError("Cloudflare API error: " + errMsgs);
   }
 
+  // Usar meta de la respuesta oficial (disponible en /content)
+  var metaStatus = data.meta && data.meta.status != null ? data.meta.status : "N/A";
+  var metaTitle = data.meta && data.meta.title ? data.meta.title : "(sin meta.title)";
+
   var html = data.result;
-  if (html == null || typeof html !== "string" || html.length < 50) {
-    console.log("  [ERROR] HTML vacio o demasiado corto (" + (html ? html.length : 0) + " chars)");
-    if (html) console.log("  [DEBUG] HTML recibido: " + html.slice(0, 1000));
+  var htmlLen = html ? html.length : 0;
+
+  console.log("  [diagnostico] meta.status: " + metaStatus);
+  console.log("  [diagnostico] meta.title: " + metaTitle);
+  console.log("  [diagnostico] HTML length: " + htmlLen + " chars");
+
+  // Mostrar status HTTP de la pagina destino
+  if (metaStatus !== 200 && metaStatus !== "N/A") {
+    console.log("  [WARN] La pagina destino respondio HTTP " + metaStatus + " (posible error/bloqueo)");
+  }
+
+  if (!html || typeof html !== "string" || htmlLen < 100) {
+    console.log("  [ERROR] HTML vacio o demasiado corto (" + htmlLen + " chars)");
+    if (html) console.log("  [DEBUG] HTML recibido: " + html.slice(0, 2000));
     throw new ScrapingError("HTML vacio o invalido");
   }
 
-  // --- Diagnostico (si DEBUG=true) ---
-  var title = extractTitle(html);
+  // Diagnosticar el contenido (SIEMPRE loguear esto, no solo en DEBUG)
   var visible = stripHtml(html);
-
-  console.log("  [diagnostico] document.title: " + title);
-  console.log("  [diagnostico] HTML length: " + html.length + " chars");
   console.log("  [diagnostico] Texto visible length: " + visible.length + " chars");
+  // Log de los primeros 500 chars del texto visible para inspeccion
+  console.log("  [diagnostico] Inicio texto visible: " + visible.slice(0, 500));
 
   if (DEBUG) {
     console.log("  [DEBUG] === INICIO HTML (5000 chars) ===");
@@ -329,19 +389,24 @@ async function fetchRateFromBrowserRun(attempt) {
     console.log("  [DEBUG] === FIN TEXTO VISIBLE ===");
   }
 
-  // Detectar pagina de error/captcha/bloqueo
-  var errorIndicators = ["captcha", "please complete the security check", "cf-browser-verification", "just a moment", "error 1020", "access denied", "attention required"];
+  // Detectar bloqueo/captcha en el HTML
+  var errorIndicators = [
+    "captcha", "please complete the security check", "cf-browser-verification",
+    "just a moment", "error 1020", "access denied", "attention required",
+    "checking your browser", "verifying you are human", "challenge-platform",
+  ];
   var htmlLower = html.toLowerCase();
   for (var e = 0; e < errorIndicators.length; e++) {
     if (htmlLower.indexOf(errorIndicators[e]) !== -1) {
       console.log("  [ERROR] Posible bloqueo detectado: '" + errorIndicators[e] + "' en el HTML");
+      console.log("  [diagnostico] meta.title: " + metaTitle + ", meta.status: " + metaStatus);
       throw new ScrapingError("Pagina bloqueada por Cloudflare/seguridad");
     }
   }
 
   console.log("  [etapa 3/4] Parseando HTML para extraer tasa...");
 
-  // --- Etapa 4a: Parseo con Cheerio ---
+  // --- Etapa 4a: Parseo con Cheerio (primario) ---
   var rate = extractWithCheerio(html);
   if (rate !== null) {
     console.log("  [ok] Tasa extraida por Cheerio: " + rate + " CUP/USD");
@@ -359,7 +424,7 @@ async function fetchRateFromBrowserRun(attempt) {
 
   // --- Etapa 4c: Fallback AI ---
   try {
-    var aiResult = await extractWithAI(cfg, attempt);
+    var aiResult = await extractWithAI(cfg);
     console.log("  [ok] Tasa extraida por AI: " + aiResult.usdRateCup + " CUP/USD");
     return aiResult;
   } catch (aiErr) {
@@ -368,7 +433,8 @@ async function fetchRateFromBrowserRun(attempt) {
 
   // Si llegamos aqui, ningun metodo funciono
   throw new ScrapingError(
-    "No se pudo extraer la tasa. Titulo: '" + title + "'. HTML: " + html.slice(0, 200)
+    "No se pudo extraer la tasa. meta.title='" + metaTitle + "', meta.status=" + metaStatus +
+    ". Inicio HTML: " + html.slice(0, 500)
   );
 }
 
@@ -408,18 +474,18 @@ async function scrapeAndUpdateUsdRate(prisma, storeId) {
     } catch (err) {
       lastError = err.message;
 
-      // Rate limiting: esperar 60s y NO contar como intento
+      // Rate limiting HTTP 429: esperar 60s y NO consumir intento
       if (err instanceof RateLimitError || err.name === "RateLimitError") {
         console.error("[" + executionId + "] Rate limit (429). Esperando 60s y reintentando...");
         await sleep(RATE_LIMIT_DELAY);
-        attempt--; // No consume un intento
+        attempt--;
         continue;
       }
 
       console.error("[" + executionId + "] Intento #" + attempt + " fallo: " + err.message);
       if (attempt === MAX_RETRIES) break;
 
-      var delay = RETRY_DELAYS[attempt - 1] || 15000;
+      var delay = RETRY_DELAYS[attempt - 1] || 10000;
       console.log("[" + executionId + "] Esperando " + delay + "ms antes del siguiente intento...");
       await sleep(delay);
     }
